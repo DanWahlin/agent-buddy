@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-test/
+*.tsbuildinfo
+
+# Built artefacts
+*.vsix
+extension/packs/
+
+# Inspection output, written by the packer and renderer scripts
+.inspect/
+*-preview.png
+filmstrip.png
+effects-sheet.png
+
+.DS_Store
+Thumbs.db

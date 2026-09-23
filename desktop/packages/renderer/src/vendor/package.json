@@ -1,0 +1,4 @@
+{
+  "//": "Scopes this directory to CommonJS so the vendored UMD file resolves as its author intended, without modifying it.",
+  "type": "commonjs"
+}

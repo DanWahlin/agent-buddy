@@ -1,0 +1,19 @@
+{
+  "name": "@agent-companion/agent-state",
+  "version": "0.1.0",
+  "description": "Turns agent lifecycle hooks into a character state, and carries it between VS Code windows.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
+  },
+  "license": "MIT"
+}

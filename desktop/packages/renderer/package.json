@@ -1,0 +1,27 @@
+{
+  "name": "@agent-companion/renderer",
+  "version": "0.1.0",
+  "description": "Draws an Agent Companion character pack to a canvas, and decides which pose to show.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-vendor.mjs",
+    "test": "node --test test/*.test.cjs test/*.test.js",
+    "harness": "node scripts/serve.mjs",
+    "filmstrip": "node scripts/filmstrip.mjs"
+  },
+  "dependencies": {
+    "@agent-companion/pack-format": "0.1.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "sharp": "^0.35.4"
+  }
+}
