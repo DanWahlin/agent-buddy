@@ -292,7 +292,16 @@ Marvin's rig was produced with the art pipeline in
 whose `docs/character-art-notes.md` is the source for most of what the packer
 knows about blink synthesis and frame-0 alignment.
 
-**That repository currently carries no LICENSE file**, so reuse of its code is
-not yet settled. This workspace deliberately contains no code copied from it.
+**Dan Wahlin has approved this derivative work.** Two directories vendor his
+code unmodified, each recording its provenance beside it:
+[`packages/agent-state/src/vendor`](packages/agent-state/src/vendor/README.md),
+holding the protocol, coordinator and state store, and
+[`packages/renderer/src/vendor`](packages/renderer/src/vendor/README.md),
+holding the sprite motion engine.
+
+That repository still carries no LICENSE file, so the approval is the only
+thing settling reuse. Before publishing anywhere, it is worth asking him to add
+one, or recording the grant somewhere more durable than a line in this file.
+
 Character art is the pack author's own; no pack in this repository contains
 artwork belonging to anyone else.
