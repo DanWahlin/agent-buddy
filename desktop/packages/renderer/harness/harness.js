@@ -88,6 +88,29 @@ function pointerDirection(x, y, width, height) {
   return (vertical < 0 ? 'up_' : 'down_') + (horizontal < 0 ? 'left' : 'right');
 }
 
+/**
+ * Follow a real agent, when the server has a bridge behind it.
+ *
+ * `setState` rouses him on its own, so nothing here touches sleep - doing that
+ * would take back a sleep asked for by hand. This is the same one-line handler
+ * the extension uses; the only difference is what carried the state here.
+ */
+function followAgent() {
+  const source = new EventSource('/events');
+
+  source.addEventListener('message', event => {
+    const { state, bridge } = JSON.parse(event.data);
+    $('agent').textContent = bridge
+      ? bridge + ' · ' + state
+      : 'no bridge · build @agent-companion/agent-state';
+    if (bridge && STATES.includes(state)) player.setState(state);
+  });
+
+  source.addEventListener('error', () => {
+    $('agent').textContent = 'server unreachable';
+  });
+}
+
 function syncStateButtons() {
   for (const element of $('states').children) {
     element.setAttribute('aria-pressed', String(element.dataset.state === player.state));
@@ -145,6 +168,7 @@ async function main() {
   buildControls();
   resize();
   window.addEventListener('resize', resize);
+  followAgent();
 
   last = performance.now();
   fpsSince = last;

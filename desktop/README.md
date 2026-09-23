@@ -128,6 +128,13 @@ Serves a page on http://localhost:4321 that loads `packs/marvin` and animates
 it: state buttons, directed looks, sleep, forced blink, cross-fade toggle, and a
 live read-out of the pose being drawn.
 
+It also runs a real `StateBridge` and pushes the state to the page over SSE, so
+the character follows an actual agent with no VS Code running - the same hooks,
+the same coordinator, the same pixels, in a plain browser tab. The read-out
+names the role the bridge took. If the endpoint is already held by a VS Code
+window the harness joins as a subscriber and the two agree, which is the
+multi-window behaviour working across hosts rather than a special case.
+
 `npm run filmstrip --workspace @agent-companion/renderer` renders a scripted
 session to a PNG instead, which is the quicker way to check a change.
 
