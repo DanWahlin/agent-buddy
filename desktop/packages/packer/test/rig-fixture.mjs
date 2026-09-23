@@ -68,7 +68,15 @@ async function frame(red, green, blue) {
  * `drift` controls whether the non-anchor tracks disagree at frame 0, which is
  * what the packer's realignment exists to fix.
  */
-export async function createRig(root, { drift = true } = {}) {
+export async function createRig(root, {
+  drift = true,
+  /** Omit eye boxes, as the Three.js renderer does: the packer must measure them. */
+  recordEyes = true,
+  /** Blank one pose, as a renderer capturing before its canvas is ready does. */
+  blankPose = null,
+  /** Give the centre pose blink files identical to itself, so it cannot blink. */
+  centreCannotBlink = false,
+} = {}) {
   const gaze = join(root, 'gaze');
   const expressions = join(root, 'expressions');
   await mkdir(gaze, { recursive: true });
@@ -85,6 +93,10 @@ export async function createRig(root, { drift = true } = {}) {
     Array.from({ length: POSES }, (_, step) => frame(60 + step * 8, 70, 90)));
   const blinks = await Promise.all(
     BLINK_LEVELS.slice(1).map((_, level) => frame(60, 70, 120 + level * 20)));
+  // Nothing but backdrop, which is what a failed capture writes.
+  const blank = await sharp({
+    create: { ...FRAME, channels: 3, background: { r: 0, g: 0, b: 0 } },
+  }).png({ compressionLevel: 9 }).toBuffer();
 
   const write = async (directory, tracks) => {
     const directions = {};
@@ -95,8 +107,11 @@ export async function createRig(root, { drift = true } = {}) {
         // Frame 0 is the anchor on one gaze track and every expression track,
         // matching how a real rig comes out; the rest drift.
         const isAnchored = !drift || step > 0 || name === 'right' || !GAZE_TRACKS.includes(name);
-        await writeFile(join(directory, file),
-          step === 0 ? (isAnchored ? anchor : bodies[1]) : bodies[step]);
+        const isBlank = blankPose
+          && blankPose.track === name && blankPose.step === step;
+        await writeFile(join(directory, file), isBlank
+          ? blank
+          : step === 0 ? (isAnchored ? anchor : bodies[1]) : bodies[step]);
 
         const occludedFrom = OCCLUDES_FROM[name];
         const occluded = occludedFrom !== undefined && step >= occludedFrom;
@@ -106,8 +121,14 @@ export async function createRig(root, { drift = true } = {}) {
           const blinkFile = name + '-' + String(step).padStart(2, '0')
             + '-blink-' + (level + 1) + '.png';
           // A track that never blinks writes its base again, byte for byte.
-          const body = NEVER_BLINKS.has(name)
-            ? (step === 0 && isAnchored ? anchor : bodies[step])
+          // A blank pose blinks blankly, and a centre pose that "cannot blink"
+          // lists blink files identical to itself - both look like blink art
+          // and are not.
+          const base = isBlank ? blank
+            : step === 0 && isAnchored ? anchor : bodies[step];
+          const body = isBlank || NEVER_BLINKS.has(name)
+            || (centreCannotBlink && step === 0 && isAnchored)
+            ? base
             : blinks[level];
           await writeFile(join(directory, blinkFile), body);
           blinkFiles.push(blinkFile);
@@ -115,7 +136,7 @@ export async function createRig(root, { drift = true } = {}) {
 
         frames.push({
           file,
-          eyes: occluded ? [] : EYES,
+          eyes: occluded || !recordEyes ? [] : EYES,
           blinkMaskState: occluded ? 'occluded-or-rim-clipped' : 'visible',
           blinks: blinkFiles,
         });

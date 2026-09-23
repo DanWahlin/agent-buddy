@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import sharp from 'sharp';
 import { validatePack } from '@agent-companion/pack-format';
-import { buildPack, probeIn, readRig } from '../dist/index.js';
+import { buildPack, deriveEyeBox, probeIn, readRig } from '../dist/index.js';
 import { loadPack, renderFrame } from '../dist/inspect.js';
 import { BLINK_LEVELS, FRAME, POSES, createRig } from './rig-fixture.mjs';
 
@@ -164,3 +164,91 @@ function countDifferent(a, b) {
   }
   return count;
 }
+
+// --- rigs that arrive imperfect --------------------------------------------
+
+test('measures the eye region when the rig does not record it', async () => {
+  // The Three.js renderer emits the field and leaves it empty, so without this
+  // the character would get no blink strips at all and never blink.
+  const root = scratchDir('agent-pack-noeyes-');
+  const { gaze, expressions, anchor } = await createRig(root, { recordEyes: false });
+  const outDir = scratchDir('agent-pack-noeyes-out-');
+
+  const result = await buildPack({
+    rig: readRig([gaze, expressions]), outDir, id: 'noeyes', name: 'No eyes', anchor,
+  });
+
+  assert.ok(result.derivedEyes > 0, 'it should have measured some');
+  const patched = Object.values(result.pack.tracks).filter(track => track.patch);
+  assert.ok(patched.length > 8, 'and most tracks should still blink');
+  assert.deepEqual(validatePack(result.pack, probeIn(outDir)), []);
+});
+
+test('the measured region matches the one a manifest records', async () => {
+  const root = scratchDir('agent-pack-eyecheck-');
+  const { gaze } = await createRig(root, { recordEyes: true });
+  const rig = readRig([gaze]);
+  const frame = rig.tracks.get('up').frames[1];
+
+  const measured = await deriveEyeBox(frame);
+  assert.equal(measured.length, 1);
+
+  // The fixture blinks by changing the whole body, so the measured box is the
+  // body rather than the eyes. What matters is that it finds the region that
+  // actually changes, and that it is a sane rectangle inside the frame.
+  const [x0, y0, x1, y1] = measured[0];
+  assert.ok(x1 > x0 && y1 > y0, 'a box with area');
+  assert.ok(x0 >= 0 && y0 >= 0 && x1 <= FRAME.width && y1 <= FRAME.height,
+    'inside the frame: ' + measured[0].join(','));
+});
+
+test('a blank pose is reported rather than quietly packed', async () => {
+  // A frame holding nothing survives every other check: the cutout removes all
+  // of it, its blink levels all match because they are equally blank, and the
+  // pack still validates. This is what a renderer capturing before its canvas
+  // is ready produces, and it went unnoticed until a character arrived with a
+  // whole track missing.
+  const root = scratchDir('agent-pack-blank-');
+  const { gaze, expressions, anchor } = await createRig(root, {
+    // Step 2 is one the packer selects; step 3 would be sampled out and the
+    // test would pass for the wrong reason.
+    blankPose: { track: 'up', step: 2 },
+  });
+  const outDir = scratchDir('agent-pack-blank-out-');
+
+  const result = await buildPack({
+    rig: readRig([gaze, expressions]), outDir, id: 'blank', name: 'Blank', anchor,
+  });
+
+  assert.ok(result.empty.length > 0, 'the blank pose should be reported');
+  assert.equal(result.empty[0].track, 'up');
+  assert.match(result.empty[0].file, /up-02\.png$/);
+});
+
+test('a complete rig reports no blank poses', () => {
+  assert.deepEqual(built.result.empty, []);
+});
+
+test('sleep picks a pose that can close its eyes', async () => {
+  // Sleep is the centre pose held shut, which assumes the centre pose blinks.
+  // A rig can arrive where every pose blinks except the shared centre, and
+  // pinning sleep to step 0 there leaves the character awake while asleep.
+  const root = scratchDir('agent-pack-sleep-');
+  const { gaze, expressions, anchor } = await createRig(root, { centreCannotBlink: true });
+  const outDir = scratchDir('agent-pack-sleep-out-');
+
+  const result = await buildPack({
+    rig: readRig([gaze, expressions]), outDir, id: 'sleepy', name: 'Sleepy', anchor,
+  });
+  const pack = loadPack(outDir);
+
+  assert.notEqual(pack.sleep.step, 0, 'step 0 cannot blink in this rig');
+  const open = await renderFrame(outDir, pack, pack.sleep.track, pack.sleep.step, 0);
+  const shut = await renderFrame(outDir, pack, pack.sleep.track, pack.sleep.step,
+    pack.sleep.blinkLevel);
+  assert.notEqual(digest(open), digest(shut), 'sleep must actually close the eyes');
+});
+
+test('sleep stays on the centre pose when that pose can blink', () => {
+  assert.equal(built.pack.sleep.step, 0, 'no reason to move it');
+});

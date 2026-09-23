@@ -147,6 +147,18 @@ async function commandBuild(flags: Flags): Promise<number> {
   if (result.neverBlink.length) {
     console.log('No blink strip needed for: ' + result.neverBlink.join(', '));
   }
+  if (result.empty.length) {
+    const tracks = [...new Set(result.empty.map(f => f.track))];
+    console.error('');
+    console.error('WARNING: ' + result.empty.length + ' pose(s) hold no character at all, '
+      + 'across: ' + tracks.join(', '));
+    console.error('The rig is probably incomplete - a renderer that captured before its '
+      + 'canvas was ready produces exactly this. First offender: ' + result.empty[0].file);
+  }
+  if (result.derivedEyes) {
+    console.log('Measured ' + result.derivedEyes + ' eye region(s) from the blink '
+      + 'levels, because the rig did not record them.');
+  }
   return 0;
 }
 

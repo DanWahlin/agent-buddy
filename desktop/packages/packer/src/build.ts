@@ -27,6 +27,7 @@ import {
   type Pack, type PackPatch, type PackTrack, type Rect, type TrackName,
 } from '@agent-companion/pack-format';
 import { applyCutout } from './cutout.js';
+import { resolveEyes } from './eyes.js';
 import { eyeUnion, type Rig, type RigFrame } from './rig.js';
 
 export interface BuildOptions {
@@ -56,6 +57,13 @@ export interface BuildOptions {
   onProgress?: (message: string) => void;
 }
 
+/** A pose that came out essentially empty, which almost always means bad input. */
+export interface EmptyFrame {
+  track: TrackName;
+  step: number;
+  file: string;
+}
+
 export interface BuildResult {
   pack: Pack;
   packPath: string;
@@ -65,6 +73,10 @@ export interface BuildResult {
   realigned: TrackName[];
   /** Tracks that turned out never to blink. */
   neverBlink: TrackName[];
+  /** Poses whose eye region had to be measured, because the rig did not say. */
+  derivedEyes: number;
+  /** Poses that hold no character at all. */
+  empty: EmptyFrame[];
 }
 
 const sha256 = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
@@ -109,11 +121,15 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
   // The anchor must be a whole frame, not just an image. A bare PNG has no
   // sibling blink art, so realigning onto it would silently stop the centre
   // pose blinking - and the centre pose is exactly what sleep holds closed.
-  // Prefer the frame of whichever track already matches the anchor.
+  // Prefer the frame of whichever track already matches the anchor, and prefer
+  // one whose blinks actually change something: a track can list four blink
+  // files that are byte-identical to their base, which looks like blink art
+  // and is not.
   const anchorFrame: RigFrame = findAnchorFrame(rig, anchorHash)
     ?? { file: anchorPath, blinks: [], eyes: [] };
-  if (anchorFrame.blinks.length === 0 && blinkRows > 0) {
-    onProgress('warning: the centre pose has no blink art, so it will not blink');
+  if (!frameBlinks(anchorFrame) && blinkRows > 0) {
+    onProgress('warning: the centre pose has no blink art that changes anything, '
+      + 'so it will not blink and cannot be used for sleep');
   }
 
   await mkdir(outDir, { recursive: true });
@@ -122,6 +138,10 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
   const files: Array<{ name: string; bytes: number }> = [];
   const realigned: TrackName[] = [];
   const neverBlink: TrackName[] = [];
+  let derivedEyes = 0;
+  const empty: EmptyFrame[] = [];
+  /** Steps whose blink art actually differs, per track, for choosing sleep. */
+  const blinkingSteps = new Map<TrackName, Set<number>>();
 
   for (const [trackName, track] of rig.tracks) {
     const selected = stepIndices.map(index => track.frames[index]);
@@ -136,11 +156,35 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
       frames[0] = anchorFrame;
     }
 
-    onProgress('packing ' + trackName);
+    // A frame with nothing in it survives every other check: the cutout removes
+    // all of it, the blink levels all match because they are equally blank, and
+    // the pack still validates. A renderer that dropped a track, or captured
+    // before its canvas was ready, looks exactly like this.
+    for (const [step, frame] of frames.entries()) {
+      if (await isBlank(frame.file)) empty.push({ track: trackName, step, file: frame.file });
+    }
+
+    // A rig that records no eye boxes still knows where the eyes are: they are
+    // whatever the blink levels change. Measure them rather than give up on
+    // blinking altogether.
+    //
+    // Decided per track, not per pose. An empty box on one pose of a track that
+    // records them elsewhere is a deliberate statement - the eyes are occluded
+    // at this angle - and measuring over it would put a patch where the rig
+    // says there is nothing to patch.
+    const recordsEyes = frames.some(frame => frame.eyes.length > 0);
+    const measured = recordsEyes
+      ? { frames, derived: 0 }
+      : await resolveEyes(frames);
+    derivedEyes += measured.derived;
+    const posed = measured.frames;
+
+    onProgress('packing ' + trackName
+      + (measured.derived ? ' (measured ' + measured.derived + ' eye boxes)' : ''));
 
     const baseName = trackName + '.webp';
     const baseBytes = await writeStrip({
-      cells: frames.map(frame => ({ file: frame.file })),
+      cells: posed.map(frame => ({ file: frame.file })),
       columns: steps, rows: 1,
       cellWidth: frameWidth, cellHeight: frameHeight,
       scaleTo: { width: frameWidth, height: frameHeight },
@@ -149,13 +193,16 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
     });
     files.push({ name: baseName, bytes: baseBytes });
 
+    blinkingSteps.set(trackName,
+      new Set(posed.flatMap((frame, step) => (frameBlinks(frame) ? [step] : []))));
+
     const packTrack: PackTrack = { base: baseName };
 
     // 2. Store only the eye rectangle at each closing level, per step. A single
     //    rect spanning the whole turn would cover the eyes' travel and end up
     //    bigger than the frames it was meant to shrink.
-    const patch = blinkRows > 0 && framesBlink(frames)
-      ? planPatch(frames, rig.width, rig.height, scale, frameWidth, frameHeight, eyeMargin)
+    const patch = blinkRows > 0 && framesBlink(posed)
+      ? planPatch(posed, rig.width, rig.height, scale, frameWidth, frameHeight, eyeMargin)
       : null;
 
     if (patch) {
@@ -163,7 +210,7 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
       const blinkName = trackName + '.blink.webp';
       const cells: Array<{ file: string; crop?: Rect } | null> = [];
       for (let level = 0; level < blinkRows; level++) {
-        frames.forEach((frame, step) => {
+        posed.forEach((frame, step) => {
           const cell = patch.cells[step];
           const source = frame.blinks[level];
           // An occluded step, or a pose whose blink art is absent, leaves the
@@ -191,7 +238,11 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
     tracks[trackName] = packTrack;
   }
 
-  const sleepTrack: TrackName = rig.tracks.has('down') ? 'down' : 'right';
+  const sleep = chooseSleep(tracks, blinkingSteps, blinkRows);
+  if (!sleep.closes) {
+    onProgress('warning: no pose in this rig closes its eyes, so sleep will '
+      + 'look the same as idle');
+  }
   const pack: Pack = {
     format: 1,
     id, name,
@@ -204,7 +255,7 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
     blinkLevels: rig.blinkLevels,
     tracks,
     states: buildStates(tracks),
-    sleep: { track: sleepTrack, step: 0, blinkLevel: blinkRows },
+    sleep: { track: sleep.track, step: sleep.step, blinkLevel: blinkRows },
   };
 
   const packPath = join(outDir, 'pack.json');
@@ -212,7 +263,7 @@ export async function buildPack(options: BuildOptions): Promise<BuildResult> {
   await writeFile(packPath, packJson, 'utf8');
 
   const bytes = files.reduce((total, file) => total + file.bytes, 0) + Buffer.byteLength(packJson);
-  return { pack, packPath, bytes, files, realigned, neverBlink };
+  return { pack, packPath, bytes, files, realigned, neverBlink, derivedEyes, empty };
 }
 
 function buildStates(tracks: Partial<Record<TrackName, PackTrack>>): Pack['states'] {
@@ -234,6 +285,42 @@ function buildStates(tracks: Partial<Record<TrackName, PackTrack>>): Pack['state
 }
 
 /**
+ * Pick a pose to sleep on: one that can actually close its eyes.
+ *
+ * Sleep is the centre pose held shut, which assumes the centre pose has blink
+ * art. A rig can arrive where it does not - OpenClaw renders every pose with
+ * working blinks except the one every track shares as its centre - and pinning
+ * sleep to step 0 there leaves the character wide awake while asleep. So the
+ * step is chosen rather than assumed, preferring the centre and the track that
+ * looks most restful.
+ */
+function chooseSleep(
+  tracks: Partial<Record<TrackName, PackTrack>>,
+  blinkingSteps: Map<TrackName, Set<number>>,
+  blinkRows: number,
+): { track: TrackName; step: number; closes: boolean } {
+  const order: TrackName[] = ['down', 'down_left', 'down_right', 'right', 'left'];
+  const candidates = [...order.filter(name => tracks[name]),
+    ...(Object.keys(tracks) as TrackName[])];
+
+  if (blinkRows > 0) {
+    for (const name of candidates) {
+      const cells = tracks[name]?.patch?.cells;
+      if (!cells) continue;
+      // Both conditions matter and they are not the same. A patch cell exists
+      // wherever the eyes are visible; whether that pose has blink art which
+      // changes anything is separate, and a pose can have the first without
+      // the second.
+      const blinking = blinkingSteps.get(name) ?? new Set<number>();
+      const step = cells.findIndex((cell, index) => cell !== null && blinking.has(index));
+      if (step !== -1) return { track: name, step, closes: true };
+    }
+  }
+  const fallback = candidates[0] ?? ('right' as TrackName);
+  return { track: fallback, step: 0, closes: false };
+}
+
+/**
  * Find a complete frame for the centre pose: a track whose frame 0 already
  * matches the anchor image, preferring one that carries blink art.
  */
@@ -242,10 +329,27 @@ function findAnchorFrame(rig: Rig, anchorHash: string): RigFrame | null {
   for (const track of rig.tracks.values()) {
     const frame = track.frames[0];
     if (!frame || sha256(frame.file) !== anchorHash) continue;
-    if (frame.blinks.length > 0) return frame;
+    if (frameBlinks(frame)) return frame;
     fallback ??= frame;
   }
   return fallback;
+}
+
+/** True when a frame holds nothing but backdrop. */
+async function isBlank(file: string, threshold = 24): Promise<boolean> {
+  const { channels, data } = await sharp(file).stats().then(
+    stats => ({ channels: stats.channels, data: null }),
+    () => ({ channels: null, data: null }));
+  if (!channels) return false;
+  // The maximum across the colour channels; alpha says nothing about content.
+  return channels.slice(0, 3).every(channel => channel.max <= threshold);
+}
+
+/** True when a pose has blink art that differs from the pose itself. */
+function frameBlinks(frame: RigFrame): boolean {
+  if (frame.blinks.length === 0) return false;
+  const base = sha256(frame.file);
+  return frame.blinks.some(blink => existsSync(blink) && sha256(blink) !== base);
 }
 
 /**
@@ -282,14 +386,7 @@ function planPatch(
 
 /** True when any selected pose has blink art that differs from its base. */
 function framesBlink(frames: RigFrame[]): boolean {
-  for (const frame of frames) {
-    if (frame.blinks.length === 0) continue;
-    const base = sha256(frame.file);
-    for (const blink of frame.blinks) {
-      if (existsSync(blink) && sha256(blink) !== base) return true;
-    }
-  }
-  return false;
+  return frames.some(frameBlinks);
 }
 
 function scaleRect(rect: Rect, scale: number, maxWidth: number, maxHeight: number): Rect {

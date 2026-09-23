@@ -22,13 +22,25 @@ const repoRoot = join(here, '..');
 const watch = process.argv.includes('--watch');
 const production = process.argv.includes('--production');
 
-/** Copy the packs that ship inside the .vsix. */
+/**
+ * Packs that ship inside the .vsix.
+ *
+ * Deliberately a list rather than everything in packs/. The other characters
+ * are built from artwork belonging to third parties - upstream is explicit that
+ * "GitHub Copilot artwork and product names belong to their respective owners"
+ * - which is unremarkable in a private repository and not something to bake
+ * into a published extension. They load from `agentCompanion.packPaths`.
+ */
+const BUNDLED_PACKS = ['marvin'];
+
 async function copyPacks() {
   const to = join(here, 'packs');
   await rm(to, { recursive: true, force: true });
   await mkdir(to, { recursive: true });
-  await cp(join(repoRoot, 'packs'), to, { recursive: true });
-  console.log('copied packs/');
+  for (const name of BUNDLED_PACKS) {
+    await cp(join(repoRoot, 'packs', name), join(to, name), { recursive: true });
+  }
+  console.log('bundled packs: ' + BUNDLED_PACKS.join(', '));
 }
 
 const shared = {

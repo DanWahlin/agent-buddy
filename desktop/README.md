@@ -25,7 +25,19 @@ A directory of WebP strips plus a `pack.json`, described in
 directions and five expressions - each a run of poses with four blink levels
 stored as eye-sized patches rather than whole frames.
 
-Marvin, at twelve steps and 120x112, comes to **420 KB** with transparency.
+Three ship in `packs/`, each thirteen tracks at twelve steps and 120x112:
+
+| Pack | Size | Source |
+| --- | --- | --- |
+| `marvin` | 556 KB | AI-generated rig, bundled in the extension |
+| `copilot` | 656 KB | AI-generated rig |
+| `openclaw` | 548 KB | Three.js model, rendered offline |
+
+Only `marvin` is bundled into the `.vsix`. The other two are built from artwork
+belonging to third parties - upstream is explicit that "GitHub Copilot artwork
+and product names belong to their respective owners" - which is unremarkable in
+a private repository and not something to put in a published extension. Point
+`agentCompanion.packPaths` at this `packs/` folder to use them.
 
 ## Building a pack
 
@@ -66,6 +78,28 @@ to their base.
 **Handles occlusion.** Steep downward poses hide the eyes, and the manifests
 record no eye box there. Those steps get a null patch cell and render as
 themselves.
+
+**Measures the eyes when a rig does not record them.** The Three.js renderer
+emits the field and leaves it empty, which would mean no blink strips and a
+character that never blinks. The region is recoverable without the manifest: a
+blink frame differs from its base only where the eyes are, so the bounding box
+of that difference is the answer. Decided per track - an empty box inside a
+track that records them elsewhere means the eyes are occluded at that angle, and
+measuring over it would invent a patch the rig says should not exist.
+
+**Chooses a sleep pose that can actually close its eyes.** Sleep is the centre
+pose held shut, which assumes the centre pose has working blink art. OpenClaw
+arrived with every pose blinking except the one every track shares as its
+centre, which would have left the character wide awake while asleep. Both
+conditions are checked and they are not the same: a patch cell exists wherever
+the eyes are visible, whether that pose has blink art which changes anything is
+separate.
+
+**Refuses to quietly pack a blank frame.** A pose holding nothing survives every
+other check - the cutout removes all of it, its blink levels all match because
+they are equally blank, and the pack still validates. A renderer that captured
+before its canvas was ready produces exactly this, and it cost a whole track
+before the check existed.
 
 ## Running the extension
 
