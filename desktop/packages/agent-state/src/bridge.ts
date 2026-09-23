@@ -55,6 +55,15 @@ export class StateBridge {
   #coordinator: StateCoordinator | null = null;
   #store: StateStore | null = null;
   #client: Socket | null = null;
+  /**
+   * Every accepted connection, whether or not it has said what it wants yet.
+   *
+   * Tracking only the subscribers was not enough: a window that has connected
+   * but whose `subscribe` line has not been read is invisible to that set, so
+   * shutting down left it open, `server.close()` waited on it forever, and the
+   * other window was never told to take over.
+   */
+  #connections = new Set<Socket>();
   #subscribers = new Set<Socket>();
   #retry: NodeJS.Timeout | null = null;
   #stopping = false;
@@ -71,6 +80,8 @@ export class StateBridge {
   get state(): CharacterState { return this.#state; }
   get endpoint(): string { return this.#endpoint; }
   get sessionCount(): number { return this.#coordinator?.sessionCount ?? 0; }
+  /** Windows currently following this one. */
+  get subscriberCount(): number { return this.#subscribers.size; }
 
   /** Take whichever role is available. Never throws; failures are logged and retried. */
   async start(): Promise<void> {
@@ -124,19 +135,17 @@ export class StateBridge {
       const server = this.#server;
       this.#server = null;
 
-      // Order matters. Dropping the subscribers first wakes them immediately,
-      // and one reconnecting before the server stops accepting would keep
-      // close() pending forever. So stop accepting, then drop them.
+      // Order matters. Dropping connections first wakes the other windows
+      // immediately, and one reconnecting before the server stops accepting
+      // would keep close() pending forever. So stop accepting, then drop them.
       const closed = new Promise<void>(resolve => server.close(() => resolve()));
-      for (const socket of this.#subscribers) socket.destroy();
-      this.#subscribers.clear();
+      this.#dropConnections();
 
       // Shutting a window down must not be able to hang on a stuck socket.
       await Promise.race([closed, sleep(2000)]);
       if (endpointIsFile()) await unlink(this.#endpoint).catch(() => undefined);
     } else {
-      for (const socket of this.#subscribers) socket.destroy();
-      this.#subscribers.clear();
+      this.#dropConnections();
     }
 
     this.#coordinator?.close();
@@ -223,6 +232,11 @@ export class StateBridge {
   #serve(socket: Socket): void {
     socket.setEncoding('utf8');
     socket.on('error', () => undefined);
+    this.#connections.add(socket);
+    socket.on('close', () => {
+      this.#connections.delete(socket);
+      this.#subscribers.delete(socket);
+    });
     // A hook is a single line and gone; a subscriber stays. Only the former
     // should be timed out, so the timer is cleared once one subscribes.
     socket.setTimeout(10_000, () => { if (!this.#subscribers.has(socket)) socket.destroy(); });
@@ -259,12 +273,12 @@ export class StateBridge {
             state: this.#state,
             role: this.#role,
             sessions: this.sessionCount,
+            subscribers: this.subscriberCount,
           });
           return;
         case 'subscribe':
           this.#subscribers.add(socket);
           socket.setTimeout(0);
-          socket.on('close', () => this.#subscribers.delete(socket));
           write(socket, { type: 'state', state: this.#state });
           return;
         default:
@@ -287,6 +301,13 @@ export class StateBridge {
     if (this.#state === state) return;
     this.#state = state;
     this.#onState(state);
+  }
+
+  /** Close every accepted connection, so `server.close()` can complete. */
+  #dropConnections(): void {
+    for (const socket of this.#connections) socket.destroy();
+    this.#connections.clear();
+    this.#subscribers.clear();
   }
 
   #scheduleRetry(): void {

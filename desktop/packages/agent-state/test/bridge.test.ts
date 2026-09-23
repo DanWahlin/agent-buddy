@@ -212,6 +212,30 @@ test('a follower takes over when the leader closes', async t => {
   assert.equal(status.role, 'leader');
 });
 
+test('the leader closing at once still releases a follower', async t => {
+  // The follower has connected but its `subscribe` line may not have been read
+  // yet, so the leader does not know it is there. Tracking only subscribers
+  // left that connection open, `server.close()` waited on it, and the follower
+  // was never woken - on Unix sockets, where this was found, and in principle
+  // anywhere. Closing a window must not depend on that timing.
+  const shared = await endpoint();
+  const first = makeBridge({ endpoint: shared });
+  const second = makeBridge({ endpoint: shared });
+  t.after(async () => { await second.instance.stop(); await first.instance.stop(); });
+
+  await first.instance.start();
+  await second.instance.start();
+  assert.equal(second.instance.role, 'subscriber');
+
+  // No pause here on purpose: stop while the subscribe is still in flight.
+  const started = Date.now();
+  await first.instance.stop();
+  const took = Date.now() - started;
+
+  assert.ok(took < 1000, 'stopping took ' + took + 'ms, so it waited on a socket');
+  await until(() => second.instance.role === 'leader', 'the follower to take over', 5000);
+});
+
 test('a left-behind socket file does not block a new leader', async t => {
   if (!endpointIsFile()) {
     t.skip('named pipes vanish with their process; there is nothing to leave behind');
