@@ -61,16 +61,37 @@ async function startHarness() {
   });
 
   let log = '';
+  let exited = null;
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', chunk => { log += chunk; });
   child.stderr.on('data', chunk => { log += chunk; });
+  child.on('exit', code => { exited = code; });
 
-  await waitFor(() => /Bridge (leader|subscriber)|No agent bridge|did not start/.test(log),
-    'the harness to start', () => log);
+  try {
+    await waitFor(
+      () => exited !== null
+        || /Bridge (leader|subscriber)|No agent bridge|did not start/.test(log),
+      'the harness to start', () => log);
+  } catch (error) {
+    // Nothing has registered cleanup yet, so a readiness failure would
+    // otherwise leave the server running and wedge the runner.
+    child.kill();
+    throw error;
+  }
 
-  // A missing build is a precondition, not a reason to fail the suite.
-  if (!/Bridge leader/.test(log)) { child.kill(); return null; }
+  // Only an unbuilt workspace is a precondition. Every other outcome - a dead
+  // server, a bridge that could not start, or a subscriber role on an endpoint
+  // nothing else should hold - is a genuine failure and must not skip.
+  if (exited !== null) {
+    throw new Error('the harness exited with ' + exited + '\n' + log);
+  }
+  if (/No agent bridge/.test(log)) { child.kill(); return null; }
+  if (!/Bridge leader/.test(log)) {
+    child.kill();
+    throw new Error('expected the bridge to lead its own endpoint, got:\n' + log);
+  }
+
   return { endpoint, port, stop: () => child.kill(), log: () => log };
 }
 
@@ -78,10 +99,17 @@ async function startHarness() {
 function openStream(port) {
   return new Promise(resolve => {
     const frames = [];
+    let pending = '';
     const request = get('http://127.0.0.1:' + port + '/events', response => {
       response.setEncoding('utf8');
       response.on('data', chunk => {
-        for (const line of chunk.split('\n')) {
+        // A chunk boundary is not a line boundary. Keep the trailing partial
+        // line back until the rest of it arrives, or a split frame would be
+        // parsed as truncated JSON and take the test down with it.
+        pending += chunk;
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        for (const line of lines) {
           if (line.startsWith('data: ')) frames.push(JSON.parse(line.slice(6)));
         }
       });

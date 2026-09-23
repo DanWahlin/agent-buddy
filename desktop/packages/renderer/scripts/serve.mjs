@@ -70,7 +70,12 @@ async function startBridge() {
   let agentState;
   try {
     agentState = await import('@agent-companion/agent-state');
-  } catch {
+  } catch (error) {
+    // An unbuilt workspace is the ordinary case and only costs the bridge.
+    // Anything else - a syntax error, a throw on evaluation - is a real fault,
+    // and swallowing it would disable the bridge silently and make the test
+    // that covers this path skip rather than report the regression.
+    if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error;
     console.log('No agent bridge: build @agent-companion/agent-state to drive this from real hooks.');
     return;
   }
@@ -138,5 +143,11 @@ process.on('SIGTERM', shutdown);
 
 server.listen(port, async () => {
   console.log('Harness on http://localhost:' + port);
-  await startBridge();
+  try {
+    await startBridge();
+  } catch (error) {
+    // Say so and stop, rather than serving a page that quietly never reacts.
+    console.error('Bridge failed to start: ' + (error?.stack ?? error));
+    process.exit(1);
+  }
 });
