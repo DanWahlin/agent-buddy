@@ -195,6 +195,35 @@ mod tests {
         assert!(inside(&HEAD, 164.0, 100.0, STICKY_MARGIN));
     }
 
+    /// Replayed from a real session, with the region the page reported.
+    ///
+    /// Invented points cluster in the easy middle of the shape. These are where
+    /// a hand actually took the mouse, and four of them land within a few
+    /// percent of the boundary - which is the only place the sticky edge does
+    /// any work, and the only place this can go wrong.
+    #[test]
+    fn the_transitions_seen_in_use_are_the_ones_the_geometry_gives() {
+        let region = Region { cx: 130.0, cy: 120.0, rx: 88.4, ry: 78.0 };
+        let observed = [
+            (144.0, 189.0, true), (41.0, 82.0, false),
+            (54.0, 122.0, true), (57.0, 51.0, false),
+            (46.0, 103.0, true), (38.0, 96.0, false),
+            (129.0, 46.0, true), (176.0, 201.0, false),
+            (128.0, 174.0, true), (33.0, 182.0, false),
+            (82.0, 184.0, true), (208.0, 203.0, false),
+            (210.0, 137.0, true), (133.0, 206.0, false),
+        ];
+
+        let mut over = false;
+        for (x, y, logged) in observed {
+            // Leaving is stickier than arriving, as the watcher does it.
+            let margin = if over { STICKY_MARGIN } else { 0.0 };
+            let computed = inside(&region, x, y, margin);
+            assert_eq!(computed, logged, "at {x},{y}");
+            over = computed;
+        }
+    }
+
     #[test]
     fn a_region_nobody_has_reported_yet_claims_nothing() {
         // Before the page reports, every click must pass through - not none.

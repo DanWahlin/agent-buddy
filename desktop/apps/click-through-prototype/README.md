@@ -55,20 +55,35 @@ cursor well off it        -> click-through=True
 back over the character   -> click-through=False
 ```
 
+**It looks right.** Run by hand against a VS Code window behind it: the editor
+shows through everywhere except the character, with no window chrome and no
+opaque card. The `LAYERED` bit going on and off with click-through was the
+thing most likely to cause a flicker at the character's edge, and it does not.
+
 `cargo test` covers the geometry, including the case that matters most: a click
-in the empty corner of a square window has to reach what is behind it.
+in the empty corner of a square window has to reach what is behind it. One of
+those tests replays the transitions from that session rather than invented
+points - four of them land within a few percent of the boundary, which is the
+only place the sticky edge does any work.
+
+## What that session also showed
+
+Stopping it with Ctrl+C leaves WebView2 complaining that it could not
+unregister its window class, and the process exits with `STATUS_CONTROL_C_EXIT`.
+Harmless here, but it means there is no graceful shutdown path, and the real
+app needs one for a reason beyond tidiness: the bridge leader holds the
+endpoint, and the other windows only take over promptly because it closes its
+connections on the way out. A pet killed rather than asked to quit would leave
+them waiting.
 
 ## What was not
 
-- **Whether it looks right.** Nobody has seen it. Transparency, and whether the
-  character reads as sitting on the desktop, need eyes.
-- **The `LAYERED` transition.** That bit goes on and off with click-through,
-  and the base state does not have it - so transparency is coming from DWM
-  composition rather than layering, and dropping it should be harmless. Should.
-  Whether crossing the character's edge causes a visible flicker is the first
-  thing to look for.
 - **`skipTaskbar`.** tao does this through the shell rather than
-  `WS_EX_TOOLWINDOW`, so the style bits do not show it either way.
+  `WS_EX_TOOLWINDOW`, so the style bits do not show it either way, and nobody
+  has checked the taskbar.
+- **Dragging it about, and where it lands.** The window is centred and stays
+  put. Moving a frameless window, remembering where it was per display, and
+  surviving a monitor going away are all untouched.
 - **macOS and Linux.** Not touched. `macOSPrivateApi` is required for a
   transparent window there - the build refuses without the matching Cargo
   feature - and it rules out the Mac App Store. Linux transparency depends on
