@@ -90,3 +90,48 @@ test('nothing at all is idle', () => {
   assert.equal(combineStates([]), 'idle');
   assert.equal(combineStates(['idle', 'idle']), 'idle');
 });
+
+/**
+ * Recorded from a real Copilot CLI 1.0.88 session, not from its documentation.
+ *
+ * The whole Copilot path was written against an assumption - that it fires the
+ * coordinator's own event names and says where it is - and nothing had ever
+ * checked. These are the payloads it actually sent.
+ */
+test('a Copilot CLI payload routes by the cwd it really sends', () => {
+  const work = String.raw`C:\Users\DarrenRobinson\AppData\Local\Temp\ac-copilot-work`;
+  const preToolUse = {
+    sessionId: '77290de7-c9cc-4b12-af47-15ac0e3c2e22',
+    timestamp: 1790223846201,
+    cwd: work,
+    toolName: 'powershell',
+    toolArgs: { command: 'echo hello-from-copilot', description: 'Echo test string' },
+  };
+
+  assert.equal(projectOf(preToolUse), work);
+  assert.equal(
+    routeIsVisibleTo(
+      routeOf(preToolUse, undefined, 'win32'),
+      [String.raw`C:\Users\DarrenRobinson\AppData\Local\Temp`],
+      'win32'),
+    true);
+  // And a window on something else is left alone.
+  assert.equal(
+    routeIsVisibleTo(
+      routeOf(preToolUse, undefined, 'win32'), [String.raw`C:\elsewhere`], 'win32'),
+    false);
+});
+
+test('Copilot CLI names its fields in camelCase, which the payload type allows', () => {
+  // agentStop, as recorded: sessionId and cwd, not session_id. The coordinator
+  // reads the camelCase spelling first, so nothing had to change for this.
+  const agentStop = {
+    sessionId: '77290de7-c9cc-4b12-af47-15ac0e3c2e22',
+    timestamp: 1790223849523,
+    cwd: String.raw`C:\work`,
+    transcriptPath: String.raw`C:\Users\x\.copilot\session-state\77290de7\events.jsonl`,
+    stopReason: 'end_turn',
+    stop_hook_active: false,
+  };
+  assert.equal(projectOf(agentStop), String.raw`C:\work`);
+});

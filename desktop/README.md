@@ -164,6 +164,23 @@ gives up in about a second when no window is listening. A companion must never
 be able to stall or break a session. The hooks run `node` from PATH, so the
 installer checks for it and says so if it is missing.
 
+**Copilot CLI's `preToolUse` is fail-closed**, which raises the stakes of that
+last sentence. Claude Code's hooks are registered `async` and cannot affect a
+session; Copilot has no such option, and a `preToolUse` hook that fails does
+not merely go unheard - the tool call is *denied*. Confirmed by watching it
+happen: a hook pointed at a path Node could not resolve produced
+`Error in preToolUse hook (fail-closed)` in `~/.copilot/logs`, and the agent was
+told its command had been blocked.
+
+The shim is built for this: it always exits 0, whatever happens, including when
+nothing is listening - which a real Copilot session confirms it survives. The
+danger is not the shim failing but the shim being *absent*, because the hooks
+name it by path. An installer that writes a versioned path into
+`~/.copilot/hooks` leaves one there that stops resolving the moment the
+extension updates, and from then on every Copilot tool call is refused. That is
+why the shim needs a stable home of its own rather than one inside whichever
+host installed it.
+
 ### Across windows
 
 The first window to bind the endpoint leads and runs the coordinators; the

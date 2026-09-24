@@ -47,7 +47,8 @@ function send(event: string, payload: Record<string, unknown>): Promise<void> {
       // The project root, so the right window reacts. It is only in the agent's
       // environment, which this inherits by being its child - and it is steadier
       // than the payload's `cwd`, which follows the agent into a worktree.
-      const projectDir = process.env.CLAUDE_PROJECT_DIR;
+      // Both agents set one; neither puts it in the payload.
+      const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.env.COPILOT_PROJECT_DIR;
       socket.end(JSON.stringify({ type: 'hook', event, payload, projectDir }) + '\n');
     });
     // Nothing is waiting on the reply, so do not linger for one.
