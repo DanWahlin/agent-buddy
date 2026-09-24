@@ -14,6 +14,7 @@
 //! picked up and moved, and can be quit.
 
 mod bridge;
+mod face;
 mod packs;
 mod placement;
 mod pointer;
@@ -36,6 +37,7 @@ struct App {
     drawn: AtomicBool,
     bridge: Mutex<Option<Bridge>>,
     packs: Mutex<Vec<Pack>>,
+    tray: Mutex<Option<tauri::tray::TrayIcon>>,
     showing: Mutex<Option<String>>,
 }
 
@@ -100,6 +102,15 @@ fn show_current_pack(app: &Arc<App>, window: &WebviewWindow) {
 
     println!("[packs] showing {}", pack.id);
 
+    // The tray follows the character. An icon that stays Marvin while Copilot
+    // is on screen says the wrong thing, which is worse than saying nothing.
+    if let Some((rgba, width, height)) = face::cut(std::path::Path::new(&pack.folder), 32) {
+        if let Some(tray) = app.tray.lock().unwrap().as_ref() {
+            let _ = tray.set_icon(Some(tauri::image::Image::new_owned(rgba, width, height)));
+            let _ = tray.set_tooltip(Some(format!("Agent Companion - {}", pack.name)));
+        }
+    }
+
     // Every pack is served the same way, wherever it lives, so the page has one
     // kind of URL to deal with and the renderer resolves image names against it
     // exactly as it would over http.
@@ -115,6 +126,7 @@ fn main() {
         drawn: AtomicBool::new(false),
         bridge: Mutex::new(None),
         packs: Mutex::new(Vec::new()),
+        tray: Mutex::new(None),
         showing: Mutex::new(None),
     });
 
@@ -241,7 +253,7 @@ fn build_tray(
 
     let tray_window = window.clone();
     let tray_app = app.clone();
-    TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .icon(handle.default_window_icon().expect("a window icon").clone())
         .tooltip("Agent Companion")
         .menu(&menu)
@@ -271,5 +283,6 @@ fn build_tray(
             }
         })
         .build(handle)?;
+    *app.tray.lock().unwrap() = Some(tray);
     Ok(())
 }
