@@ -13,7 +13,7 @@
 
 import type { Pack } from '@agent-companion/pack-format';
 import {
-  CharacterEffects, CharacterPlayer, PackRenderer, loadImages, type PackImage,
+  CharacterEffects, CharacterPlayer, PackRenderer, loadImages, loadPack, type PackImage,
 } from '@agent-companion/renderer';
 import { pointerDirection } from './gaze.js';
 import type { HostMessage, ViewMessage, ViewSettings } from './protocol.js';
@@ -31,13 +31,27 @@ export interface ViewElements {
   message: HTMLElement;
 }
 
+export interface ViewOptions {
+  /**
+   * Fetch the pack from here rather than waiting to be sent one.
+   *
+   * A webview cannot reach the disk, so VS Code reads the manifest itself and
+   * pushes it with every image rewritten to a URI the page is allowed to load.
+   * A window serving its own files has no such problem and can just fetch, so
+   * it is not made to go the long way round.
+   */
+  packUrl?: string;
+}
+
 /**
  * A move event per frame would queue turns faster than the engine walks them,
  * and the queue would still be running long after the mouse stopped.
  */
 const STEER_INTERVAL_MS = 100;
 
-export function startView(transport: ViewTransport, elements: ViewElements): void {
+export function startView(
+  transport: ViewTransport, elements: ViewElements, options: ViewOptions = {},
+): void {
   const { canvas, message: messageElement } = elements;
   const context = canvas.getContext('2d');
 
@@ -115,6 +129,23 @@ export function startView(transport: ViewTransport, elements: ViewElements): voi
     }, canvas.width, canvas.height);
   }
 
+  /** Adopt a pack whose images are already in hand, whoever fetched them. */
+  function adopt(pack: Pack, images: Map<string, PackImage>): void {
+    loaded = { pack, images };
+    renderer = new PackRenderer({ pack, images, maxScale: settings.maxScale });
+    player = new CharacterPlayer({ pack, autoSleep: settings.autoSleep });
+    effects = new CharacterEffects(pack.effects ?? {});
+
+    resize();
+    showCanvas();
+
+    if (!running) {
+      running = true;
+      last = performance.now();
+      requestAnimationFrame(loop);
+    }
+  }
+
   async function show(shown: Extract<HostMessage, { type: 'show' }>): Promise<void> {
     const mine = ++generation;
     settings = shown.settings;
@@ -125,21 +156,18 @@ export function startView(transport: ViewTransport, elements: ViewElements): voi
       if (!url) throw new Error('The host did not provide a URI for ' + name);
       return url;
     });
+    // A pack switched while this one was loading wins; drop what arrived late.
     if (mine !== generation) return;
+    adopt(shown.pack, images);
+  }
 
-    loaded = { pack: shown.pack, images };
-    renderer = new PackRenderer({ pack: shown.pack, images, maxScale: settings.maxScale });
-    player = new CharacterPlayer({ pack: shown.pack, autoSleep: settings.autoSleep });
-    effects = new CharacterEffects(shown.pack.effects ?? {});
-
-    resize();
-    showCanvas();
-
-    if (!running) {
-      running = true;
-      last = performance.now();
-      requestAnimationFrame(loop);
-    }
+  /** Fetch a pack ourselves, for a host that can simply serve its own files. */
+  async function fetchPack(url: string): Promise<void> {
+    const mine = ++generation;
+    say('Loading…');
+    const { pack, images } = await loadPack(url);
+    if (mine !== generation) return;
+    adopt(pack, images);
   }
 
   transport.receive(incoming => {
@@ -203,7 +231,9 @@ export function startView(transport: ViewTransport, elements: ViewElements): voi
 
   if (!context) {
     fail(new Error('This view could not get a 2D canvas.'));
-  } else {
-    transport.post({ type: 'ready' });
+    return;
   }
+
+  transport.post({ type: 'ready' });
+  if (options.packUrl) void fetchPack(options.packUrl).catch(fail);
 }

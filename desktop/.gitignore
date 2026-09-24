@@ -6,6 +6,8 @@ dist-test/
 # Built artefacts
 *.vsix
 extension/packs/
+apps/desktop/ui/webview.js
+apps/desktop/ui/packs/
 
 # Rust build output. Cargo.lock is kept, as it should be for a binary.
 target/
