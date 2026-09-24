@@ -12,7 +12,7 @@ tauri-build = { version = "2", features = [] }
 # macos-private-api is what `macOSPrivateApi` in tauri.conf.json requires, and
 # the build refuses without it. Transparent windows do not work on macOS at all
 # otherwise - and it is what rules out the Mac App Store.
-tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api", "protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

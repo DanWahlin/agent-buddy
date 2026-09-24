@@ -31,27 +31,13 @@ export interface ViewElements {
   message: HTMLElement;
 }
 
-export interface ViewOptions {
-  /**
-   * Fetch the pack from here rather than waiting to be sent one.
-   *
-   * A webview cannot reach the disk, so VS Code reads the manifest itself and
-   * pushes it with every image rewritten to a URI the page is allowed to load.
-   * A window serving its own files has no such problem and can just fetch, so
-   * it is not made to go the long way round.
-   */
-  packUrl?: string;
-}
-
 /**
  * A move event per frame would queue turns faster than the engine walks them,
  * and the queue would still be running long after the mouse stopped.
  */
 const STEER_INTERVAL_MS = 100;
 
-export function startView(
-  transport: ViewTransport, elements: ViewElements, options: ViewOptions = {},
-): void {
+export function startView(transport: ViewTransport, elements: ViewElements): void {
   const { canvas, message: messageElement } = elements;
   const context = canvas.getContext('2d');
 
@@ -175,6 +161,10 @@ export function startView(
       case 'show':
         void show(incoming).catch(fail);
         break;
+      case 'load':
+        if (incoming.settings) settings = incoming.settings;
+        void fetchPack(incoming.url).catch(fail);
+        break;
       case 'state':
         player?.setState(incoming.state);
         break;
@@ -234,6 +224,6 @@ export function startView(
     return;
   }
 
+  // The host answers this with a pack, one way or the other.
   transport.post({ type: 'ready' });
-  if (options.packUrl) void fetchPack(options.packUrl).catch(fail);
 }

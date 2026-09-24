@@ -14,7 +14,11 @@
 import { startView, type HostMessage, type ViewMessage } from '@agent-companion/companion-core';
 
 interface TauriApi {
-  core: { invoke(command: string, args?: Record<string, unknown>): Promise<unknown> };
+  core: {
+    invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
+    /** A file path the shell has allowed, as a URL this page may load. */
+    convertFileSrc(path: string): string;
+  };
   event: { listen(name: string, handler: (event: { payload: unknown }) => void): Promise<unknown> };
 }
 declare global {
@@ -25,14 +29,30 @@ const tauri = window.__TAURI__;
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
 
+/** Held so the pack listener below can hand the view a message of its own. */
+let deliver: ((incoming: HostMessage) => void) | null = null;
+
 startView({
   post: (outgoing: ViewMessage) => void tauri.core.invoke('from_view', { message: outgoing }),
-  receive: handler => void tauri.event.listen('to-view',
-    event => handler(event.payload as HostMessage)),
-}, { canvas, message }, {
-  // Bundled beside the page, so there is nothing to resolve and no protocol to
-  // punch a hole in. Packs from elsewhere will need the asset protocol.
-  packUrl: 'packs/marvin/pack.json',
+  receive: handler => {
+    deliver = handler;
+    void tauri.event.listen('to-view', event => handler(event.payload as HostMessage));
+  },
+}, { canvas, message });
+
+/**
+ * Which character to show, from the tray.
+ *
+ * The shell names a pack two ways, because they are genuinely different. The
+ * one that ships with the app is baked into the binary and served beside this
+ * page, so it is a relative URL. Any other lives on disk outside the app, and
+ * has to come through the asset protocol - which the shell opens for that
+ * folder alone just before saying so.
+ */
+void tauri.event.listen('to-view-pack', event => {
+  const named = event.payload as { relative?: string; path?: string };
+  const url = named.relative ?? (named.path ? tauri.core.convertFileSrc(named.path) : null);
+  if (url) deliver?.({ type: 'load', url });
 });
 
 /**

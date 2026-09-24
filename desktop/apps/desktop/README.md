@@ -57,15 +57,36 @@ only restored if enough of the window would land on a monitor that exists
 *now*. Unplug the screen it was living on and it opens where it can be seen
 instead of somewhere nobody can reach.
 
+## Changing character
+
+Pick one from **Character** in the tray menu. The choice is remembered, and if
+that pack has since gone the shipped one shows rather than an empty window.
+
+Only Marvin ships with the app. The other packs in this repository carry
+artwork belonging to other people - GitHub's, in Copilot's case - so they are
+something to point at rather than something to distribute:
+
+```
+AGENT_COMPANION_PACKS=C:\path\to\vscode-pet-custom\packs cargo run
+```
+
+Semicolon or comma separated, and each entry may be a pack folder or a folder
+of them. A file dialog would be better and is not written yet.
+
+The two kinds of pack are named differently on purpose. The shipped one is
+baked into the binary and served beside the page, so it is a relative URL that
+still works in a packaged build. Anything else lives outside the app and comes
+through Tauri's asset protocol, whose scope is opened for that one folder as it
+is chosen - so the page can read the characters and nothing else.
+
 ## What it does not do yet
 
-- **Only the bundled pack.** Marvin is copied beside the page at build time and
-  fetched as a relative URL. Packs from anywhere else need Tauri's asset
-  protocol opening up, which is a scoped permission rather than a switch.
 - **No settings, and no autostart.** Nothing to configure, and it does not come
   back after a reboot.
 - **No way to simulate a state.** The command exists for the shell to call;
   nothing calls it.
+- **macOS and Linux are unverified.** WebView2 is Chromium, so the renderer
+  behaves as it does in the extension; WebKit is untried.
 - **Windows only, so far.** WebView2 is Chromium, so the renderer behaves as it
   does in the extension. macOS and Linux use WebKit and are unverified;
   `macOSPrivateApi` is already set, since a transparent window there does not

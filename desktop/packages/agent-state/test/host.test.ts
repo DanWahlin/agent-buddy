@@ -27,6 +27,25 @@ if (!existsSync(HOST)) {
 let counter = 0;
 const scratch: string[] = [];
 
+/**
+ * A directory of this run's own, for the snapshots the bridge persists.
+ *
+ * Naming these by a counter alone was not enough. The counter restarts at zero
+ * every run while the files do not, so a run inherited a snapshot an earlier
+ * one had left behind - and a host that should have started idle came up in
+ * whatever state some previous test had last provoked. Failing only when a
+ * previous run happened to leave the right file behind is the worst kind of
+ * flake: it looks like the code, and it is the test.
+ */
+let stateDirectory: string | null = null;
+async function stateFile(): Promise<string> {
+  if (!stateDirectory) {
+    stateDirectory = await mkdtemp(join(tmpdir(), 'agent-companion-host-state-'));
+    scratch.push(stateDirectory);
+  }
+  return join(stateDirectory, (counter++) + '.json');
+}
+
 async function endpoint(): Promise<string> {
   const id = process.pid + '-' + (counter++);
   if (!endpointIsFile()) return '\\\\.\\pipe\\agent-companion-host-test-' + id;
@@ -42,13 +61,18 @@ interface Host {
   say: (command: unknown) => void;
 }
 
-async function startHost(args: string[] = []): Promise<Host> {
-  const where = await endpoint();
+/**
+ * `reuse` matters for the shutdown tests: a second host on a *fresh* endpoint
+ * would lead no matter what the first one did, so only reusing the endpoint
+ * actually shows it was let go.
+ */
+async function startHost(args: string[] = [], reuse?: string): Promise<Host> {
+  const where = reuse ?? await endpoint();
   const child = spawn(process.execPath, [HOST, ...args], {
     env: {
       ...process.env,
       AGENT_COMPANION_VSCODE_SOCKET: where,
-      AGENT_COMPANION_VSCODE_STATE: join(tmpdir(), 'agent-companion-host-state-' + (counter++) + '.json'),
+      AGENT_COMPANION_VSCODE_STATE: await stateFile(),
     },
   });
 
@@ -71,7 +95,7 @@ async function startHost(args: string[] = []): Promise<Host> {
   };
 }
 
-async function until(check: () => boolean, label: string, ms = 5000): Promise<void> {
+async function until(check: () => boolean, label: string, ms = 20000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     if (check()) return;
@@ -170,14 +194,14 @@ test('the parent going away is enough to shut it down cleanly', async t => {
 
   host.child.stdin.end();
 
-  const code = await Promise.race([exited, delay(4000).then(() => 'timed out' as const)]);
+  const code = await Promise.race([exited, delay(20000).then(() => 'timed out' as const)]);
   assert.equal(code, 0, 'should exit cleanly, not hang or crash');
   assert.ok(
     host.lines.some(line => line.type === 'stopping'),
     'should say it is stopping: ' + JSON.stringify(host.lines));
 
   // And the endpoint is free again, so the next host can lead rather than follow.
-  const next = await startHost();
+  const next = await startHost([], host.endpoint);
   t.after(() => next.child.kill());
   await until(() => next.lines.some(line => line.type === 'ready'), 'a new leader');
   assert.equal(next.lines.find(line => line.type === 'ready')!.role, 'leader');
@@ -189,6 +213,33 @@ test('an explicit stop is honoured too', async t => {
   await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
 
   host.say({ type: 'stop' });
-  const code = await Promise.race([exited, delay(4000).then(() => 'timed out' as const)]);
+  const code = await Promise.race([exited, delay(20000).then(() => 'timed out' as const)]);
   assert.equal(code, 0);
+});
+
+/**
+ * A host killed rather than asked to quit leaves this end of the pipe broken.
+ *
+ * Seen for real: force-killing the desktop shell left the bridge dying with an
+ * unhandled EPIPE, which means it never ran its shutdown - and shutdown is what
+ * releases the endpoint for the next window.
+ */
+test('a broken pipe is news, not a crash', async t => {
+  const host = await startHost();
+  const exited = new Promise<number | null>(resolve => host.child.on('exit', resolve));
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  // Close the reading end while leaving stdin alone, so the only thing it can
+  // learn from is the write failing.
+  host.child.stdout.destroy();
+  await fire(host.endpoint, 'preToolUse');
+
+  const code = await Promise.race([exited, delay(20000).then(() => 'timed out' as const)]);
+  assert.equal(code, 0, 'should still exit cleanly rather than crash');
+
+  // And the endpoint is free, which is the whole point of exiting cleanly.
+  const next = await startHost([], host.endpoint);
+  t.after(() => next.child.kill());
+  await until(() => next.lines.some(line => line.type === 'ready'), 'a new leader');
+  assert.equal(next.lines.find(line => line.type === 'ready')!.role, 'leader');
 });

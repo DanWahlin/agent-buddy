@@ -30,7 +30,11 @@ type Command =
   | { type: 'stop' };
 
 function emit(message: Record<string, unknown>): void {
-  process.stdout.write(JSON.stringify(message) + '\n');
+  try {
+    process.stdout.write(JSON.stringify(message) + '\n');
+  } catch {
+    // The host has gone and taken the pipe with it. Nothing to report it to.
+  }
 }
 
 function isCharacterState(value: unknown): value is CharacterState {
@@ -99,6 +103,12 @@ async function main(): Promise<void> {
   // learns its host has quit - including when the host was killed and never
   // got to ask nicely.
   lines.on('close', () => void stop('the host went away'));
+
+  // A host that was killed rather than quit leaves this end of the pipe broken,
+  // and the next line written to it throws. That is the same news as stdin
+  // closing, not a crash: without this the process dies with an unhandled EPIPE
+  // and never runs its shutdown, which is what releases the endpoint.
+  process.stdout.on('error', () => void stop('the pipe to the host broke'));
   process.on('SIGTERM', () => void stop('SIGTERM'));
   process.on('SIGINT', () => void stop('SIGINT'));
 }
