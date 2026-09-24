@@ -41,16 +41,31 @@ stops. So exiting asks the child to stop and waits for it, and the child also
 treats its stdin closing as a reason to shut down - which covers this app being
 killed rather than asked.
 
+## Moving it, and getting rid of it
+
+**Drag the character.** There is no title bar - a pet with one would be a
+dialog - so the character is the handle. A click is still a poke: the page
+tells the two apart by whether the pointer travelled a few pixels first, which
+only it can see.
+
+**Quit from the tray.** With no title bar and no taskbar button, the tray is
+the only way out, and the menu also has *Bring Back to Centre* for when it has
+ended up somewhere awkward.
+
+Where it was put is remembered, and checked on the way back up: a position is
+only restored if enough of the window would land on a monitor that exists
+*now*. Unplug the screen it was living on and it opens where it can be seen
+instead of somewhere nobody can reach.
+
 ## What it does not do yet
 
 - **Only the bundled pack.** Marvin is copied beside the page at build time and
   fetched as a relative URL. Packs from anywhere else need Tauri's asset
   protocol opening up, which is a scoped permission rather than a switch.
-- **No tray, no settings, no autostart.** There is nothing to quit it with
-  except closing it, and nothing to configure.
-- **It does not move.** The window is where Tauri put it. Dragging a frameless
-  window, remembering the position per display, and surviving a monitor going
-  away are all untouched.
+- **No settings, and no autostart.** Nothing to configure, and it does not come
+  back after a reboot.
+- **No way to simulate a state.** The command exists for the shell to call;
+  nothing calls it.
 - **Windows only, so far.** WebView2 is Chromium, so the renderer behaves as it
   does in the extension. macOS and Linux use WebKit and are unverified;
   `macOSPrivateApi` is already set, since a transparent window there does not

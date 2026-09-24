@@ -15,6 +15,9 @@ target/
 # Tauri regenerates these from tauri.conf.json on every build.
 **/src-tauri/gen/schemas/
 
+# Screen recordings of the thing running, which are for looking at, not keeping.
+*.mp4
+
 # Inspection output, written by the packer and renderer scripts
 .inspect/
 *-preview.png

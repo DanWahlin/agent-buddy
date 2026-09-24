@@ -60,3 +60,34 @@ window.addEventListener('resize', reportRegion);
 // The canvas is sized once the pack is known, which is after startView returns.
 const watcher = new ResizeObserver(reportRegion);
 watcher.observe(canvas);
+
+/**
+ * Dragging the character moves the window; clicking it is still a poke.
+ *
+ * There is no title bar to drag - a pet with one would be a dialog - so the
+ * character is the handle. Only the page can tell the two apart, because only
+ * it sees whether the pointer moved before it came up. Once dragging starts the
+ * window takes over the pointer and no further events arrive here, which is
+ * exactly why the poke has to be decided on the way in rather than on release.
+ */
+const DRAG_THRESHOLD_PX = 4;
+let pressedAt: { x: number; y: number } | null = null;
+
+canvas.addEventListener('pointerdown', event => {
+  pressedAt = { x: event.clientX, y: event.clientY };
+});
+
+canvas.addEventListener('pointermove', event => {
+  if (!pressedAt) return;
+  const moved = Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y);
+  if (moved < DRAG_THRESHOLD_PX) return;
+  // Past the threshold this is a drag, not a poke. startView's own pointerdown
+  // has already fired the poke; a few pixels of travel is a cheap price for
+  // not having to delay every reaction until the button comes up.
+  pressedAt = null;
+  void tauri.core.invoke('start_drag');
+});
+
+for (const done of ['pointerup', 'pointercancel', 'pointerleave']) {
+  canvas.addEventListener(done, () => { pressedAt = null; });
+}
