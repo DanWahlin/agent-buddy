@@ -8,6 +8,8 @@ dist-test/
 extension/packs/
 apps/desktop/ui/webview.js
 apps/desktop/ui/packs/
+# Cut from the character art by the desktop build.
+apps/desktop/src-tauri/icons/
 
 # Rust build output. Cargo.lock is kept, as it should be for a binary.
 target/

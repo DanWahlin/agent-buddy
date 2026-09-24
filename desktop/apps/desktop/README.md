@@ -64,20 +64,21 @@ that pack has since gone the shipped one shows rather than an empty window.
 
 Only Marvin ships with the app. The other packs in this repository carry
 artwork belonging to other people - GitHub's, in Copilot's case - so they are
-something to point at rather than something to distribute:
+something to point at rather than something to distribute. **Open Characters
+Folder** in the tray opens a folder of your own that is always looked in; drop
+a pack directory in there and it appears in the menu next start. An environment
+variable is not somewhere anybody would think to look.
 
-```
-AGENT_COMPANION_PACKS=C:\path\to\vscode-pet-custom\packs cargo run
-```
+`AGENT_COMPANION_PACKS` still works for extra folders, semicolon or comma
+separated, each either a pack folder or a folder of them.
 
-Semicolon or comma separated, and each entry may be a pack folder or a folder
-of them. A file dialog would be better and is not written yet.
-
-The two kinds of pack are named differently on purpose. The shipped one is
-baked into the binary and served beside the page, so it is a relative URL that
-still works in a packaged build. Anything else lives outside the app and comes
-through Tauri's asset protocol, whose scope is opened for that one folder as it
-is chosen - so the page can read the characters and nothing else.
+Packs are served over a protocol of the app's own rather than read off disk by
+the page. Only the packs found at startup are reachable, and only within their
+own folders - a narrower door than a filesystem scope, and the reason the
+renderer can resolve image names against a pack URL exactly as it would over
+http. Tauri's asset protocol cannot do that: it URL-encodes the whole file
+path, leaving no separator, so every pack outside the app tried to load its art
+from the root.
 
 ## What it does not do yet
 

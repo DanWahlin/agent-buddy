@@ -16,8 +16,6 @@ import { startView, type HostMessage, type ViewMessage } from '@agent-companion/
 interface TauriApi {
   core: {
     invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
-    /** A file path the shell has allowed, as a URL this page may load. */
-    convertFileSrc(path: string): string;
   };
   event: { listen(name: string, handler: (event: { payload: unknown }) => void): Promise<unknown> };
 }
@@ -29,31 +27,53 @@ const tauri = window.__TAURI__;
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
 
-/** Held so the pack listener below can hand the view a message of its own. */
+/**
+ * Anything that arrived before the view was ready to take it.
+ *
+ * The shell answers `ready` the instant it sees it, so the reply can land
+ * before `startView` has handed over its handler. Holding those few messages is
+ * cheaper than making the shell wait, or having it retry.
+ */
+const waiting: HostMessage[] = [];
 let deliver: ((incoming: HostMessage) => void) | null = null;
 
-startView({
-  post: (outgoing: ViewMessage) => void tauri.core.invoke('from_view', { message: outgoing }),
-  receive: handler => {
-    deliver = handler;
-    void tauri.event.listen('to-view', event => handler(event.payload as HostMessage));
-  },
-}, { canvas, message });
+function hand(incoming: HostMessage): void {
+  if (deliver) deliver(incoming);
+  else waiting.push(incoming);
+}
 
 /**
- * Which character to show, from the tray.
+ * Which character to show, and what the agent is doing.
  *
- * The shell names a pack two ways, because they are genuinely different. The
- * one that ships with the app is baked into the binary and served beside this
- * page, so it is a relative URL. Any other lives on disk outside the app, and
- * has to come through the asset protocol - which the shell opens for that
- * folder alone just before saying so.
+ * Both listeners go on before the page says a word, because `listen` is
+ * asynchronous and the first answer comes back immediately. Registering them
+ * after `startView` meant the pack arrived while nobody was listening, and the
+ * window sat empty.
+ *
+ * The pack is one ordinary URL, wherever it actually lives, because the shell
+ * serves every pack itself. The renderer resolves image names against it just
+ * as it would over http, which is the whole reason for not handing over a file
+ * path instead.
  */
-void tauri.event.listen('to-view-pack', event => {
-  const named = event.payload as { relative?: string; path?: string };
-  const url = named.relative ?? (named.path ? tauri.core.convertFileSrc(named.path) : null);
-  if (url) deliver?.({ type: 'load', url });
-});
+async function main(): Promise<void> {
+  await Promise.all([
+    tauri.event.listen('to-view', event => hand(event.payload as HostMessage)),
+    tauri.event.listen('to-view-pack', event => {
+      const { url } = event.payload as { url?: string };
+      if (url) hand({ type: 'load', url });
+    }),
+  ]);
+
+  startView({
+    post: (outgoing: ViewMessage) => void tauri.core.invoke('from_view', { message: outgoing }),
+    receive: handler => {
+      deliver = handler;
+      for (const held of waiting.splice(0)) handler(held);
+    },
+  }, { canvas, message });
+}
+
+void main();
 
 /**
  * Tell the shell where the character is, in CSS pixels within the window.

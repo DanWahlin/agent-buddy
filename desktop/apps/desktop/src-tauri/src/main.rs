@@ -18,6 +18,7 @@ mod packs;
 mod placement;
 mod pointer;
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -31,14 +32,24 @@ use pointer::{Pointer, Region};
 
 struct App {
     pointer: Arc<Pointer>,
+    /// Whether the page has ever reported drawing anything.
+    drawn: AtomicBool,
     bridge: Mutex<Option<Bridge>>,
     packs: Mutex<Vec<Pack>>,
     showing: Mutex<Option<String>>,
 }
 
 /// The page saying where it drew the character.
+///
+/// The first of these is the only proof from out here that anything was drawn
+/// at all: the canvas is not sized until a pack has loaded, so a window that
+/// stays silent has failed to load one - which is how a lost `to-view-pack`
+/// showed up as an empty window and nothing else.
 #[tauri::command]
 fn set_region(app: tauri::State<'_, Arc<App>>, region: Region) {
+    if !app.drawn.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        println!("[view] drawn at {:.0}x{:.0}", region.rx * 2.0, region.ry * 2.0);
+    }
     app.pointer.set_region(region);
 }
 
@@ -89,35 +100,19 @@ fn show_current_pack(app: &Arc<App>, window: &WebviewWindow) {
 
     println!("[packs] showing {}", pack.id);
 
-    // The pack that ships with the app is baked into the binary and served
-    // beside the page, so it is named by a relative URL - which keeps working
-    // in a packaged build, where the folder it was copied from is not there.
-    if pack.origin == "bundled" {
-        let _ = window.emit(
-            "to-view-pack",
-            serde_json::json!({ "relative": format!("packs/{}/pack.json", pack.id) }),
-        );
-        return;
-    }
-
-    // Anything else is off-origin and comes through the asset protocol. The
-    // scope is opened per pack folder rather than wholesale, so the page can
-    // read the characters and nothing else.
-    let scope = window.app_handle().asset_protocol_scope();
-    if let Err(error) = scope.allow_directory(&pack.folder, true) {
-        eprintln!("[packs] could not allow {}: {error}", pack.folder);
-        return;
-    }
-    let manifest = std::path::Path::new(&pack.folder).join("pack.json");
+    // Every pack is served the same way, wherever it lives, so the page has one
+    // kind of URL to deal with and the renderer resolves image names against it
+    // exactly as it would over http.
     let _ = window.emit(
         "to-view-pack",
-        serde_json::json!({ "path": manifest.to_string_lossy() }),
+        serde_json::json!({ "url": packs::manifest_url(&pack.id) }),
     );
 }
 
 fn main() {
     let app = Arc::new(App {
         pointer: Arc::new(Pointer::new()),
+        drawn: AtomicBool::new(false),
         bridge: Mutex::new(None),
         packs: Mutex::new(Vec::new()),
         showing: Mutex::new(None),
@@ -125,9 +120,43 @@ fn main() {
 
     let setup = app.clone();
     let exiting = app.clone();
+    let serving = app.clone();
     tauri::Builder::default()
         .manage(app.clone())
         .invoke_handler(tauri::generate_handler![set_region, from_view, simulate, start_drag])
+        // Packs are served from here rather than read by the page. Only the
+        // packs found at startup are reachable, and only within their own
+        // folders, so this is a narrower door than a filesystem scope.
+        .register_uri_scheme_protocol(packs::SCHEME, move |_ctx, request| {
+            let found = {
+                let known = serving.packs.lock().unwrap();
+                packs::resolve(&known, request.uri().path())
+            };
+            let Some(file) = found else {
+                return tauri::http::Response::builder()
+                    .status(404)
+                    .body(Vec::new())
+                    .expect("a 404 is always buildable");
+            };
+            match std::fs::read(&file) {
+                Ok(bytes) => tauri::http::Response::builder()
+                    .header("content-type", packs::content_type(&file))
+                    // The page and this protocol are different origins, so
+                    // without this every fetch fails CORS before it is read.
+                    // Saying so costs nothing: only the packs found at startup
+                    // are reachable here in the first place.
+                    .header("access-control-allow-origin", "*")
+                    .body(bytes)
+                    .expect("a body is always buildable"),
+                Err(error) => {
+                    eprintln!("[packs] could not read {}: {error}", file.display());
+                    tauri::http::Response::builder()
+                        .status(500)
+                        .body(Vec::new())
+                        .expect("a 500 is always buildable")
+                }
+            }
+        })
         .setup(move |handle| {
             let window: WebviewWindow = handle.get_webview_window("main").expect("the main window");
 
@@ -138,11 +167,12 @@ fn main() {
 
             placement::restore(&window);
 
+            let mine: Vec<std::path::PathBuf> = packs::user_folder(&window).into_iter().collect();
             if let (Some(script), Some(bundled)) = (
                 packs::locate("scripts/discover-packs.mjs"),
                 packs::locate("ui/packs"),
             ) {
-                *setup.packs.lock().unwrap() = packs::discover(&script, &bundled);
+                *setup.packs.lock().unwrap() = packs::discover(&script, &bundled, &mine);
             }
             *setup.showing.lock().unwrap() = packs::remembered(&window);
 
@@ -204,9 +234,10 @@ fn build_tray(
         entries.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
     let characters = Submenu::with_items(handle, "Character", !entries.is_empty(), &references)?;
 
+    let folder = MenuItem::with_id(handle, "folder", "Open Characters Folder…", true, None::<&str>)?;
     let centre = MenuItem::with_id(handle, "centre", "Bring Back to Centre", true, None::<&str>)?;
     let quit = MenuItem::with_id(handle, "quit", "Quit Agent Companion", true, None::<&str>)?;
-    let menu = Menu::with_items(handle, &[&characters, &centre, &quit])?;
+    let menu = Menu::with_items(handle, &[&characters, &folder, &centre, &quit])?;
 
     let tray_window = window.clone();
     let tray_app = app.clone();
@@ -223,6 +254,12 @@ fn build_tray(
                 // that has since gone, or dragged almost off an edge.
                 "centre" => {
                     let _ = tray_window.center();
+                }
+                // Drop a pack folder in here and it is picked up next start.
+                "folder" => {
+                    if let Some(mine) = packs::user_folder(&tray_window) {
+                        packs::reveal(&mine);
+                    }
                 }
                 _ if id.starts_with("pack:") => {
                     let chosen = id.trim_start_matches("pack:").to_string();

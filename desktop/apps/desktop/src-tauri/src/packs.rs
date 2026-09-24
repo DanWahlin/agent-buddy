@@ -49,9 +49,12 @@ pub fn extra_folders() -> Vec<String> {
 
 /// Ask the script what is out there. An empty answer is not fatal - the app is
 /// still worth having with whatever shipped in it.
-pub fn discover(script: &Path, bundled: &Path) -> Vec<Pack> {
+pub fn discover(script: &Path, bundled: &Path, extra: &[PathBuf]) -> Vec<Pack> {
     let mut command = Command::new("node");
     command.arg(script).arg(bundled);
+    for folder in extra {
+        command.arg(folder);
+    }
     for folder in extra_folders() {
         command.arg(folder);
     }
@@ -132,9 +135,89 @@ pub fn remember(window: &tauri::WebviewWindow, id: &str) {
     let _ = std::fs::write(path, id);
 }
 
+/// A folder of the user's own, always looked in.
+///
+/// Only Marvin ships, for licensing reasons, so without somewhere obvious to
+/// put another the Character menu lists exactly one thing and looks broken. An
+/// environment variable is not somewhere obvious. This is.
+pub fn user_folder(window: &tauri::WebviewWindow) -> Option<PathBuf> {
+    use tauri::Manager;
+    let folder = window.app_handle().path().app_data_dir().ok()?.join("packs");
+    // Made on the way past, so the menu item that opens it always has something
+    // to open, and so it is discoverable before anyone has a pack to put in it.
+    let _ = std::fs::create_dir_all(&folder);
+    Some(folder)
+}
+
+/// Show a folder to the person, in whatever their system uses for the job.
+pub fn reveal(folder: &Path) {
+    let opener = if cfg!(target_os = "windows") {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    // explorer returns a non-zero code even when it worked, so the result is
+    // deliberately not checked.
+    let _ = Command::new(opener).arg(folder).spawn();
+}
 fn choice_file(window: &tauri::WebviewWindow) -> Option<PathBuf> {
     use tauri::Manager;
     Some(window.app_handle().path().app_data_dir().ok()?.join("character"))
+}
+/// The URL space packs are served in.
+///
+/// A protocol of our own rather than Tauri's asset one, which URL-encodes the
+/// whole file path - leaving no separator for the renderer to resolve image
+/// names against, so every pack outside the app tried to load its art from the
+/// root. Here a pack is a folder in a URL, relative resolution works the way
+/// the renderer already expects, and nothing needs a scope opening for it.
+pub const SCHEME: &str = "pack";
+
+/// Where a pack's manifest lives, as the page should ask for it.
+pub fn manifest_url(id: &str) -> String {
+    // Windows serves custom schemes over http; everywhere else uses the scheme.
+    if cfg!(windows) {
+        format!("http://{SCHEME}.localhost/{id}/pack.json")
+    } else {
+        format!("{SCHEME}://localhost/{id}/pack.json")
+    }
+}
+
+/// Resolve a request path to a file inside a known pack, or nothing.
+///
+/// Only the packs found at startup can be reached, and only within them: the
+/// pack id must match one exactly, and the rest must stay inside its folder
+/// once resolved, so no amount of dot-dot reaches anything else.
+pub fn resolve(packs: &[Pack], path: &str) -> Option<PathBuf> {
+    let trimmed = path.trim_start_matches('/');
+    let (id, rest) = trimmed.split_once('/')?;
+    // A backslash would be a separator on Windows and a filename elsewhere;
+    // refusing it outright keeps one meaning on every platform.
+    if rest.is_empty() || rest.contains('\\') {
+        return None;
+    }
+
+    let pack = packs.iter().find(|pack| pack.id == id)?;
+    let folder = PathBuf::from(&pack.folder);
+    let wanted = folder.join(rest);
+
+    // Compare what the filesystem makes of both, so a traversal that survived
+    // the textual check does not survive this one.
+    let root = folder.canonicalize().ok()?;
+    let target = wanted.canonicalize().ok()?;
+    target.starts_with(&root).then_some(target)
+}
+
+/// What to call a file, so the page treats it as it should.
+pub fn content_type(path: &Path) -> &'static str {
+    match path.extension().and_then(|it| it.to_str()) {
+        Some("json") => "application/json",
+        Some("webp") => "image/webp",
+        Some("png") => "image/png",
+        _ => "application/octet-stream",
+    }
 }
 #[cfg(test)]
 mod tests {
