@@ -76,6 +76,8 @@ async function startHost(args: string[] = [], reuse?: string): Promise<Host> {
     },
   });
 
+  started.push(child);
+
   const lines: Array<Record<string, unknown>> = [];
   let pending = '';
   child.stdout.setEncoding('utf8');
@@ -122,8 +124,27 @@ function fire(where: string, event: string, payload: Record<string, unknown> = {
   });
 }
 
+/** Every host started, so none is still writing when the files are removed. */
+const started: ChildProcessWithoutNullStreams[] = [];
+
 test.after(async () => {
-  for (const directory of scratch) await rm(directory, { recursive: true, force: true });
+  // `kill` only asks. The host flushes its snapshot on the way out, so tearing
+  // the directory down without waiting races a child still writing into it -
+  // which failed CI with ENOTEMPTY on Linux while passing on Windows, purely on
+  // timing.
+  await Promise.all(started.map(child => child.exitCode !== null || child.signalCode !== null
+    ? Promise.resolve()
+    : new Promise<void>(resolve => {
+      child.once('exit', () => resolve());
+      child.kill();
+      // Never let cleanup be the thing that hangs the suite.
+      setTimeout(resolve, 5000).unref();
+    })));
+
+  // And these are temporary files. Failing to remove one is not a test result.
+  for (const directory of scratch) {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
 });
 
 test('it announces itself, then reports what the agent is doing', async t => {
