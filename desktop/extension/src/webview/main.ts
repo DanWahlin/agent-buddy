@@ -10,8 +10,9 @@ import {
   CharacterEffects, CharacterPlayer, PackRenderer, loadImages, type PackImage,
 } from '@agent-companion/renderer';
 import type { Pack } from '@agent-companion/pack-format';
-import type { HostMessage, ViewSettings } from '../protocol.js';
-import { pointerDirection } from '../gaze.js';
+import {
+  pointerDirection, type HostMessage, type ViewSettings,
+} from '@agent-companion/companion-core';
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
 

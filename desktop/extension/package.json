@@ -175,6 +175,7 @@
   },
   "dependencies": {
     "@agent-companion/agent-state": "0.1.0",
+    "@agent-companion/companion-core": "0.1.0",
     "@agent-companion/pack-format": "0.1.0",
     "@agent-companion/renderer": "0.1.0"
   },

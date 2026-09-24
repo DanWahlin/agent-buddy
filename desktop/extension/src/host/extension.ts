@@ -9,7 +9,7 @@
 import * as vscode from 'vscode';
 import { CHARACTER_STATES, type CharacterState } from '@agent-companion/pack-format';
 import { CompanionViewProvider, VIEW_IDS } from './companion-view.js';
-import { gazeDirection } from '../gaze.js';
+import { gazeDirection } from '@agent-companion/companion-core';
 
 /** What the desktop build adds. The web build passes nothing. */
 export interface AgentSource {
