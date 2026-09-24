@@ -62,6 +62,24 @@ export function statePath(
     ?? joinFor(platform)(dataDirectory(platform, environment), 'state.json');
 }
 
+/**
+ * Where the hook shim lives, once installed.
+ *
+ * Deliberately not inside whichever host installed it. Hooks name the shim by
+ * path, and a path inside a versioned extension directory stops resolving the
+ * moment that extension updates - at which point Copilot CLI, whose
+ * `preToolUse` is fail-closed, refuses every tool call until somebody works out
+ * why. A home of its own outlives any host, and lets two hosts share one.
+ */
+export function shimPath(
+  platform: NodeJS.Platform = process.platform,
+  environment: NodeJS.ProcessEnv = process.env,
+  home?: string,
+): string {
+  return environment.AGENT_COMPANION_VSCODE_SHIM
+    ?? joinFor(platform)(dataDirectory(platform, environment, home ?? homedir()), 'hook.js');
+}
+
 /** True when the endpoint is a filesystem path needing a directory and cleanup. */
 export function endpointIsFile(platform: NodeJS.Platform = process.platform): boolean {
   return platform !== 'win32';

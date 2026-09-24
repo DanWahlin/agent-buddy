@@ -175,11 +175,24 @@ told its command had been blocked.
 The shim is built for this: it always exits 0, whatever happens, including when
 nothing is listening - which a real Copilot session confirms it survives. The
 danger is not the shim failing but the shim being *absent*, because the hooks
-name it by path. An installer that writes a versioned path into
-`~/.copilot/hooks` leaves one there that stops resolving the moment the
-extension updates, and from then on every Copilot tool call is refused. That is
-why the shim needs a stable home of its own rather than one inside whichever
-host installed it.
+name it by path.
+
+So the shim has a home of its own, beside the state file rather than inside
+whichever host installed it - `%LOCALAPPDATA%\AgentCompanion\hook.js` and its
+equivalents. Installing copies it there and points the hooks at that, so an
+extension updating or being uninstalled leaves the hooks working, and two hosts
+share one shim rather than fighting over whose path is in the file.
+
+Three details, each of which is a way this could have gone wrong instead:
+
+- It is **renamed into place, never copied over**, because a rename is atomic
+  and a copy is not. An agent firing a hook mid-install finds the old shim or
+  the new one, never half of one.
+- Installing **recognises an older install wherever it pointed**, so upgrading
+  replaces that entry rather than leaving it beside the new one - a stale entry
+  next to a good one still denies the tool call.
+- Uninstalling **removes the shim only once nothing names it**. Taking it away
+  while the other agent still has hooks is precisely the failure being avoided.
 
 ### Across windows
 

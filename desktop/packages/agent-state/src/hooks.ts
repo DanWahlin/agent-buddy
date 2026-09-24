@@ -134,8 +134,24 @@ function isOurs(entry: unknown, target: { shim: string }): boolean {
   if (!isRecord(entry) || !Array.isArray(entry.hooks)) return false;
   return entry.hooks.some(hook =>
     isRecord(hook)
-    && (Array.isArray(hook.args) ? hook.args : []).some(
-      argument => samePath(String(argument), target.shim)));
+    && (Array.isArray(hook.args) ? hook.args : []).some(argument => {
+      const path = String(argument);
+      return samePath(path, target.shim) || wasOurs(path);
+    }));
+}
+
+/**
+ * A shim of ours at some other path - one an older version installed.
+ *
+ * Matching only the current path would leave those behind, still named by the
+ * hooks and no longer resolving. On Claude Code that is merely untidy; on
+ * Copilot CLI a hook that cannot run denies the tool call, so a stale entry
+ * left beside a good one still breaks the session. The name is specific enough
+ * to be ours and nobody else's.
+ */
+function wasOurs(path: string): boolean {
+  const normalised = path.replace(/\\/g, '/').toLowerCase();
+  return normalised.endsWith('/hook.js') && /agent[-_ ]?companion/.test(normalised);
 }
 
 /** Compare paths the way the two platforms do, so a reinstall matches. */

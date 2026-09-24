@@ -1,5 +1,6 @@
 export { StateBridge, type BridgeOptions, type BridgeRole } from './bridge.js';
-export { endpointPath, statePath, endpointIsFile, dataDirectory } from './paths.js';
+export { installShim, removeShim, type InstalledShim } from './install.js';
+export { endpointPath, statePath, shimPath, endpointIsFile, dataDirectory } from './paths.js';
 export {
   CLAUDE_CODE_EVENTS, COPILOT_CLI_EVENTS,
   claudeCodeHooks, copilotCliHooks, mergeClaudeCodeHooks, removeClaudeCodeHooks,
