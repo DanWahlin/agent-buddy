@@ -7,6 +7,12 @@ dist-test/
 *.vsix
 extension/packs/
 
+# Rust build output. Cargo.lock is kept, as it should be for a binary.
+target/
+
+# Tauri regenerates these from tauri.conf.json on every build.
+**/src-tauri/gen/schemas/
+
 # Inspection output, written by the packer and renderer scripts
 .inspect/
 *-preview.png
