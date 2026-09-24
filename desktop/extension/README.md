@@ -48,6 +48,18 @@ hooks installed he shows what your agent is doing: working while tools run,
 a celebration when a turn finishes, and asking for attention at a permission
 prompt.
 
+**Each window follows its own project.** A window sitting idle on one repository
+should not animate because an agent is busy in another, so every hook is filed
+under the project it came from and a window only hears about the folders it has
+open. An agent working outside every open workspace — one in a terminal
+somewhere — is shown by all of them rather than none, so it is never invisible.
+
+Open several windows and they sort it out between themselves: the first to claim
+the endpoint runs the coordination and the rest follow it, so a hook has one
+place to reach. Close that one and another takes over within a moment.
+**Show Connection Status** says which role a window holds and which projects it
+is reacting to.
+
 ## Bringing your own character
 
 A character pack is a folder of WebP strips plus a `pack.json`: thirteen tracks,
@@ -58,6 +70,16 @@ Build one with the `agent-pack` CLI from a rendered rig, put the folder anywhere
 add its parent to `agentCompanion.packPaths`, and pick it from
 **Select Character Pack**. Nothing in this extension is specific to the character
 that ships with it.
+
+## Outside the editor
+
+The same character runs in a window of its own, for an agent in a terminal where
+there is no editor to put it in — transparent, on top, out of the way until you
+point at it. It reacts to the same hooks and shows the same packs, and the two
+can run at once: whichever starts first coordinates, and both agree.
+
+It is not published yet; it is built from source in the
+[repository](https://github.com/darrenjrobinson/vscode-agent-companion).
 
 ## Credits
 

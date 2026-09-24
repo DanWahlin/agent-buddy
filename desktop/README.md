@@ -1,12 +1,28 @@
-# Agent Companion for VS Code
+# Agent Companion
 
-Put your agent's own avatar in VS Code, animated, reacting to what the agent is
-actually doing.
+Your agent's own avatar, animated, reacting to what the agent is actually
+doing - in VS Code, or in a window of its own beside whatever else you use.
 
-VS Code's built-in chat pet is not extensible - it is a workbench widget, with
+VS Code's built-in chat pet is not extensible: it is a workbench widget, with
 no contribution point and no setting for custom art. This is the thing it
-doesn't have: a publishable extension that renders **any** character from a
-portable pack, driven by real agent lifecycle hooks.
+doesn't have - **any** character from a portable pack, driven by real agent
+lifecycle hooks. And because the hooks come from the agent rather than the
+editor, the same character works for Claude Code or Copilot CLI in a terminal,
+where there is no editor to put it in.
+
+## Two hosts, one companion
+
+Both show the same characters, react to the same hooks, and can run at once.
+
+| | VS Code extension | Desktop app |
+| --- | --- | --- |
+| Where it sits | a view in the sidebar, panel or explorer | a transparent window on the desktop |
+| Built with | TypeScript, packaged as a `.vsix` | Tauri - a Rust shell around the same page |
+| Follows your gaze from | the caret's place in the visible range | the pointer, anywhere on screen |
+| Good for | working in the editor | an agent in a terminal, or a second screen |
+
+What differs between them is the window. Everything that decides what the
+character should be doing is shared, and so is the page that draws it.
 
 ## Status
 
@@ -15,8 +31,36 @@ portable pack, driven by real agent lifecycle hooks.
 | `@agent-companion/pack-format` - the pack contract, schema and validator | working |
 | `@agent-companion/packer` - `agent-pack`, rig to pack | working |
 | `@agent-companion/renderer` - canvas renderer and pose logic, with a browser harness | working |
-| `@agent-companion/agent-state` - hook bridge, multi-window state, hook installer | working |
+| `@agent-companion/agent-state` - hook bridge, per-project routing, hook installer | working |
+| `@agent-companion/companion-core` - pack discovery, the page, the host contract | working |
 | `extension` - the VS Code extension, packaged as a .vsix | working |
+| `apps/desktop` - the standalone window | working on Windows, untried elsewhere |
+
+## How the pieces fit
+
+```
+  the agent                 hooks are `node hook.js <event>`, fire and forget
+      |
+      v
+  hook shim  ─────────────> endpoint      one named pipe or Unix socket per machine
+                               |
+                               v
+                        agent-state       one coordinator per project, leader/follower
+                               |
+             +─────────────────+─────────────────+
+             v                                   v
+     VS Code extension                     desktop app
+     (webview)                             (Tauri window)
+             \                                   /
+              +──────── companion-core ─────────+
+                        the page, pack discovery
+                               |
+                          renderer + pack-format
+```
+
+The shim never waits and never speaks: it writes one line and exits. Whichever
+host claimed the endpoint runs the coordinators and pushes state to the rest, so
+a hook has one place to reach however many windows are open.
 
 ## What a pack is
 
@@ -116,7 +160,31 @@ secondary sidebar if you want it beside Chat. **Agent Companion: Install Agent
 Hooks** connects it to a real agent; **Simulate State** drives the expressions by
 hand, which stays useful for checking a pack.
 
-The `.vsix` is 399 KB, of which the character art is 420 KB uncompressed.
+The `.vsix` is 537 KB, most of it the 556 KB of character art compressing down.
+
+## Running the desktop app
+
+Needs Rust 1.88 or newer, and `node` on PATH - which the hooks require anyway.
+
+```
+npm run build --workspace @agent-companion/desktop
+cd apps/desktop/src-tauri && cargo run
+```
+
+A frameless, transparent, always-on-top window with no taskbar button. Drag the
+character to move it; the tray has **Character**, **Open Characters Folder**,
+**Bring Back to Centre** and **Quit**. Where you put it is remembered, and only
+restored if enough of the window would land on a monitor that still exists.
+
+[apps/desktop/README.md](apps/desktop/README.md) covers the rest, including why
+a pet has to do its own hit-testing: Tauri's click-through is all or nothing, so
+while clicks are passing through the page cannot see the pointer at all. The
+shell reads the cursor instead and hands the window the mouse only over the
+character - which a desktop companion needs anyway, since a webview cannot see
+a pointer that is not over it.
+
+That question was settled in [apps/click-through-prototype](apps/click-through-prototype/README.md)
+before anything was built on the answer.
 
 ## Watching the renderer on its own
 
@@ -251,15 +319,21 @@ character rather than a backdrop.
 
 ## Interaction and idle behaviour
 
-**He follows what you are doing.** The caret's place in the *visible* range
-steers the gaze, so scrolling moves it as much as typing does, and the middle
-third of the view deliberately sends nothing - a head that snaps on every
-keystroke reads as twitchy. Debounced to 150ms. `agentCompanion.followCaret`
-turns it off.
+**He follows what you are doing.** In the editor, the caret's place in the
+*visible* range steers the gaze, so scrolling moves it as much as typing does,
+and the middle third of the view deliberately sends nothing - a head that snaps
+on every keystroke reads as twitchy. Debounced to 150ms.
+`agentCompanion.followCaret` turns it off.
 
-**Hover and poke.** A webview cannot see the pointer outside itself, so the two
-are complementary: the caret drives him while you type, and the pointer takes
-over the moment you mouse onto him. Clicking is a poke - upstream's tap reaction
+On the desktop there is no caret to follow, so the pointer does the whole job.
+The shell is already reading the cursor to decide when to take the mouse, and
+the same reading steers the gaze - one mechanism, because a window pretending
+not to be a window needs it either way. The eight-way split is the same
+function in both hosts, so hovering and typing agree.
+
+**Hover and poke.** A webview cannot see the pointer outside itself, so in the
+editor the two are complementary: the caret drives him while you type, and the
+pointer takes over the moment you mouse onto him. Clicking is a poke - upstream's tap reaction
 is `surprise`, and its sparks fire the instant it is *requested*, before the
 head has even walked back to centre. A poke is a `pulse`, not a state, so it
 wears off rather than leaving him permanently startled; a real agent event
@@ -325,7 +399,17 @@ npm test
 ```
 
 Tests that need a rendered rig skip themselves when there isn't one; point
-`AGENT_COMPANION_RIG` at yours. The interesting ones:
+`AGENT_COMPANION_RIG` at yours. The Rust in `apps/desktop/src-tauri` and
+`apps/click-through-prototype/src-tauri` has its own, run with `cargo test`; CI
+does not build them, so they are not part of `npm test`.
+
+CI runs the lot on Windows, macOS and Linux, and says out loud what it skipped
+on each - a test that quietly stops running somewhere should be visible rather
+than hiding inside a green tick. That matrix has earned its place: it has caught
+a build ordering bug, a cleanup race, and the parts of the bridge Windows cannot
+reach at all.
+
+The ones worth knowing about:
 
 - **frame-0 seam**, asserted as a calibrated bound rather than byte-equality,
   since packs are lossy. The centre pose must differ by well under one motion
@@ -335,6 +419,19 @@ Tests that need a rendered rig skip themselves when there isn't one; point
   pose held closed, Marvin slept with his eyes open.
 - **blink patches stay under a quarter of the frame**, which catches the
   per-track-rect regression.
+- **a window is not disturbed by an agent in another project**, which is a bug
+  report written down: two windows on different repositories both animating
+  whenever either was busy.
+- **the parent going away shuts the bridge down cleanly**, which then starts a
+  second one *on the same endpoint* and requires it to lead. On a fresh endpoint
+  it would lead regardless, and prove nothing.
+- **the transitions seen in use**, in the desktop app's Rust: real cursor
+  positions from a real session rather than invented ones, several of which land
+  within a few percent of the boundary where the sticky edge does its work.
+
+Some of these carry recorded data rather than made-up data - hook payloads
+captured from a Copilot CLI session, cursor tracks from a real drag. Invented
+examples cluster in the easy middle of whatever they are testing.
 
 Look at the art too - blink bugs are invisible at level 0 and only show once a
 mostly-closed frame is rendered. `renderFrame` and `contactSheet` in the packer
