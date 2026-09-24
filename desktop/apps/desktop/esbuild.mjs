@@ -83,9 +83,12 @@ async function trayIcon() {
     return entry;
   });
 
-  await writeFile(join(here, 'src-tauri', 'icons', 'icon.ico'),
-    Buffer.concat([header, ...entries, ...images]));
-  await writeFile(join(here, 'src-tauri', 'icons', 'icon.png'), images[images.length - 1]);
+  // The icons are generated, so they are not in the repository and the folder
+  // will not exist in a fresh clone.
+  const icons = join(here, 'src-tauri', 'icons');
+  await mkdir(icons, { recursive: true });
+  await writeFile(join(icons, 'icon.ico'), Buffer.concat([header, ...entries, ...images]));
+  await writeFile(join(icons, 'icon.png'), images[images.length - 1]);
   console.log('app icon cut from marvin, at ' + sizes.join('/'));
 }
 await trayIcon();
