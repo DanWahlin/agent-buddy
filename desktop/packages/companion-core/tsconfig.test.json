@@ -1,5 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "outDir": "dist-test", "rootDir": "." },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "compilerOptions": {
+    "outDir": "dist-test",
+    "rootDir": ".",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ]
 }
