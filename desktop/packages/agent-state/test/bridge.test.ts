@@ -30,7 +30,9 @@ async function bridge(overrides: Partial<Parameters<typeof makeBridge>[0]> = {})
   return makeBridge({ endpoint: await endpoint(), ...overrides });
 }
 
-function makeBridge(options: { endpoint: string; statePath?: string }) {
+function makeBridge(options: {
+  endpoint: string; statePath?: string; folders?: readonly string[];
+}) {
   const seen: CharacterState[] = [];
   const logs: string[] = [];
   const instance = new StateBridge({
@@ -39,6 +41,7 @@ function makeBridge(options: { endpoint: string; statePath?: string }) {
     onState: state => seen.push(state),
     onLog: line => logs.push(line),
     retryMs: 50,
+    folders: options.folders,
   });
   return { instance, seen, logs, endpoint: options.endpoint };
 }
@@ -294,4 +297,95 @@ test('a client that writes JSON and closes without a newline is still understood
   if (endpointIsFile()) {
     assert.equal(replied, true, 'a Unix socket should be able to answer a half-closed client');
   }
+});
+
+/**
+ * Two windows, two projects.
+ *
+ * Before routing every window shared one state, so a window sitting idle on
+ * its own work animated whenever an agent ran anywhere on the machine. This is
+ * that report, written down.
+ */
+test('a window is not disturbed by an agent in another project', async t => {
+  const a = await bridge({ folders: ['/repo-a'] });
+  const b = makeBridge({ endpoint: a.endpoint, folders: ['/repo-b'] });
+  t.after(async () => { await b.instance.stop(); await a.instance.stop(); });
+
+  await a.instance.start();
+  await b.instance.start();
+  assert.equal(a.instance.role, 'leader');
+  assert.equal(b.instance.role, 'subscriber');
+
+  await request(a.endpoint, {
+    type: 'hook', event: 'preToolUse', payload: { session_id: 's1', cwd: '/repo-a/src' },
+  });
+
+  await until(() => a.instance.state === 'working', 'the window whose project it is');
+  assert.equal(b.instance.state, 'idle');
+});
+
+test('each window follows its own project, at the same time', async t => {
+  const a = await bridge({ folders: ['/repo-a'] });
+  const b = makeBridge({ endpoint: a.endpoint, folders: ['/repo-b'] });
+  t.after(async () => { await b.instance.stop(); await a.instance.stop(); });
+
+  await a.instance.start();
+  await b.instance.start();
+
+  await request(a.endpoint, {
+    type: 'hook', event: 'notification', payload: { session_id: 's1', cwd: '/repo-a' },
+  });
+  await request(a.endpoint, {
+    type: 'hook', event: 'preToolUse', payload: { session_id: 's2', cwd: '/repo-b' },
+  });
+
+  await until(() => a.instance.state === 'attention', 'the first window');
+  await until(() => b.instance.state === 'working', 'the second window');
+});
+
+/** A terminal agent outside every workspace must not vanish. */
+test('an agent nobody claims is shown by every window', async t => {
+  const a = await bridge({ folders: ['/repo-a'] });
+  const b = makeBridge({ endpoint: a.endpoint, folders: ['/repo-b'] });
+  t.after(async () => { await b.instance.stop(); await a.instance.stop(); });
+
+  await a.instance.start();
+  await b.instance.start();
+
+  // No cwd, which is what an agent that reports no project looks like.
+  await request(a.endpoint, { type: 'hook', event: 'preToolUse', payload: { session_id: 's1' } });
+
+  await until(() => a.instance.state === 'working', 'the leader');
+  await until(() => b.instance.state === 'working', 'the follower');
+});
+
+test('a window with nothing open still sees everything, as it did before', async t => {
+  const a = await bridge({ folders: [] });
+  t.after(() => a.instance.stop());
+  await a.instance.start();
+
+  await request(a.endpoint, {
+    type: 'hook', event: 'preToolUse', payload: { session_id: 's1', cwd: '/somewhere/else' },
+  });
+  await until(() => a.instance.state === 'working', 'a window with no folders');
+});
+
+test('the project root is preferred over a cwd that wandered into a worktree', async t => {
+  const a = await bridge({ folders: ['/repo-a'] });
+  const b = makeBridge({ endpoint: a.endpoint, folders: ['/repo-b'] });
+  t.after(async () => { await b.instance.stop(); await a.instance.stop(); });
+
+  await a.instance.start();
+  await b.instance.start();
+
+  // Claude Code moved cwd into a worktree that is not under either window.
+  await request(a.endpoint, {
+    type: 'hook',
+    event: 'preToolUse',
+    projectDir: '/repo-a',
+    payload: { session_id: 's1', cwd: '/tmp/worktrees/spike' },
+  });
+
+  await until(() => a.instance.state === 'working', 'the project the session belongs to');
+  assert.equal(b.instance.state, 'idle');
 });

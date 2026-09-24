@@ -166,10 +166,28 @@ installer checks for it and says so if it is missing.
 
 ### Across windows
 
-The first window to bind the endpoint leads and runs the coordinator; the others
-follow and are pushed the state, so every window agrees and a hook has only one
-place to reach. Close the leader and a follower takes over within a moment.
-**Agent Companion: Show Connection Status** reports which role a window holds.
+The first window to bind the endpoint leads and runs the coordinators; the
+others follow and are pushed their state, so a hook has only one place to
+reach. Close the leader and a follower takes over within a moment.
+**Agent Companion: Show Connection Status** reports which role a window holds
+and which projects it is reacting to.
+
+**Each window follows its own project.** A window sitting idle on one repository
+should not animate because an agent is busy in another, so every hook is filed
+under the project it came from and a window is only told about the folders it
+has open. Claude Code puts `cwd` in every payload and `CLAUDE_PROJECT_DIR` in
+the environment the shim inherits; the latter wins, because `cwd` follows the
+agent into a worktree while the project root stays put.
+
+An agent that reports no project - one in a terminal outside every open
+workspace - is shown by every window rather than none, so it is never
+invisible. A window with no folders open sees everything, which is also what a
+host with no notion of a workspace should do.
+
+Upstream folds every session into one state, which is right for a single device
+on a desk and wrong for an editor. That file is vendored unmodified, so rather
+than teach it about projects the bridge runs one coordinator per project and
+folds their states per window.
 
 The endpoint is a named pipe on Windows and a Unix socket elsewhere. It is
 deliberately not the one the ESP32 daemon uses, so both can run at once.
