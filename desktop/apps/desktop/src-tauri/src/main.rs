@@ -212,13 +212,27 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("the app should start")
-        .run(move |_handle, event| {
-            // The bridge holds the endpoint, and the other windows only take
-            // over promptly because it closes its connections on the way out.
-            // Exiting without telling it would leave them waiting.
+        .run(move |handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                // The bridge holds the endpoint, and the other windows only
+                // take over promptly because it closes its connections on the
+                // way out. Exiting without telling it would leave them waiting.
                 if let Some(bridge) = exiting.bridge.lock().unwrap().take() {
                     bridge.stop();
+                }
+
+                // Take the window down before the process goes. Tauri's exit
+                // ends in `std::process::exit`, which runs no destructors, so
+                // WebView2 tears down with the HWND still alive - it then
+                // cannot unregister its window class and says so on stderr:
+                //   Failed to unregister class Chrome_WidgetWin_0. Error = 1412
+                // which is ERROR_CLASS_HAS_WINDOWS, the class complaining that
+                // a window of it still exists. Nothing is broken by then, but a
+                // clean quit should not print an error. Destroying the window
+                // first removes the HWND while there is still a runtime to do
+                // it properly. Idempotent: the second event finds no window.
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.destroy();
                 }
             }
         });
