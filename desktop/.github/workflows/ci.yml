@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
 
       - name: Build
-        run: npm run build --workspaces --if-present
+        run: npm run build
 
       - name: Typecheck the extension
         run: npx tsc -p extension/tsconfig.json
@@ -55,7 +55,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build --workspaces --if-present
+      - run: npm run build
 
       - name: Package the extension
         working-directory: extension

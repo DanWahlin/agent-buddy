@@ -7,10 +7,11 @@
   },
   "workspaces": [
     "packages/*",
-    "extension"
+    "extension",
+    "apps/desktop"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @agent-companion/pack-format -w @agent-companion/renderer -w @agent-companion/companion-core -w @agent-companion/agent-state -w @agent-companion/packer -w agent-companion -w @agent-companion/desktop --if-present",
     "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {

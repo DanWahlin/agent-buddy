@@ -25,6 +25,14 @@ export type HostMessage =
       images: Record<string, string>;
       settings: ViewSettings;
     }
+  /**
+   * Fetch this pack yourself, rather than being handed one.
+   *
+   * For a host that serves its own files and can simply point at a manifest. VS
+   * Code cannot: a webview may not read the disk, so it gets `show` with every
+   * image already rewritten to a URI it is allowed to load.
+   */
+  | { type: 'load'; url: string; settings?: ViewSettings }
   | { type: 'state'; state: CharacterState }
   | { type: 'look'; direction: Direction }
   | { type: 'sleep'; sleeping: boolean }

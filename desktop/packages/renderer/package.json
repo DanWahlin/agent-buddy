@@ -22,6 +22,7 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@agent-companion/agent-state": "0.1.0",
     "sharp": "^0.35.4"
   }
 }

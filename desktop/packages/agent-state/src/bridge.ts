@@ -20,6 +20,7 @@ import { characterStates, hookEvents, type CharacterState } from './vendor/proto
 import { StateCoordinator } from './vendor/state-coordinator.js';
 import { StateStore } from './vendor/state-store.js';
 import { endpointIsFile, endpointPath, statePath } from './paths.js';
+import { UNATTRIBUTED, combineStates, routeIsVisibleTo, routeOf } from './routing.js';
 
 export type BridgeRole = 'leader' | 'subscriber' | 'stopped';
 
@@ -31,14 +32,24 @@ export interface BridgeOptions {
   onLog?: (message: string) => void;
   /** How long to wait before retrying after losing both roles. */
   retryMs?: number;
+  /**
+   * The workspace folders this window has open.
+   *
+   * Agents working outside them belong to somebody else's window and are not
+   * shown here. Leave it empty to see everything, which is what a host with no
+   * notion of a workspace - a desktop app, an empty editor - should do.
+   */
+  folders?: readonly string[];
 }
 
 /** A request a hook or another window can send. */
 type Request =
-  | { type: 'hook'; event: string; payload?: Record<string, unknown> }
+  | { type: 'hook'; event: string; payload?: Record<string, unknown>; projectDir?: string }
   | { type: 'send'; state: string }
   | { type: 'status' }
-  | { type: 'subscribe' };
+  // A window says which folders it has open, so it is only told about agents
+  // working in them. An older window sends none and sees everything, as before.
+  | { type: 'subscribe'; folders?: string[] };
 
 const MAX_LINE = 64 * 1024;
 
@@ -52,8 +63,24 @@ export class StateBridge {
   #role: BridgeRole = 'stopped';
   #state: CharacterState = 'idle';
   #server: Server | null = null;
-  #coordinator: StateCoordinator | null = null;
+  /**
+   * One coordinator per project, so a window idle on its own work stays idle
+   * while another is busy. The vendored coordinator folds every session it
+   * holds into one state and knows nothing about projects; running several of
+   * them keeps that file untouched and its provenance clean.
+   */
+  #coordinators = new Map<string, StateCoordinator>();
+  /** The last state each route settled on, to fold per window. */
+  #routeStates = new Map<string, CharacterState>();
+  /** What each following window has open, so it can be told only its own news. */
+  #subscriberFolders = new Map<Socket, readonly string[]>();
+  /** The last state each follower was sent, so nothing is repeated to it. */
+  #subscriberStates = new Map<Socket, CharacterState>();
+  #folders: readonly string[] = [];
+  /** Set by Simulate State, which deliberately overrides every route. */
+  #override: CharacterState | null = null;
   #store: StateStore | null = null;
+  #restored: Awaited<ReturnType<StateStore['load']>> | undefined;
   #client: Socket | null = null;
   /**
    * Every accepted connection, whether or not it has said what it wants yet.
@@ -74,12 +101,26 @@ export class StateBridge {
     this.#onState = options.onState;
     this.#log = options.onLog ?? (() => {});
     this.#retryMs = options.retryMs ?? 5000;
+    this.#folders = options.folders ?? [];
+  }
+
+  /** Tell the bridge this window's folders changed, and re-fold what it shows. */
+  setFolders(folders: readonly string[]): void {
+    this.#folders = folders;
+    this.#refresh();
   }
 
   get role(): BridgeRole { return this.#role; }
   get state(): CharacterState { return this.#state; }
   get endpoint(): string { return this.#endpoint; }
-  get sessionCount(): number { return this.#coordinator?.sessionCount ?? 0; }
+  get sessionCount(): number {
+    let total = 0;
+    for (const coordinator of this.#coordinators.values()) total += coordinator.sessionCount;
+    return total;
+  }
+
+  /** How many projects currently have agent activity, for the status command. */
+  get routeCount(): number { return this.#coordinators.size; }
   /** Windows currently following this one. */
   get subscriberCount(): number { return this.#subscribers.size; }
 
@@ -148,11 +189,17 @@ export class StateBridge {
       this.#dropConnections();
     }
 
-    this.#coordinator?.close();
-    if (this.#store && this.#coordinator) {
-      await this.#store.flush(this.#coordinator.snapshot()).catch(() => undefined);
+    // Only the shared route is persisted, so that is the only snapshot to
+    // flush - but every coordinator owns a sweep timer and must be closed, or
+    // shutting a window down leaves one ticking per project it saw.
+    const shared = this.#coordinators.get(UNATTRIBUTED);
+    for (const coordinator of this.#coordinators.values()) coordinator.close();
+    if (this.#store && shared) {
+      await this.#store.flush(shared.snapshot()).catch(() => undefined);
     }
-    this.#coordinator = null;
+    this.#coordinators.clear();
+    this.#routeStates.clear();
+    this.#override = null;
     this.#store = null;
     this.#role = 'stopped';
   }
@@ -180,18 +227,72 @@ export class StateBridge {
     });
 
     const store = new StateStore(this.#statePath);
-    const restored = await store.load().catch(() => undefined);
-    const coordinator = new StateCoordinator(state => this.#publish(state), {
-      restored,
-      onMutation: state => store.schedule(state),
-    });
+    this.#restored = await store.load().catch(() => undefined);
 
     this.#server = server;
     this.#store = store;
-    this.#coordinator = coordinator;
     this.#role = 'leader';
     this.#log('Listening on ' + this.#endpoint);
-    this.#publish(coordinator.state);
+    // The shared route exists from the start, so anything that arrives before a
+    // project is known has somewhere to go, and so a restored session is not
+    // held back waiting for a hook to recreate its coordinator.
+    this.#coordinatorFor(UNATTRIBUTED);
+    this.#refresh();
+  }
+
+  /**
+   * The coordinator for a project, made on first sight of one.
+   *
+   * Only the shared route is persisted. A project's leases are worth little
+   * across a restart - the window has just reopened, and the next hook re-establishes
+   * them within seconds - and giving every project its own file would mean
+   * managing a directory of them for no real gain.
+   */
+  #coordinatorFor(route: string): StateCoordinator {
+    const existing = this.#coordinators.get(route);
+    if (existing) return existing;
+
+    const shared = route === UNATTRIBUTED;
+    const coordinator = new StateCoordinator(state => {
+      this.#routeStates.set(route, state);
+      this.#refresh();
+    }, {
+      restored: shared ? this.#restored : undefined,
+      onMutation: shared && this.#store
+        ? state => this.#store?.schedule(state)
+        : undefined,
+    });
+
+    this.#coordinators.set(route, coordinator);
+    this.#routeStates.set(route, coordinator.state);
+    return coordinator;
+  }
+
+  /** The state a window with these folders should be showing. */
+  #stateFor(folders: readonly string[]): CharacterState {
+    if (this.#override) return this.#override;
+    const seen: CharacterState[] = [];
+    for (const [route, state] of this.#routeStates) {
+      if (routeIsVisibleTo(route, folders)) seen.push(state);
+    }
+    return combineStates(seen);
+  }
+
+  /**
+   * Re-fold every window's view, and tell only the ones whose answer moved.
+   *
+   * Windows now disagree by design, so there is no single state to compare
+   * against: what each was last sent has to be remembered per window, or a
+   * busy project would spray identical lines at every other one.
+   */
+  #refresh(): void {
+    this.#apply(this.#stateFor(this.#folders));
+    for (const socket of this.#subscribers) {
+      const state = this.#stateFor(this.#subscriberFolders.get(socket) ?? []);
+      if (this.#subscriberStates.get(socket) === state) continue;
+      this.#subscriberStates.set(socket, state);
+      write(socket, { type: 'state', state });
+    }
   }
 
   async #becomeSubscriber(): Promise<void> {
@@ -222,7 +323,7 @@ export class StateBridge {
       void this.start();
     });
 
-    socket.write(JSON.stringify({ type: 'subscribe' }) + '\n');
+    socket.write(JSON.stringify({ type: 'subscribe', folders: this.#folders }) + '\n');
     this.#client = socket;
     this.#role = 'subscriber';
     this.#log('Following another window on ' + this.#endpoint);
@@ -236,6 +337,8 @@ export class StateBridge {
     socket.on('close', () => {
       this.#connections.delete(socket);
       this.#subscribers.delete(socket);
+      this.#subscriberFolders.delete(socket);
+      this.#subscriberStates.delete(socket);
     });
     // A hook is a single line and gone; a subscriber stays. Only the former
     // should be timed out, so the timer is cleared once one subscribes.
@@ -254,7 +357,12 @@ export class StateBridge {
             reply(socket, { ok: false, error: 'unknown event ' + request.event });
             return;
           }
-          this.#coordinator?.handle(request.event as never, request.payload ?? {});
+          // Where the hook came from decides who sees it. The payload already
+          // carries it; nothing on the wire had to change to learn this.
+          const route = routeOf(request.payload, request.projectDir);
+          this.#override = null;
+          this.#coordinatorFor(route).handle(request.event as never, request.payload ?? {});
+          this.#refresh();
           reply(socket, { ok: true, state: this.#state });
           return;
         }
@@ -276,11 +384,18 @@ export class StateBridge {
             subscribers: this.subscriberCount,
           });
           return;
-        case 'subscribe':
+        case 'subscribe': {
           this.#subscribers.add(socket);
+          const folders = Array.isArray(request.folders)
+            ? request.folders.filter((folder): folder is string => typeof folder === 'string')
+            : [];
+          this.#subscriberFolders.set(socket, folders);
           socket.setTimeout(0);
-          write(socket, { type: 'state', state: this.#state });
+          const initial = this.#stateFor(folders);
+          this.#subscriberStates.set(socket, initial);
+          write(socket, { type: 'state', state: initial });
           return;
+        }
         default:
           reply(socket, { ok: false, error: 'unknown request' });
       }
@@ -291,10 +406,20 @@ export class StateBridge {
     });
   }
 
-  /** Adopt a state and tell every subscriber. */
+  /**
+   * Adopt a state and tell every subscriber, whatever they have open.
+   *
+   * This is the hand-driven path - Simulate State - so it deliberately ignores
+   * routing: someone checking a pack wants to see it, not to be told their
+   * workspace is not involved. It sticks until a real agent event arrives.
+   */
   #publish(state: CharacterState): void {
+    this.#override = state;
     this.#apply(state);
-    for (const socket of this.#subscribers) write(socket, { type: 'state', state });
+    for (const socket of this.#subscribers) {
+      this.#subscriberStates.set(socket, state);
+      write(socket, { type: 'state', state });
+    }
   }
 
   #apply(state: CharacterState): void {
@@ -308,6 +433,8 @@ export class StateBridge {
     for (const socket of this.#connections) socket.destroy();
     this.#connections.clear();
     this.#subscribers.clear();
+    this.#subscriberFolders.clear();
+    this.#subscriberStates.clear();
   }
 
   #scheduleRetry(): void {

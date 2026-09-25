@@ -8,7 +8,8 @@ import * as esbuild from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
 await esbuild.build({
-  entryPoints: [join(here, 'host.test.ts'), join(here, 'gaze.test.ts')],
+  // The gaze tests moved to companion-core with the code they cover.
+  entryPoints: [join(here, 'host.test.ts')],
   outdir: join(here, '..', 'dist-test'),
   outExtension: { '.js': '.cjs' },
   bundle: true,

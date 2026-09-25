@@ -1,11 +1,17 @@
 /**
  * Reading a rendered character rig.
  *
- * The expected input is the pair of `animation.json` manifests an ESP32 Agent
- * Companion art pipeline emits - one for the eight gaze tracks, one for the
- * five expression tracks. They already carry per-frame eye boxes and blink
- * filenames, which is precisely what the patch-diff packing needs, so we read
- * them rather than guessing from filenames.
+ * The expected input is the `animation.json` an ESP32 Agent Companion art
+ * pipeline emits. It already carries per-frame eye boxes and blink filenames,
+ * which is precisely what the patch-diff packing needs, so we read it rather
+ * than guessing from filenames.
+ *
+ * How the thirteen tracks are divided up varies by rig and none of it matters
+ * here: Marvin renders gaze and expressions in two passes and so writes two
+ * manifests in two directories, OpenClaw puts all thirteen under `directions`
+ * in one, and Claude puts all thirteen in one manifest split between
+ * `directions` and `expressions`. Every shape merges into the same 13-track
+ * rig.
  *
  * A directory with no manifest falls back to the naming the same pipeline uses
  * on disk: `<track>-<NN>.png` for an open-eyed frame and
@@ -56,12 +62,27 @@ interface ManifestFrame {
   blinkMaskState?: string;
 }
 
+interface ManifestTrack {
+  frames: ManifestFrame[];
+  blinkPolicy?: string;
+}
+
 interface Manifest {
   width: number;
   height: number;
   count: number;
   blinkLevels: number[];
-  directions: Record<string, { frames: ManifestFrame[]; blinkPolicy?: string }>;
+  /**
+   * The gaze tracks, or every track. A rig rendered in two passes writes one
+   * manifest per pass and puts whatever that pass produced under this key.
+   */
+  directions: Record<string, ManifestTrack>;
+  /**
+   * The five expression tracks, when one pass rendered all thirteen and said
+   * so - Claude's rig does. Merged with `directions` rather than read from a
+   * second directory.
+   */
+  expressions?: Record<string, ManifestTrack>;
 }
 
 const FRAME_PATTERN = /^(.+?)-(\d+)(?:-blink-(\d))?\.png$/i;
@@ -124,8 +145,15 @@ function readManifest(directory: string, manifestPath: string): Rig {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
   const tracks = new Map<TrackName, RigTrack>();
 
-  for (const [name, entry] of Object.entries(manifest.directions ?? {})) {
+  const entries = [
+    ...Object.entries(manifest.directions ?? {}),
+    ...Object.entries(manifest.expressions ?? {}),
+  ];
+  for (const [name, entry] of entries) {
     if (!isTrackName(name)) continue;
+    if (tracks.has(name)) {
+      throw new Error('Track "' + name + '" appears twice in ' + manifestPath);
+    }
     const frames: RigFrame[] = entry.frames.map(frame => ({
       file: join(directory, frame.file),
       blinks: (frame.blinks ?? []).map(blink => join(directory, blink)),

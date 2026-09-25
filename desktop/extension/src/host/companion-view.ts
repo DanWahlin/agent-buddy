@@ -9,7 +9,10 @@
 import * as vscode from 'vscode';
 import type { CharacterState } from '@agent-companion/pack-format';
 import type { Direction } from '@agent-companion/renderer';
-import type { HostMessage, ViewMessage, ViewSettings } from '../protocol.js';
+import {
+  withDefaults,
+  type HostMessage, type ViewMessage, type ViewSettings,
+} from '@agent-companion/companion-core';
 import { choosePack, discoverPacks, type DiscoveredPack } from './pack-discovery.js';
 
 export const VIEW_IDS = [
@@ -215,11 +218,14 @@ export class CompanionViewProvider implements vscode.WebviewViewProvider {
 
 function settings(): ViewSettings {
   const configuration = vscode.workspace.getConfiguration('agentCompanion');
-  return {
-    crossfade: configuration.get<boolean>('crossfade') ?? true,
-    maxScale: configuration.get<number>('maxScale') ?? 3,
-    autoSleep: configuration.get<boolean>('autoSleep') ?? true,
-  };
+  // The defaults come from the core rather than being repeated here, so a pack
+  // behaves the same in a window as it does in any other host. The manifest
+  // still declares them too, because that is what the settings UI reads.
+  return withDefaults({
+    crossfade: configuration.get<boolean>('crossfade'),
+    maxScale: configuration.get<number>('maxScale'),
+    autoSleep: configuration.get<boolean>('autoSleep'),
+  });
 }
 
 function makeNonce(): string {

@@ -1,0 +1,24 @@
+[package]
+name = "agent-companion-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "The companion as a window of its own."
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# macos-private-api is what `macOSPrivateApi` in tauri.conf.json requires, and
+# the build refuses without it. Transparent windows do not work on macOS at all
+# otherwise - and it is what rules out the Mac App Store.
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Only to cut a tray icon out of the character art, so no format but the one
+# packs are stored in.
+image = { version = "0.25", default-features = false, features = ["webp"] }
+
+[[bin]]
+name = "agent-companion-desktop"
+path = "src/main.rs"

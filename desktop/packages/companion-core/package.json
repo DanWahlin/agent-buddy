@@ -1,0 +1,20 @@
+{
+  "name": "@agent-companion/companion-core",
+  "version": "0.1.0",
+  "description": "What every host of the companion needs: pack discovery, the host/view protocol, and where to look.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "engines": { "node": ">=20.10.0" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
+  },
+  "dependencies": {
+    "@agent-companion/pack-format": "0.1.0",
+    "@agent-companion/renderer": "0.1.0"
+  },
+  "license": "MIT"
+}

@@ -6,6 +6,19 @@ dist-test/
 # Built artefacts
 *.vsix
 extension/packs/
+apps/desktop/ui/webview.js
+apps/desktop/ui/packs/
+# Cut from the character art by the desktop build.
+apps/desktop/src-tauri/icons/
+
+# Rust build output. Cargo.lock is kept, as it should be for a binary.
+target/
+
+# Tauri regenerates these from tauri.conf.json on every build.
+**/src-tauri/gen/schemas/
+
+# Screen recordings of the thing running, which are for looking at, not keeping.
+*.mp4
 
 # Inspection output, written by the packer and renderer scripts
 .inspect/

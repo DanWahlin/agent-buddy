@@ -1,0 +1,266 @@
+/**
+ * The bridge as a process: hooks in one end, lines out the other.
+ *
+ * This is what a shell that is not Node will spawn, so it is tested the way
+ * one would drive it - a real child process, real stdio, a real endpoint -
+ * rather than by calling into it.
+ */
+
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createConnection } from 'node:net';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import test from 'node:test';
+import { endpointIsFile } from '../src/paths.js';
+
+// These run compiled, from dist-test/test, so the package root is two up.
+const HOST = join(import.meta.dirname, '..', '..', 'dist', 'host.js');
+if (!existsSync(HOST)) {
+  // Otherwise every test below waits out its timeout and blames the host.
+  throw new Error('no host build at ' + HOST + ' - run the package build first');
+}
+
+let counter = 0;
+const scratch: string[] = [];
+
+/**
+ * A directory of this run's own, for the snapshots the bridge persists.
+ *
+ * Naming these by a counter alone was not enough. The counter restarts at zero
+ * every run while the files do not, so a run inherited a snapshot an earlier
+ * one had left behind - and a host that should have started idle came up in
+ * whatever state some previous test had last provoked. Failing only when a
+ * previous run happened to leave the right file behind is the worst kind of
+ * flake: it looks like the code, and it is the test.
+ */
+let stateDirectory: string | null = null;
+async function stateFile(): Promise<string> {
+  if (!stateDirectory) {
+    stateDirectory = await mkdtemp(join(tmpdir(), 'agent-companion-host-state-'));
+    scratch.push(stateDirectory);
+  }
+  return join(stateDirectory, (counter++) + '.json');
+}
+
+async function endpoint(): Promise<string> {
+  const id = process.pid + '-' + (counter++);
+  if (!endpointIsFile()) return '\\\\.\\pipe\\agent-companion-host-test-' + id;
+  const directory = await mkdtemp(join(tmpdir(), 'agent-companion-host-'));
+  scratch.push(directory);
+  return join(directory, 's');
+}
+
+interface Host {
+  child: ChildProcessWithoutNullStreams;
+  lines: Array<Record<string, unknown>>;
+  endpoint: string;
+  say: (command: unknown) => void;
+}
+
+/**
+ * `reuse` matters for the shutdown tests: a second host on a *fresh* endpoint
+ * would lead no matter what the first one did, so only reusing the endpoint
+ * actually shows it was let go.
+ */
+async function startHost(args: string[] = [], reuse?: string): Promise<Host> {
+  const where = reuse ?? await endpoint();
+  const child = spawn(process.execPath, [HOST, ...args], {
+    env: {
+      ...process.env,
+      AGENT_COMPANION_VSCODE_SOCKET: where,
+      AGENT_COMPANION_VSCODE_STATE: await stateFile(),
+    },
+  });
+
+  started.push(child);
+
+  const lines: Array<Record<string, unknown>> = [];
+  let pending = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', chunk => {
+    // Chunk boundaries are not line boundaries; hold the partial back.
+    pending += chunk;
+    const parts = pending.split('\n');
+    pending = parts.pop() ?? '';
+    for (const part of parts) if (part.trim()) lines.push(JSON.parse(part));
+  });
+
+  return {
+    child,
+    lines,
+    endpoint: where,
+    say: command => child.stdin.write(JSON.stringify(command) + '\n'),
+  };
+}
+
+async function until(check: () => boolean, label: string, ms = 20000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await delay(25);
+  }
+  assert.fail('timed out waiting for ' + label);
+}
+
+const states = (host: Host) =>
+  host.lines.filter(line => line.type === 'state').map(line => line.state);
+
+/** One hook line, the way the shim sends it. */
+function fire(where: string, event: string, payload: Record<string, unknown> = {}): Promise<void> {
+  return new Promise(resolve => {
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; socket.destroy(); resolve(); };
+    const line = JSON.stringify({
+      type: 'hook', event, payload: { session_id: 'host-test', ...payload },
+    }) + '\n';
+    // Never wait for a reply: a Windows named pipe has no half-close.
+    const socket = createConnection(where, () => socket.end(line, done));
+    socket.on('error', done);
+    setTimeout(done, 2000).unref();
+  });
+}
+
+/** Every host started, so none is still writing when the files are removed. */
+const started: ChildProcessWithoutNullStreams[] = [];
+
+test.after(async () => {
+  // `kill` only asks. The host flushes its snapshot on the way out, so tearing
+  // the directory down without waiting races a child still writing into it -
+  // which failed CI with ENOTEMPTY on Linux while passing on Windows, purely on
+  // timing.
+  await Promise.all(started.map(child => child.exitCode !== null || child.signalCode !== null
+    ? Promise.resolve()
+    : new Promise<void>(resolve => {
+      child.once('exit', () => resolve());
+      child.kill();
+      // Never let cleanup be the thing that hangs the suite.
+      setTimeout(resolve, 5000).unref();
+    })));
+
+  // And these are temporary files. Failing to remove one is not a test result.
+  for (const directory of scratch) {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+test('it announces itself, then reports what the agent is doing', async t => {
+  const host = await startHost();
+  t.after(() => host.child.kill());
+
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+  const ready = host.lines.find(line => line.type === 'ready')!;
+  assert.equal(ready.role, 'leader');
+  assert.equal(ready.state, 'idle');
+  assert.equal(ready.endpoint, host.endpoint);
+
+  await fire(host.endpoint, 'preToolUse', { tool_name: 'Bash' });
+  await until(() => states(host).includes('working'), 'working');
+
+  await fire(host.endpoint, 'notification', { notification_type: 'permission_prompt' });
+  await until(() => states(host).includes('attention'), 'attention');
+});
+
+test('the shell can drive a state by hand', async t => {
+  const host = await startHost();
+  t.after(() => host.child.kill());
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  host.say({ type: 'send', state: 'complete' });
+  await until(() => states(host).includes('complete'), 'the simulated state');
+});
+
+test('folders given up front decide what it reacts to', async t => {
+  const host = await startHost(['--folders', '/repo-a']);
+  t.after(() => host.child.kill());
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  // Another project's agent is not this host's business.
+  await fire(host.endpoint, 'preToolUse', { cwd: '/repo-b' });
+  await delay(400);
+  assert.deepEqual(states(host), [], 'should have stayed quiet');
+
+  await fire(host.endpoint, 'preToolUse', { cwd: '/repo-a/src' });
+  await until(() => states(host).includes('working'), 'its own project');
+});
+
+test('nonsense on stdin is ignored rather than fatal', async t => {
+  const host = await startHost();
+  t.after(() => host.child.kill());
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  host.say('not-an-object');
+  host.child.stdin.write('{ not json\n');
+  host.say({ type: 'nonsense' });
+
+  // Still serving.
+  await fire(host.endpoint, 'preToolUse');
+  await until(() => states(host).includes('working'), 'the bridge to still be alive');
+});
+
+/**
+ * The reason this process exists in the shape it does.
+ *
+ * The leader holds the endpoint and the other windows only take over promptly
+ * because it closes its connections on the way out. A host that quits without
+ * asking would otherwise leave them waiting, so stdin closing has to be enough.
+ */
+test('the parent going away is enough to shut it down cleanly', async t => {
+  const host = await startHost();
+  const exited = new Promise<number | null>(resolve => host.child.on('exit', resolve));
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  host.child.stdin.end();
+
+  const code = await Promise.race([exited, delay(20000).then(() => 'timed out' as const)]);
+  assert.equal(code, 0, 'should exit cleanly, not hang or crash');
+  assert.ok(
+    host.lines.some(line => line.type === 'stopping'),
+    'should say it is stopping: ' + JSON.stringify(host.lines));
+
+  // And the endpoint is free again, so the next host can lead rather than follow.
+  const next = await startHost([], host.endpoint);
+  t.after(() => next.child.kill());
+  await until(() => next.lines.some(line => line.type === 'ready'), 'a new leader');
+  assert.equal(next.lines.find(line => line.type === 'ready')!.role, 'leader');
+});
+
+test('an explicit stop is honoured too', async t => {
+  const host = await startHost();
+  const exited = new Promise<number | null>(resolve => host.child.on('exit', resolve));
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  host.say({ type: 'stop' });
+  const code = await Promise.race([exited, delay(20000).then(() => 'timed out' as const)]);
+  assert.equal(code, 0);
+});
+
+/**
+ * A host killed rather than asked to quit leaves this end of the pipe broken.
+ *
+ * Seen for real: force-killing the desktop shell left the bridge dying with an
+ * unhandled EPIPE, which means it never ran its shutdown - and shutdown is what
+ * releases the endpoint for the next window.
+ */
+test('a broken pipe is news, not a crash', async t => {
+  const host = await startHost();
+  const exited = new Promise<number | null>(resolve => host.child.on('exit', resolve));
+  await until(() => host.lines.some(line => line.type === 'ready'), 'the ready line');
+
+  // Close the reading end while leaving stdin alone, so the only thing it can
+  // learn from is the write failing.
+  host.child.stdout.destroy();
+  await fire(host.endpoint, 'preToolUse');
+
+  const code = await Promise.race([exited, delay(20000).then(() => 'timed out' as const)]);
+  assert.equal(code, 0, 'should still exit cleanly rather than crash');
+
+  // And the endpoint is free, which is the whole point of exiting cleanly.
+  const next = await startHost([], host.endpoint);
+  t.after(() => next.child.kill());
+  await until(() => next.lines.some(line => line.type === 'ready'), 'a new leader');
+  assert.equal(next.lines.find(line => line.type === 'ready')!.role, 'leader');
+});
