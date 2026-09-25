@@ -8,6 +8,8 @@
  * are insistent about.
  *
  *   node scripts/filmstrip.mjs [out.png]
+ *
+ * `AGENT_COMPANION_PACK` points it at a pack other than the default one.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -17,7 +19,8 @@ import { CharacterEffects, CharacterPlayer, PackRenderer } from '../dist/index.j
 
 sharp.cache(false);
 
-const PACK_DIR = join(import.meta.dirname, '..', '..', '..', 'packs', 'marvin');
+const PACK_DIR = process.env.AGENT_COMPANION_PACK
+  ?? join(import.meta.dirname, '..', '..', '..', 'packs', 'copilot');
 const out = process.argv[2] ?? join(import.meta.dirname, '..', 'filmstrip.png');
 const pack = JSON.parse(readFileSync(join(PACK_DIR, 'pack.json'), 'utf8'));
 

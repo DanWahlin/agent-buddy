@@ -62,9 +62,10 @@ instead of somewhere nobody can reach.
 Pick one from **Character** in the tray menu. The choice is remembered, and if
 that pack has since gone the shipped one shows rather than an empty window.
 
-Only Marvin ships with the app. The other packs in this repository carry
-artwork belonging to other people - GitHub's, in Copilot's case - so they are
-something to point at rather than something to distribute. **Open Characters
+Copilot, Claude and OpenClaw ship with the app, and Copilot is the one shown
+before anyone chooses - it is also the character the tray and app icons are cut
+from. Marvin is the author's own character and is not distributed.
+**Open Characters
 Folder** in the tray opens a folder of your own that is always looked in; drop
 a pack directory in there and it appears in the menu next start. An environment
 variable is not somewhere anybody would think to look.

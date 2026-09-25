@@ -57,6 +57,22 @@ test('reads a rig split across two manifests', () => {
   assert.deepEqual(read.blinkLevels, BLINK_LEVELS);
 });
 
+test('reads a rig whose one manifest splits gaze from expressions', async () => {
+  // Claude's rig arrives this way: thirteen tracks in one directory, divided
+  // between `directions` and `expressions` in a single manifest. Which key a
+  // track was listed under should make no difference to what comes out.
+  const root = scratchDir('agent-pack-rig-combined-');
+  const combined = await createRig(root, { combined: true });
+  assert.deepEqual(combined.dirs.length, 1);
+
+  const read = readRig(combined.dirs);
+  assert.equal(read.tracks.size, 13);
+  assert.equal(read.count, POSES);
+  for (const [name, track] of read.tracks) {
+    assert.equal(track.frames.length, POSES, name + ' should have ' + POSES + ' poses');
+  }
+});
+
 test('produces a pack that validates, images and all', () => {
   assert.deepEqual(validatePack(built.result.pack, probeIn(built.outDir)), []);
   assert.equal(Object.keys(built.result.pack.tracks).length, 13);

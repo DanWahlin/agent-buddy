@@ -24,8 +24,10 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
-// Only Marvin, for the same licensing reason the extension bundles only Marvin.
-const bundled = ['marvin'];
+// The three Agent Companion characters, the same set the extension bundles and
+// for the same reasons. The default is first, because the icon is cut from it.
+const DEFAULT_PACK = 'copilot';
+const bundled = [DEFAULT_PACK, 'claude', 'openclaw'];
 await rm(join(ui, 'packs'), { recursive: true, force: true });
 for (const pack of bundled) {
   await mkdir(join(ui, 'packs', pack), { recursive: true });
@@ -41,7 +43,7 @@ console.log('built the page and bundled ' + bundled.join(', '));
  */
 async function trayIcon() {
   const { default: sharp } = await import('sharp');
-  const pack = JSON.parse(await readFile(join(packs, 'marvin', 'pack.json'), 'utf8'));
+  const pack = JSON.parse(await readFile(join(packs, DEFAULT_PACK, 'pack.json'), 'utf8'));
   const { width, height } = pack.frame;
 
   // Trimmed before resizing. A pack frame carries the margin the character
@@ -49,7 +51,7 @@ async function trayIcon() {
   // nothing - which at tray size leaves a speck.
   // Two passes: sharp will not extract and trim in one, since the trim has to
   // measure what the extract produced.
-  const frame = await sharp(join(packs, 'marvin', pack.tracks.right.base))
+  const frame = await sharp(join(packs, DEFAULT_PACK, pack.tracks.right.base))
     .extract({ left: 0, top: 0, width, height })
     .png()
     .toBuffer();
@@ -89,7 +91,7 @@ async function trayIcon() {
   await mkdir(icons, { recursive: true });
   await writeFile(join(icons, 'icon.ico'), Buffer.concat([header, ...entries, ...images]));
   await writeFile(join(icons, 'icon.png'), images[images.length - 1]);
-  console.log('app icon cut from marvin, at ' + sizes.join('/'));
+  console.log('app icon cut from ' + DEFAULT_PACK + ', at ' + sizes.join('/'));
 }
 await trayIcon();
 

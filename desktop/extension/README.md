@@ -33,7 +33,7 @@ that last step is yours — it's a one-off, and the layout sticks.
 | Setting | Default | |
 | --- | --- | --- |
 | `agentCompanion.position` | `sidebar` | `sidebar`, `panel` or `explorer` |
-| `agentCompanion.pack` | `marvin` | Which pack to show, by id |
+| `agentCompanion.pack` | `copilot` | Which pack to show, by id |
 | `agentCompanion.packPaths` | `[]` | Extra folders to find packs in |
 | `agentCompanion.crossfade` | `true` | Blend between poses |
 | `agentCompanion.maxScale` | `3` | Largest multiple of the pack's own size to draw at |
@@ -66,10 +66,11 @@ A character pack is a folder of WebP strips plus a `pack.json`: thirteen tracks,
 eight gaze directions and five expressions, each a run of poses with blink levels
 stored as eye-sized patches. A whole character is a few hundred kilobytes.
 
-Build one with the `agent-pack` CLI from a rendered rig, put the folder anywhere,
-add its parent to `agentCompanion.packPaths`, and pick it from
-**Select Character Pack**. Nothing in this extension is specific to the character
-that ships with it.
+Three ship with the extension - Copilot, Claude and OpenClaw - and
+**Select Character Pack** switches between them. Nothing in the extension is
+specific to any of them: build your own with the `agent-pack` CLI from a
+rendered rig, put the folder anywhere, add its parent to
+`agentCompanion.packPaths`, and it appears in the same list.
 
 ## Outside the editor
 

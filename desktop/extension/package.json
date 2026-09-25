@@ -84,7 +84,7 @@
         },
         "agentCompanion.pack": {
           "type": "string",
-          "default": "marvin",
+          "default": "copilot",
           "description": "Which character pack to show, by id. Packs from 'agentCompanion.packPaths' can be named here too."
         },
         "agentCompanion.packPaths": {

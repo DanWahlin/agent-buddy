@@ -12,6 +12,11 @@
  * - one track is "expression-preserved": its blink images are byte-identical
  *   to their base, so it should get no blink strip.
  *
+ * It writes Marvin's layout by default - gaze and expressions in two
+ * directories with a manifest each - and Claude's with `combined: true`: one
+ * directory whose one manifest splits the thirteen between `directions` and
+ * `expressions`.
+ *
  * Frames are generated rather than committed: 13 tracks by 8 poses by 5 blink
  * levels is 520 files, which is not something to keep in a repository.
  */
@@ -76,11 +81,17 @@ export async function createRig(root, {
   blankPose = null,
   /** Give the centre pose blink files identical to itself, so it cannot blink. */
   centreCannotBlink = false,
+  /**
+   * Write all thirteen tracks into one directory, whose single manifest splits
+   * them between `directions` and `expressions` - the shape Claude's rig
+   * arrives in, rather than Marvin's two directories with two manifests.
+   */
+  combined = false,
 } = {}) {
-  const gaze = join(root, 'gaze');
-  const expressions = join(root, 'expressions');
+  const gaze = join(root, combined ? 'rig' : 'gaze');
+  const expressions = combined ? gaze : join(root, 'expressions');
   await mkdir(gaze, { recursive: true });
-  await mkdir(expressions, { recursive: true });
+  if (!combined) await mkdir(expressions, { recursive: true });
 
   // The shared centre pose. Every track's frame 0 should end up as this.
   const anchor = await frame(40, 40, 44);
@@ -98,8 +109,8 @@ export async function createRig(root, {
     create: { ...FRAME, channels: 3, background: { r: 0, g: 0, b: 0 } },
   }).png({ compressionLevel: 9 }).toBuffer();
 
-  const write = async (directory, tracks) => {
-    const directions = {};
+  const write = async (directory, tracks, key = 'directions') => {
+    const entries = {};
     for (const name of tracks) {
       const frames = [];
       for (let step = 0; step < POSES; step++) {
@@ -141,20 +152,32 @@ export async function createRig(root, {
           blinks: blinkFiles,
         });
       }
-      directions[name] = { frames, count: POSES };
+      entries[name] = { frames, count: POSES };
     }
 
+    return entries;
+  };
+
+  const manifest = async (directory, sections) => {
     await writeFile(join(directory, 'animation.json'), JSON.stringify({
       width: FRAME.width,
       height: FRAME.height,
       count: POSES,
       blinkLevels: BLINK_LEVELS,
-      directions,
+      ...sections,
     }, null, 2));
   };
 
-  await write(gaze, GAZE_TRACKS);
-  await write(expressions, EXPRESSION_TRACKS);
+  const gazeEntries = await write(gaze, GAZE_TRACKS);
+  const expressionEntries = await write(expressions, EXPRESSION_TRACKS);
 
-  return { gaze, expressions, anchor: anchorPath };
+  if (combined) {
+    await manifest(gaze, { directions: gazeEntries, expressions: expressionEntries });
+    return { gaze, expressions, dirs: [gaze], anchor: anchorPath };
+  }
+
+  await manifest(gaze, { directions: gazeEntries });
+  await manifest(expressions, { directions: expressionEntries });
+
+  return { gaze, expressions, dirs: [gaze, expressions], anchor: anchorPath };
 }

@@ -8,6 +8,9 @@
  * hooks, real coordinator, real pixels. The bridge is optional - if
  * `@agent-companion/agent-state` has not been built the page still serves and
  * the buttons still work.
+ *
+ * `AGENT_COMPANION_PACK` serves a pack other than the default one, which is how
+ * a newly built character gets watched.
  */
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -16,7 +19,8 @@ import { fileURLToPath } from 'node:url';
 
 const here = resolve(fileURLToPath(import.meta.url), '..', '..');
 const mounts = [
-  ['/pack/', resolve(here, '..', '..', 'packs', 'marvin')],
+  ['/pack/', process.env.AGENT_COMPANION_PACK
+    ?? resolve(here, '..', '..', 'packs', 'copilot')],
   ['/dist/', join(here, 'dist')],
   ['/pack-format/', resolve(here, '..', 'pack-format', 'dist')],
   ['/', join(here, 'harness')],

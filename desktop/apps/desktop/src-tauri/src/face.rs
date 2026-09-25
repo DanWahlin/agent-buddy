@@ -137,15 +137,15 @@ mod tests {
     /// are not to hand, as the packer's rig tests do.
     #[test]
     fn a_real_pack_yields_an_icon_with_something_in_it() {
-        let marvin = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../packs/marvin")
+        let shipped = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../packs/copilot")
             .canonicalize();
-        let Ok(folder) = marvin else { return };
+        let Ok(folder) = shipped else { return };
         if !folder.join("pack.json").is_file() {
             return;
         }
 
-        let (rgba, width, height) = cut(&folder, 32).expect("marvin should yield an icon");
+        let (rgba, width, height) = cut(&folder, 32).expect("the shipped pack should yield an icon");
         assert_eq!((width, height), (32, 32));
         assert_eq!(rgba.len(), 32 * 32 * 4);
 

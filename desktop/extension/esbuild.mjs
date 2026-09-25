@@ -23,15 +23,19 @@ const watch = process.argv.includes('--watch');
 const production = process.argv.includes('--production');
 
 /**
- * Packs that ship inside the .vsix.
+ * Packs that ship inside the .vsix: the three Agent Companion characters.
  *
- * Deliberately a list rather than everything in packs/. The other characters
- * are built from artwork belonging to third parties - upstream is explicit that
- * "GitHub Copilot artwork and product names belong to their respective owners"
- * - which is unremarkable in a private repository and not something to bake
- * into a published extension. They load from `agentCompanion.packPaths`.
+ * Deliberately a list rather than everything in packs/. Marvin is the author's
+ * own character rather than one of the product's, so he stays in packs/ and
+ * loads through `agentCompanion.packPaths` like anybody's own character would.
+ * Nothing in the extension is specific to any of the three that ship.
+ *
+ * All three wear a name that belongs to someone - GitHub's, Anthropic's and the
+ * OpenClaw project's - which each `packs/<id>/pack.json` records. Whether they
+ * may be published under those names is a trademark question and not one the
+ * build can answer; changing this list is all it takes to stop shipping one.
  */
-const BUNDLED_PACKS = ['marvin'];
+const BUNDLED_PACKS = ['copilot', 'claude', 'openclaw'];
 
 async function copyPacks() {
   const to = join(here, 'packs');

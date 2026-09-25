@@ -69,19 +69,31 @@ A directory of WebP strips plus a `pack.json`, described in
 directions and five expressions - each a run of poses with four blink levels
 stored as eye-sized patches rather than whole frames.
 
-Three ship in `packs/`, each thirteen tracks at twelve steps and 120x112:
+Four live in `packs/`, each thirteen tracks at twelve steps and 120x112:
 
-| Pack | Size | Source |
-| --- | --- | --- |
-| `marvin` | 556 KB | AI-generated rig, bundled in the extension |
-| `copilot` | 656 KB | AI-generated rig |
-| `openclaw` | 548 KB | Three.js model, rendered offline |
+| Pack | Size | Source | |
+| --- | --- | --- | --- |
+| `copilot` | 656 KB | AI-generated rig | ships, and is what shows first |
+| `claude` | 404 KB | box model, rendered procedurally | ships |
+| `openclaw` | 548 KB | Three.js model, rendered offline | ships |
+| `marvin` | 556 KB | AI-generated rig | the author's own, not distributed |
 
-Only `marvin` is bundled into the `.vsix`. The other two are built from artwork
-belonging to third parties - upstream is explicit that "GitHub Copilot artwork
-and product names belong to their respective owners" - which is unremarkable in
-a private repository and not something to put in a published extension. Point
-`agentCompanion.packPaths` at this `packs/` folder to use them.
+**Copilot, Claude and OpenClaw are the Agent Companion characters.** Those three
+are bundled into the `.vsix` and into the desktop app, Copilot is the one shown
+before anybody picks, and every icon is cut from its centre pose. Marvin is the
+author's own character and is not distributed; point `agentCompanion.packPaths`
+at this `packs/` folder to use him anyway.
+
+All three that ship wear a name that is not ours - GitHub's, Anthropic's and the
+OpenClaw project's - which each `pack.json` records. Whether they may be
+published under those names is a trademark question rather than a build one, and
+`BUNDLED_PACKS` in [extension/esbuild.mjs](extension/esbuild.mjs) is the single
+place to change to stop shipping one.
+
+`claude` is the smallest of the four and much the cleanest input: flat
+terracotta over flat black, built from axis-aligned boxes and rendered rather
+than generated, so all thirteen tracks already share frame 0 byte for byte and
+nothing needed realigning.
 
 ## Building a pack
 
@@ -94,12 +106,20 @@ npx agent-pack build <gaze-dir> <expression-dir> \
   --anchor <approved-center.png>
 
 npx agent-pack validate packs/marvin
+
+# a rig keeping all thirteen tracks in one place needs no second directory,
+# and one that already agrees at frame 0 needs no anchor
+npx agent-pack build <rig-dir> --out packs/claude --id claude --name Claude
 ```
 
-The input is a rendered rig: the pair of `animation.json` manifests an ESP32
-Agent Companion art pipeline emits, which already carry per-frame eye boxes and
-blink filenames. A directory of loose PNGs named `<track>-<NN>.png` and
-`<track>-<NN>-blink-<1..4>.png` also works.
+The input is a rendered rig: the `animation.json` an ESP32 Agent Companion art
+pipeline emits, which already carries per-frame eye boxes and blink filenames.
+How it divides the thirteen tracks up varies by rig and the packer does not
+mind - two directories with a manifest each, as Marvin renders gaze and
+expressions in separate passes, or one directory and one manifest, whether that
+lists all thirteen together like OpenClaw or splits them between `directions`
+and `expressions` like Claude. A directory of loose PNGs named
+`<track>-<NN>.png` and `<track>-<NN>-blink-<1..4>.png` also works.
 
 `agent-pack build --help` lists the rest: `--steps`, `--scale`, `--quality`,
 `--eye-margin`, `--background`, `--alpha`.
@@ -160,7 +180,10 @@ secondary sidebar if you want it beside Chat. **Agent Companion: Install Agent
 Hooks** connects it to a real agent; **Simulate State** drives the expressions by
 hand, which stays useful for checking a pack.
 
-The `.vsix` is 537 KB, most of it the 556 KB of character art compressing down.
+The `.vsix` is 1.44 MB, of which 1.41 MB is the three characters. WebP does not
+compress again inside a zip, so a pack costs very nearly what it weighs - which
+is the argument for the patch-packed blinks, and for the list of what ships
+being a list.
 
 ## Running the desktop app
 
@@ -192,7 +215,7 @@ before anything was built on the answer.
 npm run harness --workspace @agent-companion/renderer
 ```
 
-Serves a page on http://localhost:4321 that loads `packs/marvin` and animates
+Serves a page on http://localhost:4321 that loads `packs/copilot` and animates
 it: state buttons, directed looks, sleep, forced blink, cross-fade toggle, and a
 live read-out of the pose being drawn.
 
@@ -204,7 +227,13 @@ window the harness joins as a subscriber and the two agree, which is the
 multi-window behaviour working across hosts rather than a special case.
 
 `npm run filmstrip --workspace @agent-companion/renderer` renders a scripted
-session to a PNG instead, which is the quicker way to check a change.
+session to a PNG instead, which is the quicker way to check a change, and
+`node scripts/effects-sheet.mjs` lays out every effect at the size it is really
+seen.
+
+All three show the pack that ships first unless `AGENT_COMPANION_PACK` names a
+directory, which is how a newly built character gets looked at before it goes
+anywhere.
 
 ## Reacting to a real agent
 
@@ -455,5 +484,8 @@ That repository still carries no LICENSE file, so the approval is the only
 thing settling reuse. Before publishing anywhere, it is worth asking him to add
 one, or recording the grant somewhere more durable than a line in this file.
 
-Character art is the pack author's own; no pack in this repository contains
-artwork belonging to anyone else.
+No pack in this repository copies anyone's artwork: every frame is rendered, by
+the pipeline above or by a tool in this repository. Names are a separate matter.
+`copilot` renders a character of GitHub's, `claude` one of Anthropic's and
+`openclaw` one of the OpenClaw project's, and all three of those ship - see the
+pack table above, which is also where to start if that should change.

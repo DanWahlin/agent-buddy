@@ -3,6 +3,8 @@
  * judged at the scale they are actually seen rather than the pack's native one.
  *
  *   node scripts/effects-sheet.mjs [scale]
+ *
+ * `AGENT_COMPANION_PACK` points it at a pack other than the default one.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -12,7 +14,8 @@ import { CharacterEffects, CharacterPlayer, PackRenderer } from '../dist/index.j
 
 sharp.cache(false);
 
-const PACK_DIR = join(import.meta.dirname, '..', '..', '..', 'packs', 'marvin');
+const PACK_DIR = process.env.AGENT_COMPANION_PACK
+  ?? join(import.meta.dirname, '..', '..', '..', 'packs', 'copilot');
 const pack = JSON.parse(readFileSync(join(PACK_DIR, 'pack.json'), 'utf8'));
 const scale = Number(process.argv[2] ?? 3);
 const W = Math.round(pack.frame.width * scale);
@@ -72,7 +75,9 @@ async function paint(calls, shapes) {
     });
   }
 
-  return sharp({ create: { width: W, height: H, channels: 4, background: pack.background } })
+  // A cut-out pack has no background of its own - it sits on the panel - so
+  // stand it on a dark panel to look at, the same one the contact sheets use.
+  return sharp({ create: { width: W, height: H, channels: 4, background: pack.background ?? '#15181d' } })
     .composite(layers).png().toBuffer();
 }
 

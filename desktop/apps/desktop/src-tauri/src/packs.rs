@@ -105,6 +105,10 @@ pub fn locate(relative: &str) -> Option<PathBuf> {
     }
 }
 
+/// The character shown before anyone picks one, and the one the app icon wears.
+/// Kept in step with `DEFAULT_PACK` in `esbuild.mjs`, which bundles it.
+const DEFAULT_PACK: &str = "copilot";
+
 /// Which pack to show: the one chosen last, else the one that shipped.
 pub fn choose<'a>(packs: &'a [Pack], wanted: Option<&str>) -> Option<&'a Pack> {
     if let Some(id) = wanted {
@@ -113,7 +117,7 @@ pub fn choose<'a>(packs: &'a [Pack], wanted: Option<&str>) -> Option<&'a Pack> {
         }
     }
     // A remembered pack that has since gone should not leave an empty window.
-    packs.iter().find(|pack| pack.id == "marvin").or_else(|| packs.first())
+    packs.iter().find(|pack| pack.id == DEFAULT_PACK).or_else(|| packs.first())
 }
 
 
@@ -234,21 +238,22 @@ mod tests {
 
     #[test]
     fn the_chosen_one_wins() {
-        let packs = [pack("marvin"), pack("copilot")];
-        assert_eq!(choose(&packs, Some("copilot")).unwrap().id, "copilot");
+        let packs = [pack("copilot"), pack("claude")];
+        assert_eq!(choose(&packs, Some("claude")).unwrap().id, "claude");
     }
 
     /// Pointing at a folder and then moving it should not leave a blank window.
     #[test]
     fn a_pack_that_has_gone_falls_back_rather_than_showing_nothing() {
-        let packs = [pack("marvin"), pack("openclaw")];
-        assert_eq!(choose(&packs, Some("copilot")).unwrap().id, "marvin");
+        let packs = [pack("copilot"), pack("openclaw")];
+        assert_eq!(choose(&packs, Some("marvin")).unwrap().id, "copilot");
     }
 
+    /// The shipped default wins over a pack that merely sorts earlier.
     #[test]
     fn with_nothing_remembered_the_shipped_one_shows() {
-        let packs = [pack("openclaw"), pack("marvin")];
-        assert_eq!(choose(&packs, None).unwrap().id, "marvin");
+        let packs = [pack("claude"), pack("copilot")];
+        assert_eq!(choose(&packs, None).unwrap().id, "copilot");
     }
 
     #[test]
