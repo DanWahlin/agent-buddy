@@ -2,6 +2,33 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.4.0]
+
+### Documentation
+
+- Update OpenClaw setup documentation
+
+
+### Features and improvements
+
+- Add .gitattributes to enforce LF line endings
+
+- Add multi-agent hooks, character packs, Wi-Fi setup, settings page, and agent badges
+
+
+### Fixes
+
+- Fix CI and explain old-Python flashing failures
+
+
+### Other changes
+
+- Use sys.executable instead of hardcoded python3
+
+- Upgrade to Node.js 24 LTS
+
+- Center character thumbnails on the settings page
+
 ## [v0.3.1]
 
 ### Fixes
