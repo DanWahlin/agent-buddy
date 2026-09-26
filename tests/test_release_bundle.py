@@ -1,5 +1,4 @@
 import contextlib
-import hashlib
 import importlib.metadata
 import io
 import json
@@ -11,9 +10,19 @@ import unittest
 from unittest import mock
 import zipfile
 
-from tools import firmware_artifacts, flash_release, package_release
+from tools import character_pack, firmware_artifacts, flash_release, package_release
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def tiny_pack(pack_id):
+    """A minimal valid pack: every frame references the same one-byte block."""
+    if pack_id == "copilot":
+        table = character_pack.PATCH_FRAME.pack(0, 1, 0, 0, 0, 0, *([0] * 8)) * 288
+        return character_pack.encode("copilot", "Copilot", character_pack.LAYOUT_BASE_PATCH,
+                                     table, b"x", base=(0, 0, 1, 1), max_patch_pixels=1)
+    table = character_pack.BLOCK.pack(0, 1) * (13 * 24 * 5)
+    return character_pack.encode(pack_id, "OpenClaw", character_pack.LAYOUT_FULL_FRAME, table, b"y")
 
 
 class ReleaseBundleTests(unittest.TestCase):
@@ -23,17 +32,13 @@ class ReleaseBundleTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory(dir=fixtures)
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
-        self.put("firmware/Copilot/partitions.csv",
+        self.put("firmware/AgentCompanion/partitions.csv",
                  "nvs,data,nvs,0x9000,0x5000,\n"
                  "factory,app,factory,0x10000,0x200000,\n"
                  "assets,data,0x40,0x210000,0xDE0000,\n")
-        self.put("firmware/Copilot/Copilot.ino", "void setup() {}")
-        self.put("assets/sprite-firmware.bin", b"matched sprite pixels")
-        self.put("assets/sprite-firmware.json", json.dumps(dict(
-            dataBytes=21, dataSha256=hashlib.sha256(b"matched sprite pixels").hexdigest())))
-        self.put("assets/openclaw-lab.bin", b"openclaw sprite pixels")
-        self.put("assets/openclaw-lab.json", json.dumps(dict(
-            dataBytes=22, dataSha256=hashlib.sha256(b"openclaw sprite pixels").hexdigest())))
+        self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
+        for pack_id in ("copilot", "openclaw"):
+            self.put(f"build/characters/{pack_id}.acpk", tiny_pack(pack_id))
         for path in firmware_artifacts.BINARIES:
             self.put(path, b"compiled-" + path.name.encode())
         self.put("build/firmware/boot_app0.bin", b"\xff" * 8192)
@@ -48,11 +53,11 @@ class ReleaseBundleTests(unittest.TestCase):
         target.write_bytes(value.encode() if isinstance(value, str) else value)
 
     def bundle(self):
-        firmware, sd = package_release.package(self.root, "1.2.3")
+        firmware, characters = package_release.package(self.root, "1.2.3")
         extracted = self.root / "extracted"
         with zipfile.ZipFile(firmware) as archive:
             archive.extractall(extracted)
-        return extracted, firmware, sd
+        return extracted, firmware, characters
 
     def rehash(self, root):
         files = {name: (root / name).read_bytes() for name in flash_release.PAYLOAD_NAMES}
@@ -69,21 +74,22 @@ class ReleaseBundleTests(unittest.TestCase):
             return flash_release.main(args, root=root)
 
     def test_fresh_deterministic_archives_and_offline_installer(self):
-        extracted, firmware, sd = self.bundle()
-        original = [firmware.read_bytes(), sd.read_bytes()]
+        extracted, firmware, characters = self.bundle()
+        original = [firmware.read_bytes(), characters.read_bytes()]
         package_release.package(self.root, "1.2.3")
-        self.assertEqual(original, [firmware.read_bytes(), sd.read_bytes()])
+        self.assertEqual(original, [firmware.read_bytes(), characters.read_bytes()])
         self.assertEqual(firmware.name, "esp32-agent-companion-v1.2.3-firmware.zip")
-        self.assertEqual(sd.name, "esp32-agent-companion-v1.2.3-sd-card.zip")
+        self.assertEqual(characters.name, "esp32-agent-companion-v1.2.3-characters.zip")
         with zipfile.ZipFile(firmware) as archive:
             self.assertEqual(set(archive.namelist()), {*flash_release.PAYLOAD_NAMES, "SHA256SUMS"})
             self.assertTrue(all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()))
-        with zipfile.ZipFile(sd) as archive:
-            self.assertEqual(archive.namelist(), ["characters/openclaw/sprites.bin"])
-            self.assertEqual(archive.read(archive.namelist()[0]),
-                             b"openclaw sprite pixels")
+        with zipfile.ZipFile(characters) as archive:
+            self.assertEqual(archive.namelist(), ["copilot.acpk", "openclaw.acpk"])
+            self.assertEqual(archive.read("openclaw.acpk"), tiny_pack("openclaw"))
+        with zipfile.ZipFile(firmware) as archive:
+            self.assertEqual(archive.read("bin/character-copilot.acpk"), tiny_pack("copilot"))
         self.assertEqual((firmware.parent / "SHA256SUMS").read_bytes(),
-                         package_release.checksum_file(dict(zip((firmware.name, sd.name), original))))
+                         package_release.checksum_file(dict(zip((firmware.name, characters.name), original))))
         manifest = flash_release.verify_bundle(extracted)
         self.assertEqual([image["offset"] for image in manifest["images"]],
                          [0, 0x8000, 0xe000, 0x10000, 0x210000])
@@ -97,9 +103,9 @@ class ReleaseBundleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_custom_name_and_repository(self):
-        firmware, sd = package_release.package(self.root, "0.0.0", name="new-name",
-                                               repository="Someone/new-name")
-        self.assertEqual(sd.name, "new-name-v0.0.0-sd-card.zip")
+        firmware, characters = package_release.package(self.root, "0.0.0", name="new-name",
+                                                       repository="Someone/new-name")
+        self.assertEqual(characters.name, "new-name-v0.0.0-characters.zip")
         with zipfile.ZipFile(firmware) as archive:
             self.assertIn(b"github.com/Someone/new-name/releases/tag/v0.0.0", archive.read("INSTALL.txt"))
             self.assertNotIn(b"DanWahlin", archive.read("manifest.json"))
@@ -120,7 +126,7 @@ class ReleaseBundleTests(unittest.TestCase):
                 path.write_bytes(data)
 
     def test_rejects_stale_build_and_guarded_boot_app0(self):
-        for filename in ("firmware/Copilot/Copilot.ino", "build/firmware/boot_app0.bin"):
+        for filename in ("firmware/AgentCompanion/AgentCompanion.ino", "build/firmware/boot_app0.bin"):
             with self.subTest(filename=filename):
                 path = self.root / filename
                 original = path.read_bytes()
@@ -185,8 +191,8 @@ class ReleaseBundleTests(unittest.TestCase):
             flash_release.verify_bundle(extracted)
 
     def test_budget_checks(self):
-        for filename, size in (("build/firmware/Copilot.ino.bootloader.bin", 0x8001),
-                               ("build/firmware/Copilot.ino.partitions.bin", 0x1001),
+        for filename, size in (("build/firmware/AgentCompanion.ino.bootloader.bin", 0x8001),
+                               ("build/firmware/AgentCompanion.ino.partitions.bin", 0x1001),
                                ("build/firmware/boot_app0.bin", 0x2001)):
             with self.subTest(filename=filename):
                 path = self.root / filename
@@ -196,15 +202,24 @@ class ReleaseBundleTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "budget"):
                     package_release.package(self.root, "1.2.3")
                 path.write_bytes(original)
-        self.put("build/firmware/Copilot.ino.bin", b"x" * (0x200000 + 1))
+        self.put("build/firmware/AgentCompanion.ino.bin", b"x" * (0x200000 + 1))
         with self.assertRaisesRegex(ValueError, "exceeds"):
             firmware_artifacts.record(self.root)
-        self.put("assets/sprite-firmware.bin", b"x" * (0xDE0000 + 1))
-        with self.assertRaisesRegex(ValueError, "does not fit"):
+        self.put("build/characters/copilot.acpk", b"x" * (0xDE0000 + 1))
+        with self.assertRaisesRegex(ValueError, "exceeds the assets partition"):
             firmware_artifacts.snapshot(self.root)
 
+    def test_rejects_invalid_or_mislabeled_character_packs(self):
+        path = self.root / "build/characters/openclaw.acpk"
+        path.write_bytes(path.read_bytes()[:-1] + b"z")
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            package_release.package(self.root, "1.2.3")
+        path.write_bytes(tiny_pack("other"))
+        with self.assertRaisesRegex(ValueError, "different id"):
+            package_release.package(self.root, "1.2.3")
+
     def test_layout_is_read_not_reexported(self):
-        self.put("firmware/Copilot/partitions.csv",
+        self.put("firmware/AgentCompanion/partitions.csv",
                  "factory,app,factory,0x10000,0x200000,\n"
                  "assets,data,0x40,0x220000,0xDD0000,\n")
         firmware_artifacts.snapshot(self.root)

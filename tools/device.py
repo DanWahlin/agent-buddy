@@ -17,30 +17,31 @@ MEMORY_FIELDS = (
 )
 CHARACTER_MODES = ("idle", "surprise", "working", "complete", "attention")
 
-def parse_sd_status(line):
-    if not line.startswith("SD "):
+def parse_character_status(line):
+    if not line.startswith("CHARACTER "):
         return None
-    match = re.fullmatch(
-        r"SD state=(\w+) card=(\w+) capacity_bytes=(\d+) cache_bytes=(\d+) hits=(\d+) misses=(\d+)", line)
-    if not match:
-        raise RuntimeError(f"Malformed SD telemetry: {line}")
-    state, card, capacity, cache, hits, misses = match.groups()
-    return dict(state=state, card=card, capacity_bytes=int(capacity), cache_bytes=int(cache),
-                hits=int(hits), misses=int(misses))
+    match = re.fullmatch(r"CHARACTER id=([a-z0-9-]+) layout=(base-patch|full-frame) bytes=(\d+) name=(.+)", line)
+    if match:
+        character, layout, size, name = match.groups()
+        return dict(id=character, layout=layout, bytes=int(size), name=name)
+    match = re.fullmatch(r"CHARACTER id=none reason=(.*)", line)
+    if match:
+        return dict(id="none", reason=match.group(1))
+    raise RuntimeError(f"Malformed character telemetry: {line}")
 
 
-def request_storage_status(port, timeout=10):
+def request_character_status(port, timeout=10):
     port.write(b"i")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         line = port.readline().decode("utf-8", errors="replace").strip()
-        status = parse_sd_status(line)
+        status = parse_character_status(line)
         if status is not None:
             print(line, flush=True)
             return status
         if any(marker in line for marker in ("FATAL", "Guru Meditation", "abort()")):
-            raise RuntimeError(f"Storage query failed: {line}")
-    raise TimeoutError("No SD status received; check firmware support and boot completion.")
+            raise RuntimeError(f"Character query failed: {line}")
+    raise TimeoutError("No character status received; check firmware protocol 6 and boot completion.")
 
 
 def request_mode(port, mode):
@@ -53,7 +54,7 @@ def request_mode(port, mode):
         line = port.readline().decode("utf-8", errors="replace").strip()
         if line.startswith("INFO protocol="):
             match = re.match(r"INFO protocol=(\d+)(?: |$)", line)
-            if not match or int(match.group(1)) != 1:
+            if not match or int(match.group(1)) not in (1, 2, 3, 4, 5):
                 raise RuntimeError(f"Unsupported device command protocol: {line}")
             print(line, flush=True)
             break
@@ -190,8 +191,8 @@ def main():
     parser.add_argument("--capture", type=Path)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--mode", choices=CHARACTER_MODES, help="Send a character event before observation.")
-    parser.add_argument("--storage", action="store_true",
-                        help="Query read-only microSD/pack status before observation; never modifies the card.")
+    parser.add_argument("--character", action="store_true",
+                        help="Query the installed character pack before observation.")
     parser.add_argument("--warmup-seconds", type=float, default=0,
                         help="Log, but exclude, this initial interval before the measured interval.")
     parser.add_argument("--check-memory", action="store_true")
@@ -214,9 +215,9 @@ def main():
     lines, rates, memory, gaps = [], [], [], []
     try:
         port.open()
-        if args.storage:
-            status = request_storage_status(port)
-            print(f"Storage: {status['state']}; card capacity {status['capacity_bytes']:,} bytes", flush=True)
+        if args.character:
+            status = request_character_status(port)
+            print(f"Character: {status.get('name', status['id'])}", flush=True)
         if args.mode:
             request_mode(port, args.mode)
         measured_start = time.monotonic() + args.warmup_seconds

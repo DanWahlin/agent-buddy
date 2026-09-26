@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep firmware, partition table, and separately flashed sprites a matched set."""
+"""Keep firmware, partition table, and the default character pack a matched set."""
 import argparse
 import csv
 import hashlib
@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INPUTS = Path("build/firmware-inputs.json")
 BUNDLE = Path("build/firmware-bundle.json")
-BINARIES = tuple(Path("build/firmware") / f"Copilot.ino{suffix}.bin"
+DEFAULT_PACK = Path("build/characters/copilot.acpk")
+BINARIES = tuple(Path("build/firmware") / f"AgentCompanion.ino{suffix}.bin"
                  for suffix in ("", ".bootloader", ".partitions")) + (Path("build/firmware/boot_app0.bin"),)
 
 
@@ -22,7 +23,7 @@ def digest(path):
 
 
 def layout(root):
-    with (root / "firmware/Copilot/partitions.csv").open() as source:
+    with (root / "firmware/AgentCompanion/partitions.csv").open() as source:
         rows = [row for row in csv.reader(line for line in source if line.strip() and not line.lstrip().startswith("#"))]
     partitions = {}
     for row in rows:
@@ -50,15 +51,12 @@ def layout(root):
 
 def fingerprint(root):
     app, assets = layout(root)
-    binary = root / "assets/sprite-firmware.bin"
-    metadata = json.loads((root / "assets/sprite-firmware.json").read_text())
-    if binary.stat().st_size > assets["size"] or binary.stat().st_size != metadata["dataBytes"]:
-        raise ValueError("Sprite payload does not fit or match its metadata.")
-    if digest(binary) != metadata["dataSha256"]:
-        raise ValueError("Sprite payload SHA256 does not match its metadata.")
-    paths = sorted(path for path in (root / "firmware/Copilot").rglob("*")
+    pack = root / DEFAULT_PACK
+    if not 0 < pack.stat().st_size <= assets["size"]:
+        raise ValueError("Default character pack is empty or exceeds the assets partition.")
+    paths = sorted(path for path in (root / "firmware/AgentCompanion").rglob("*")
                    if path.is_file() and path.suffix in (".ino", ".h", ".cpp", ".S", ".csv"))
-    paths += [binary, root / "assets/sprite-firmware.json"]
+    paths.append(pack)
     return dict(app=app, assets=assets, files={str(path.relative_to(root)): digest(path) for path in paths})
 
 
@@ -83,7 +81,7 @@ def record(root):
 def check(root):
     bundle = json.loads((root / BUNDLE).read_text())
     if bundle["inputs"] != fingerprint(root):
-        raise ValueError("Firmware or sprites changed since compilation. Run tools/arduino.sh build first.")
+        raise ValueError("Firmware or the default character changed since compilation. Run tools/arduino.sh build first.")
     if bundle["binaries"] != {str(path): digest(root / path) for path in BINARIES}:
         raise ValueError("Compiled firmware artifacts changed. Build again before uploading.")
 

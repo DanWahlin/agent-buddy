@@ -6,21 +6,27 @@ import {
   defaultSocketPath,
   socketPath,
   statePath,
+  wifiConfigPath,
 } from '../src/paths.js';
 
 test('honors explicit daemon path overrides', () => {
   const previousSocket = process.env.AGENT_COMPANION_SOCKET;
   const previousState = process.env.AGENT_COMPANION_STATE;
+  const previousWifi = process.env.AGENT_COMPANION_WIFI_CONFIG;
   process.env.AGENT_COMPANION_SOCKET = join('custom', 'daemon.sock');
   process.env.AGENT_COMPANION_STATE = join('custom', 'state.json');
+  process.env.AGENT_COMPANION_WIFI_CONFIG = join('custom', 'wifi.json');
   try {
     assert.equal(socketPath(), join('custom', 'daemon.sock'));
     assert.equal(statePath(), join('custom', 'state.json'));
+    assert.equal(wifiConfigPath(), join('custom', 'wifi.json'));
   } finally {
     if (previousSocket === undefined) delete process.env.AGENT_COMPANION_SOCKET;
     else process.env.AGENT_COMPANION_SOCKET = previousSocket;
     if (previousState === undefined) delete process.env.AGENT_COMPANION_STATE;
     else process.env.AGENT_COMPANION_STATE = previousState;
+    if (previousWifi === undefined) delete process.env.AGENT_COMPANION_WIFI_CONFIG;
+    else process.env.AGENT_COMPANION_WIFI_CONFIG = previousWifi;
   }
 });
 

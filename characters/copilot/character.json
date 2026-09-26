@@ -1,0 +1,10 @@
+{
+  "id": "copilot",
+  "name": "Copilot",
+  "layout": "base-patch",
+  "frames": "frames.bin",
+  "metadata": "frames.json",
+  "motionSpeed": 1.0,
+  "walk": null,
+  "validator": "tools/embed_sprites.py"
+}

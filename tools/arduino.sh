@@ -16,7 +16,7 @@ if [[ ! -f "$CONFIG" ]]; then
 fi
 case "$ACTION" in
   build)
-    python3 "$ROOT/tools/embed_sprites.py"
+    python3 "$ROOT/tools/character_pack.py" build
     python3 "$ROOT/tools/embed_audio.py"
     GFX="$WAVESHARE/examples/arduino/libraries/GFX_Library_for_Arduino"
     SENSORS="$WAVESHARE/examples/arduino/libraries/SensorLib"
@@ -36,26 +36,27 @@ case "$ACTION" in
     "$CLI" --config-file "$CONFIG" compile --fqbn "$FQBN" \
       --build-property "upload.maximum_size=$APP_SIZE" \
       --library "$GFX" --library "$SENSORS" --warnings default \
-      --build-path "$ROOT/build/firmware" "$ROOT/firmware/Copilot"
+      --build-path "$ROOT/build/firmware" "$ROOT/firmware/AgentCompanion"
     python3 "$ROOT/tools/firmware_artifacts.py" record
     ;;
   upload|upload-code)
     PORT="${2:-/dev/cu.usbmodem2101}"
-    if [[ ! -f "$ROOT/build/firmware/Copilot.ino.bin" ]]; then
+    if [[ ! -f "$ROOT/build/firmware/AgentCompanion.ino.bin" ]]; then
       echo "Build first: bash tools/arduino.sh build" >&2
       exit 1
     fi
-    python3 "$ROOT/tools/embed_sprites.py"
+    python3 "$ROOT/tools/character_pack.py" build
     python3 "$ROOT/tools/embed_audio.py"
     python3 "$ROOT/tools/firmware_artifacts.py" check
     ASSET_OFFSET="$(python3 "$ROOT/tools/firmware_artifacts.py" asset-offset)"
     EXTRA_FILES=""
     if [[ "$ACTION" == "upload" ]]; then
-      EXTRA_FILES="$ASSET_OFFSET \"$ROOT/assets/sprite-firmware.bin\""
+      # A complete upload also installs the default Copilot character pack.
+      EXTRA_FILES="$ASSET_OFFSET \"$ROOT/build/characters/copilot.acpk\""
     fi
     "$CLI" --config-file "$CONFIG" upload --fqbn "$FQBN" \
       --upload-property "upload.extra_flags=$EXTRA_FILES" \
-      --port "$PORT" --input-dir "$ROOT/build/firmware" "$ROOT/firmware/Copilot"
+      --port "$PORT" --input-dir "$ROOT/build/firmware" "$ROOT/firmware/AgentCompanion"
     sleep 2
     ;;
   monitor)

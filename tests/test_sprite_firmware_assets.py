@@ -4,7 +4,6 @@ import io
 import json
 import math
 from pathlib import Path
-import platform
 import shutil
 import sys
 import struct
@@ -211,8 +210,8 @@ class SpriteCompressionTest(unittest.TestCase):
             self.assertEqual(inverse_word_up(zlib.decompress(data), (6 // width, width)).tobytes(), raw)
 
     def test_all_reachable_states_preserve_locked_pixels_without_export(self):
-        metadata = json.loads((ROOT / "assets/sprite-firmware.json").read_text())
-        data = (ROOT / "assets/sprite-firmware.bin").read_bytes()
+        metadata = json.loads((ROOT / "characters/copilot/frames.json").read_text())
+        data = (ROOT / "characters/copilot/frames.bin").read_bytes()
         digest = hashlib.sha256()
         states = 0
         def decode(block, shape):
@@ -246,10 +245,10 @@ class SpriteCompressionTest(unittest.TestCase):
 class SpriteFirmwareAssetsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source_path = ROOT / "web/generated-sprites/animation.json"
+        cls.source_path = ROOT / "characters/copilot/sprites/animation.json"
         cls.source = json.loads(cls.source_path.read_text())
-        cls.metadata = json.loads((ROOT / "assets/sprite-firmware.json").read_text())
-        cls.data = (ROOT / "assets/sprite-firmware.bin").read_bytes()
+        cls.metadata = json.loads((ROOT / "characters/copilot/frames.json").read_text())
+        cls.data = (ROOT / "characters/copilot/frames.bin").read_bytes()
         cls.inputs = exporter.load_manifests(cls.source_path)
         cls.track_inputs = {direction: (path, manifest)
                             for path, _, manifest, directions in cls.inputs for direction in directions}
@@ -372,7 +371,7 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
         for key in ("base", "patchX", "patchY", "patchWidth", "patchHeight", "blinks"):
             self.assertEqual(last[key], self.metadata["frames"][0][key])
         inputs = copy.deepcopy(self.inputs)
-        archived = json.loads((ROOT / "web/generated-expressions/animation.candidate.json").read_text())
+        archived = json.loads((ROOT / "characters/copilot/expressions/animation.candidate.json").read_text())
         old = archived["directions"]["surprise"]["frames"][-1]
         frame = inputs[-1][2]["directions"]["surprise"]["frames"][-1]
         for key in ("file", "blinks", "sha256"):
@@ -556,33 +555,20 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
         self.assertTrue(self.metadata["displayReady"])
         self.assertEqual((self.metadata["width"], self.metadata["height"]), (412, 352))
 
-    def test_generated_abi_embedding_and_repeat_build_cache(self):
-        header = ROOT / "firmware/Copilot/generated/sprite_assets.h"
-        cpp = ROOT / "firmware/Copilot/src/sprite_data.cpp"
-        include = ROOT / "firmware/Copilot/generated/sprite_bytes.h"
-        host = ROOT / "build/sprite_host.S"
-        paths = [ROOT / "assets/sprite-firmware.bin", ROOT / "assets/sprite-firmware.json",
-                 header, cpp, host]
-        self.assertEqual(header.read_text(), exporter.render_header(self.metadata))
-        self.assertEqual(cpp.read_text(), exporter.render_cpp(self.metadata))
+    def test_frame_table_lives_in_the_character_pack_and_repeat_build_cache(self):
+        firmware = ROOT / "firmware/AgentCompanion"
+        for obsolete in ("generated/sprite_assets.h", "src/sprite_data.cpp", "src/sprite_blob.S",
+                         "generated/sprite_bytes.h"):
+            self.assertFalse((firmware / obsolete).exists(), f"Firmware must not embed {obsolete}")
+        self.assertFalse(hasattr(exporter, "render_header"))
+        self.assertEqual(self.metadata["metadataStorage"], "character-pack")
+        paths = [ROOT / "characters/copilot/frames.bin", ROOT / "characters/copilot/frames.json"]
         before = [path.stat().st_mtime_ns for path in paths]
         with patch("builtins.print"):
             exporter.export()
             embed_sprites.embed()
         self.assertEqual([path.stat().st_mtime_ns for path in paths], before)
-        self.assertFalse(include.exists(), "Firmware must not embed the partition payload")
-        symbol = "_ZN7copilot15kSpriteDataBlobE"
-        self.assertIn(("_" if platform.system() == "Darwin" else "") + symbol + ":", host.read_text())
-        self.assertIn('.incbin "', host.read_text())
-        blob = (ROOT / "firmware/Copilot/src/sprite_blob.S").read_text()
-        self.assertNotIn(".byte", blob)
-        self.assertNotIn(".incbin", blob)
-        self.assertNotIn("#include", blob)
-        self.assertIn("extern const uint8_t* kSpriteData;", header.read_text())
-        self.assertIn("extern const uint8_t kSpriteDataSha256[32];", header.read_text())
-        self.assertNotIn("const uint8_t* kSpriteData =", cpp.read_text())
-        digest = ", ".join(f"0x{byte:02x}" for byte in hashlib.sha256(self.data).digest())
-        self.assertIn(f"kSpriteDataSha256[32] = {{{digest}}}", cpp.read_text())
+        self.assertFalse((ROOT / "build/sprite_host.S").exists())
 
     def test_embedding_rejects_stale_inputs_with_regeneration_command(self):
         first_png = next(iter(self.metadata["sourceManifests"][embed_sprites.IDLE_MANIFEST]["sourcePngSha256"]))
@@ -602,7 +588,7 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
                     return b"changed source" if path == stale else read_bytes(path)
                 with patch.object(Path, "read_bytes", autospec=True, side_effect=changed_bytes):
                     with self.assertRaisesRegex(
-                            ValueError, "Stale sprite export:.*python3 tools/export_sprite_firmware.py"):
+                            ValueError, "Stale sprite export:.*python3 characters/copilot/tools/export_sprite_firmware.py"):
                         embed_sprites.embed()
         invalid = copy.deepcopy(self.metadata)
         invalid["sourceManifests"]["../outside/animation.json"] = {}
@@ -614,7 +600,7 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
             embed_sprites.validate_sources(ROOT, invalid)
 
     def test_embedding_rejects_stale_profile_and_encoding(self):
-        metadata_path = ROOT / "assets/sprite-firmware.json"
+        metadata_path = ROOT / "characters/copilot/frames.json"
         read_text = Path.read_text
         for field, value in (("formatVersion", 1), ("profile", "compact"),
                              ("encoding", "zlib-rgb565-le"), ("width", 240),
@@ -629,7 +615,7 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
                         embed_sprites.embed()
 
     def test_embedding_rejects_inconsistent_compact_track_tables(self):
-        metadata_path = ROOT / "assets/sprite-firmware.json"
+        metadata_path = ROOT / "characters/copilot/frames.json"
         read_text = Path.read_text
         for field, value in (("trackSteps", [24] * len(self.metadata["directions"])),
                              ("trackOffsets", [0] * len(self.metadata["directions"])),
@@ -681,7 +667,7 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
                         exporter.load_manifests(self.source_path)
 
     def test_partition_budget_parsing_and_validation(self):
-        path = ROOT / "firmware/Copilot/partitions.csv"
+        path = ROOT / "firmware/AgentCompanion/partitions.csv"
         read_bytes = Path.read_bytes
         valid = ("# Name, Type, SubType, Offset, Size, Flags\n"
                  "factory, app, factory, 0x10000, 2M,\n"
@@ -709,7 +695,7 @@ class SpriteFirmwareAssetsTest(unittest.TestCase):
                         embed_sprites.read_assets_partition()
 
     def test_embedding_rejects_changed_partition_and_manifest_inventory(self):
-        path = ROOT / "firmware/Copilot/partitions.csv"
+        path = ROOT / "firmware/AgentCompanion/partitions.csv"
         original = path.read_bytes()
         read_bytes = Path.read_bytes
         with patch.object(Path, "read_bytes", autospec=True,

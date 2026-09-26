@@ -1,5 +1,5 @@
-#include "../firmware/Copilot/src/AtlasRenderer.h"
-#include "../firmware/Copilot/src/AnimationClock.h"
+#include "../characters/copilot/legacy-atlas/src/AtlasRenderer.h"
+#include "../firmware/AgentCompanion/src/AnimationClock.h"
 #include "../tools/HostInflate.h"
 #include <cassert>
 #include <cmath>

@@ -1,0 +1,38 @@
+{
+  "created": "2026-09-11T07:15:22.571436+00:00",
+  "provider": "Configured Azure GPT Image deployment",
+  "reference": "characters/copilot/source/generated-sprites/approved-center.png",
+  "references": [
+    {
+      "file": "characters/copilot/source/generated-sprites/approved-center.png",
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    }
+  ],
+  "referenceSha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "prompt": "characters/copilot/source/sprite-prompts/down_left-generated.txt",
+  "promptText": "Create a professional production sprite-animation sheet, exactly 1536x1024 PNG, on absolute black, with proper margins. Reference 1 is the EXACT approved front-facing Copilot character. Reference 2 is a layout/angle guide. This is a NEW coherent down-left head-turn animation, not image warping, not crossfading, not copies of another directional sheet.\n\nDraw exactly 24 complete heads in SIX columns by FOUR rows, row-major, with 240x224 cells starting x=48,y=64. Keep every head fully visible inside its own cell. Frame zero must faithfully match reference 1: same rigid rounded helmet, raised cyan goggles, dark blue visor, violet dome, ear discs, and two small cyan luminous eyes. Preserve identical object dimensions, materials, studio lighting, camera distance and fixed head pivot. No body or background shadows.\n\nThe head simultaneously turns toward the VIEWER'S LEFT and looks DOWN. The face/visor points toward the DOWN-LEFT corner of the IMAGE. The RIGHT ear becomes more visible. This is combined YAW and PITCH, with ZERO ROLL. Do not simulate a diagonal look by rotating the flat image, tilting the head sideways, or translating its position. As it looks DOWN, reveal more top dome and less underside; do not nod so far that the face disappears.\n\nFrame i (i=0..23) uses yaw i*2 degrees toward image LEFT, and pitch i*1 degrees DOWN. Thus it progresses continuously from (0,0) through (2,1),(4,2),... to (46,23) degrees. Every next cell must be a SMALL angular advance of the SAME object. Do not restart on a new row. The last frame clearly looks down-left, NOT purely sideways and NOT purely vertical. Maintain head identity and goggle geometry across all 24 poses. Eyes stay open and move rigidly with the visor.\n\nStyle: polished blue/cyan/violet 3D mascot matching the approved reference exactly, with clean highlights and smooth gradients. Render each angle as an actual new view of one rigid model: no doubled rims, ghost goggles, melting ears, rubber stretching or shape changes. Labels may be tiny white yaw/pitch values BELOW heads only; ensure all text is spelled correctly and fully visible. No arrows, boxes, additional characters or decorations in the final sheet. Ensure all content is fully visible with proper margins.\n",
+  "promptSha256": "bd16fd2a055142e39b9e082bf3130e6ef5544261a8ba3f493ef282da44162913",
+  "size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "format": "png",
+  "generationSeconds": 104.57,
+  "sha256": "ee4ad40c61aeb4d1d9b3f7d2d5bc8e7977fb033c1d1341b2cc830d10a9949ea5",
+  "usage": {
+    "input_tokens": 2243,
+    "input_tokens_details": {
+      "image_tokens": 1746,
+      "text_tokens": 497
+    },
+    "output_tokens": 5488,
+    "output_tokens_details": {
+      "image_tokens": 5488,
+      "text_tokens": 0
+    },
+    "total_tokens": 7731
+  },
+  "layoutGuide": "characters/copilot/source/generated-sprites/down_left-generated-layout.png",
+  "layoutGuideSha256": "29d0eabd9768f6ed13952066cf600e549c9cdb6408e9f4285ab6f00f6324e394"
+}

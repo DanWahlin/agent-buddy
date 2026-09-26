@@ -1,5 +1,17 @@
 import {SerialPort} from 'serialport';
-import type {CharacterState} from './protocol.js';
+import type {CharacterState, InstallProgress} from './protocol.js';
+import {
+  activePacket,
+  iconPacket,
+  shouldSendBadges,
+  type AgentBadgeActive,
+  type AgentBadgeIconDefinition,
+} from './agent-badges.js';
+import {
+  parseWifiProvisioningResponse,
+  wifiProvisioningPacket,
+  type WifiConfig,
+} from './wifi-config.js';
 
 interface LineWaiter {
   match: (line: string) => boolean;
@@ -18,6 +30,20 @@ export class UsbTransport {
   #buffer = '';
   #waiters: LineWaiter[] = [];
   #commands = Promise.resolve();
+  #protocol = 0;
+  #iconSignature = '';
+  #activeSignature = '';
+  #enabled = true;
+  #character: string | null = null;
+  readonly #changed: () => void;
+
+  constructor(changed: () => void = () => undefined) {
+    this.#changed = changed;
+  }
+
+  get character(): string | null {
+    return this.connected ? this.#character : null;
+  }
 
   get connected(): boolean {
     return this.#port?.isOpen === true;
@@ -32,6 +58,7 @@ export class UsbTransport {
   }
 
   start(): void {
+    if (!this.#enabled || this.#scanTimer) return;
     void this.#scan();
     this.#scanTimer = setInterval(() => void this.#scan(), 2000);
   }
@@ -46,6 +73,7 @@ export class UsbTransport {
     if (port?.isOpen) {
       await new Promise<void>(resolve => port.close(() => resolve()));
     }
+    this.#changed();
   }
 
   setState(state: CharacterState): void {
@@ -55,8 +83,25 @@ export class UsbTransport {
       .catch(error => console.error(`[usb] ${this.#message(error)}`));
   }
 
+  setAgentBadges(icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[]): void {
+    const iconSignature = icons.map(icon => `${icon.id}:${icon.color}:${icon.mask.toString('base64')}`).join('|');
+    const activeSignature = active.map(item => `${item.id}=${item.role}`).join(',');
+    if (!shouldSendBadges(this.#protocol) || (iconSignature === this.#iconSignature
+        && activeSignature === this.#activeSignature)) return;
+    this.#commands = this.#commands
+      .then(() => this.#sendAgentBadges(icons, active, iconSignature, activeSignature))
+      .catch(error => console.error(`[usb] ${this.#message(error)}`));
+  }
+
+  // Disabling releases the serial port so a cable can provide power only.
+  async setEnabled(enabled: boolean): Promise<void> {
+    this.#enabled = enabled;
+    if (enabled) this.start();
+    else await this.stop();
+  }
+
   async #scan(): Promise<void> {
-    if (this.#scanActive || this.connected) return;
+    if (!this.#enabled || this.#scanActive || this.connected) return;
     this.#scanActive = true;
     try {
       const ports = await SerialPort.list();
@@ -91,6 +136,7 @@ export class UsbTransport {
       if (this.#port === port) {
         this.#port = undefined;
         this.#path = null;
+        this.#changed();
       }
     });
     await new Promise<void>((resolve, reject) => {
@@ -100,12 +146,17 @@ export class UsbTransport {
     this.#path = path;
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
-      if (!/^INFO protocol=[12](?: |$)/.test(info)) {
+      const protocol = Number(/^INFO protocol=(\d+)(?: |$)/.exec(info)?.[1]);
+      if (!Number.isInteger(protocol) || protocol < 1 || protocol > 6) {
         throw new Error(`Unsupported device protocol: ${info}`);
       }
+      this.#protocol = protocol;
+      this.#iconSignature = '';
+      this.#activeSignature = '';
+      this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(info)?.[1] ?? null;
       console.log(`[usb] ${info}`);
       console.log(`[usb] connected ${path}`);
-      await this.#sendState(this.#desired);
+      this.#changed();
     } catch (error) {
       await new Promise<void>(resolve => port.close(() => resolve()));
       throw error;
@@ -118,8 +169,91 @@ export class UsbTransport {
     console.log(`[state] ${state} via usb`);
   }
 
-  async #request(text: string, match: (line: string) => boolean): Promise<string> {
-    const response = this.#waitFor(match, 5000);
+  async #sendAgentBadges(
+      icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[],
+      iconSignature: string, activeSignature: string): Promise<void> {
+    if (!this.connected || !shouldSendBadges(this.#protocol)) return;
+    if (iconSignature !== this.#iconSignature) {
+      for (const icon of icons)
+        await this.#request(iconPacket(icon), line => line === `ICON accepted=${icon.id}`);
+      this.#iconSignature = iconSignature;
+      this.#activeSignature = '';
+    }
+    if (activeSignature !== this.#activeSignature) {
+      await this.#request(activePacket(active), line => line === `AGENTS accepted=${active.length}`);
+      this.#activeSignature = activeSignature;
+      console.log(`[badges] ${active.length} agent badge(s) via usb`);
+    }
+  }
+
+  async configureWifi(ssid: string, password: string): Promise<WifiConfig> {
+    const operation = this.#commands.then(async () => {
+      if (!this.connected) throw new Error(this.#enabled
+        ? 'Connect the Agent Companion over USB first.'
+        : 'USB is turned off. Run "npm run connection auto" to use it again.');
+      if (this.#protocol < 4)
+        throw new Error('The connected device firmware does not support USB Wi-Fi setup.');
+      const line = await this.#request(
+        wifiProvisioningPacket(ssid, password),
+        candidate => candidate.startsWith('WIFI configured ')
+          || candidate.startsWith('WIFI_ERROR '));
+      if (line.startsWith('WIFI_ERROR '))
+        throw new Error(`Device rejected Wi-Fi setup: ${line.slice('WIFI_ERROR '.length)}`);
+      return parseWifiProvisioningResponse(line);
+    });
+    this.#commands = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  installCharacter(pack: Buffer, progress: InstallProgress = () => undefined): Promise<string> {
+    const operation = this.#commands.then(() => this.#installCharacter(pack, progress));
+    this.#commands = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  async #installCharacter(pack: Buffer, progress: InstallProgress): Promise<string> {
+    if (!this.connected) throw new Error('Connect the Agent Companion over USB first.');
+    if (this.#protocol < 5)
+      throw new Error('The connected device firmware does not support character installation.');
+    const ready = await this.#request(
+      'u', line => line.startsWith('UPLOAD_READY ') || line.startsWith('UPLOAD_ERROR '), 10000);
+    const limits = parseUploadReady(ready);
+    if (pack.length > limits.maxBytes)
+      throw new Error(`Character pack exceeds the device's ${limits.maxBytes}-byte partition.`);
+    let sent = 0;
+    let retries = 0;
+    while (sent < pack.length) {
+      const chunk = pack.subarray(sent, sent + limits.chunk);
+      const last = sent + chunk.length === pack.length;
+      // The final chunk is followed by flash verification rather than an acknowledgement.
+      const response = await this.#request(chunk, line => line.startsWith('UPLOAD_ERROR ')
+          || line.startsWith('UPLOAD_RETRY ')
+          || (last ? line.startsWith('UPLOAD_OK ') : line.startsWith('UPLOAD_ACK ')), last ? 30000 : 15000);
+      if (response.startsWith('UPLOAD_ERROR '))
+        throw new Error(`Device rejected the character: ${response.slice('UPLOAD_ERROR '.length)}`);
+      if (response.startsWith('UPLOAD_RETRY ')) {
+        // The device is discarding a stalled chunk; resend only once it reports a quiet line.
+        if (Number(/\breceived=(\d+)\b/.exec(response)?.[1]) !== sent || ++retries > 8)
+          throw new Error(`Character upload could not recover: ${response}`);
+        await this.#waitFor(line => line === `UPLOAD_RESEND received=${sent}`, 10000);
+        console.error(`[usb] resending character chunk at ${sent}`);
+        continue;
+      }
+      sent += chunk.length;
+      if (!last && Number(/\breceived=(\d+)\b/.exec(response)?.[1]) !== sent)
+        throw new Error(`Device acknowledged an unexpected byte count: ${response}`);
+      progress(sent, pack.length);
+      if (last) {
+        console.log(`[usb] ${response}`);
+        return /\bcharacter=([a-z0-9-]+)\b/.exec(response)?.[1] ?? 'unknown';
+      }
+    }
+    throw new Error('Character pack is empty.');
+  }
+
+  async #request(text: string | Buffer, match: (line: string) => boolean,
+                 timeoutMs = 5000): Promise<string> {
+    const response = this.#waitFor(match, timeoutMs);
     try {
       await this.#write(text);
       return await response;
@@ -129,7 +263,7 @@ export class UsbTransport {
     }
   }
 
-  async #write(text: string): Promise<void> {
+  async #write(text: string | Buffer): Promise<void> {
     const port = this.#port;
     if (!port?.isOpen) throw new Error('USB device is not connected.');
     await new Promise<void>((resolve, reject) => {
@@ -154,12 +288,22 @@ export class UsbTransport {
       const line = this.#buffer.slice(0, newline).trim();
       this.#buffer = this.#buffer.slice(newline + 1);
       if (!line) continue;
+      // Software restarts keep the USB port open, so the boot banner marks a new session.
+      if (line.startsWith('READY:')) this.#rebooted(line);
       const waiter = this.#waiters.find(candidate => candidate.match(line));
       if (!waiter) continue;
       clearTimeout(waiter.timer);
       this.#waiters.splice(this.#waiters.indexOf(waiter), 1);
       waiter.resolve(line);
     }
+  }
+
+  #rebooted(line: string): void {
+    this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(line)?.[1] ?? null;
+    this.#iconSignature = '';
+    this.#activeSignature = '';
+    console.log(`[usb] device restarted character=${this.#character ?? 'unknown'}`);
+    this.#changed();
   }
 
   #waitFor(match: (line: string) => boolean, timeoutMs: number): Promise<string> {
@@ -187,6 +331,16 @@ export class UsbTransport {
   #message(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+export function parseUploadReady(line: string): {maxBytes: number; chunk: number} {
+  const maxBytes = Number(/\bmax_bytes=(\d+)\b/.exec(line)?.[1]);
+  const chunk = Number(/\bchunk=(\d+)\b/.exec(line)?.[1]);
+  if (line.startsWith('UPLOAD_ERROR ')) throw new Error(`Device cannot install a character: ${line}`);
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0 || !Number.isInteger(chunk)
+      || chunk < 256 || chunk > 65536)
+    throw new Error(`Device sent an invalid upload response: ${line}`);
+  return {maxBytes, chunk};
 }
 
 export function isLikelyEsp32Port(

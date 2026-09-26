@@ -7,8 +7,8 @@ import wave
 
 ROOT = Path(__file__).resolve().parents[1]
 AUDIO = ROOT / "assets" / "audio"
-HEADER = ROOT / "firmware" / "Copilot" / "generated" / "audio_assets.h"
-SOURCE = ROOT / "firmware" / "Copilot" / "src" / "audio_data.cpp"
+HEADER = ROOT / "firmware" / "AgentCompanion" / "generated" / "audio_assets.h"
+SOURCE = ROOT / "firmware" / "AgentCompanion" / "src" / "audio_data.cpp"
 SAMPLE_RATE = 24000
 CUES = (
     ("Working", "working.wav"),

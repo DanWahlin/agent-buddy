@@ -1,0 +1,39 @@
+{
+  "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "algorithm": "localized-eye-light-rigid-recoil-v2",
+  "source": "characters/copilot/sprites/right-00.png",
+  "script": "characters/copilot/tools/smooth_surprise.py",
+  "scriptSha256": "f50acfcfa35c3c07b2d642c53626d1e65fe92494c406c1050e337c8b71847230",
+  "eyeRegions": [
+    [
+      77,
+      118,
+      122,
+      176
+    ],
+    [
+      119,
+      118,
+      163,
+      176
+    ]
+  ],
+  "targetEyes": [
+    [
+      87,
+      120,
+      112,
+      164
+    ],
+    [
+      129,
+      121,
+      153,
+      164
+    ]
+  ],
+  "recoilDegrees": 2.0,
+  "recoilRise": 4.0,
+  "originalReactionManifestSha256": "754fc1cadfb3badf03d5143f06b36e2e21f88d1743254437f1ff6a418ee1f66d",
+  "note": "No new AI generation. Smooth eye lights are composited onto the unchanged GPT head, then the complete sprite is rigidly rotated and translated once. No scaling or warping."
+}

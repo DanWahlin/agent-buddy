@@ -1,0 +1,1193 @@
+{
+  "title": "GPT Image attention expression",
+  "provider": "Azure GPT Image",
+  "source": "sources/attention-sheet.png",
+  "sourceSha256": "f20e8dcc529d3f6a5bc94652f7fd574f42585699582313bb832c292adabc3e6d",
+  "generationProvenance": "characters/copilot/expressions/sources/attention-sheet.json",
+  "width": 240,
+  "height": 224,
+  "count": 24,
+  "frames": [
+    {
+      "file": "attention-00.png",
+      "sourceBounds": [
+        56,
+        58,
+        274,
+        228
+      ],
+      "uniformScale": 0.9196428571428571,
+      "eyes": [
+        [
+          93,
+          125,
+          107,
+          150
+        ],
+        [
+          133,
+          125,
+          147,
+          150
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-00-blink-1.png",
+        "attention-00-blink-2.png",
+        "attention-00-blink-3.png",
+        "attention-00-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-00.png",
+      "cropBounds": [
+        53,
+        55,
+        277,
+        231
+      ],
+      "registeredSize": [
+        206,
+        162
+      ],
+      "translation": [
+        17,
+        31
+      ],
+      "sourceIndex": 0,
+      "neutralOverride": true,
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    },
+    {
+      "file": "attention-01.png",
+      "sourceBounds": [
+        297,
+        58,
+        513,
+        227
+      ],
+      "uniformScale": 0.9279279279279279,
+      "eyes": [
+        [
+          94,
+          124,
+          108,
+          150
+        ],
+        [
+          135,
+          133,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-01-blink-1.png",
+        "attention-01-blink-2.png",
+        "attention-01-blink-3.png",
+        "attention-01-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-01.png",
+      "cropBounds": [
+        294,
+        55,
+        516,
+        230
+      ],
+      "registeredSize": [
+        206,
+        162
+      ],
+      "translation": [
+        17,
+        31
+      ],
+      "sourceIndex": 1,
+      "neutralOverride": false,
+      "sha256": "67eb6425d963faa47ade1d33534be2b82579349810ba4baa4ba65eb6f8510ae0"
+    },
+    {
+      "file": "attention-02.png",
+      "sourceBounds": [
+        539,
+        58,
+        755,
+        228
+      ],
+      "uniformScale": 0.9279279279279279,
+      "eyes": [
+        [
+          95,
+          123,
+          109,
+          148
+        ],
+        [
+          135,
+          132,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-02-blink-1.png",
+        "attention-02-blink-2.png",
+        "attention-02-blink-3.png",
+        "attention-02-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-02.png",
+      "cropBounds": [
+        536,
+        55,
+        758,
+        231
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 2,
+      "neutralOverride": false,
+      "sha256": "9d79c7c0cff49331998f799f3ca1ef24f129f913d6ed83e5c624ab6207c32705"
+    },
+    {
+      "file": "attention-03.png",
+      "sourceBounds": [
+        780,
+        58,
+        997,
+        228
+      ],
+      "uniformScale": 0.9237668161434978,
+      "eyes": [
+        [
+          95,
+          123,
+          109,
+          149
+        ],
+        [
+          135,
+          133,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-03-blink-1.png",
+        "attention-03-blink-2.png",
+        "attention-03-blink-3.png",
+        "attention-03-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-03.png",
+      "cropBounds": [
+        777,
+        55,
+        1000,
+        231
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 3,
+      "neutralOverride": false,
+      "sha256": "45e7e7c8dbf7b83d77887ded63f3a3b5f78871cb4248b4e200958084ea41fa4f"
+    },
+    {
+      "file": "attention-04.png",
+      "sourceBounds": [
+        1023,
+        58,
+        1240,
+        228
+      ],
+      "uniformScale": 0.9237668161434978,
+      "eyes": [
+        [
+          94,
+          123,
+          108,
+          149
+        ],
+        [
+          134,
+          133,
+          147,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-04-blink-1.png",
+        "attention-04-blink-2.png",
+        "attention-04-blink-3.png",
+        "attention-04-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-04.png",
+      "cropBounds": [
+        1020,
+        55,
+        1243,
+        231
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 4,
+      "neutralOverride": false,
+      "sha256": "ada150d580290bdc62f1c2284d1067075afa8156151290950747db3bdd82b058"
+    },
+    {
+      "file": "attention-05.png",
+      "sourceBounds": [
+        1272,
+        59,
+        1489,
+        228
+      ],
+      "uniformScale": 0.9237668161434978,
+      "eyes": [
+        [
+          94,
+          124,
+          108,
+          149
+        ],
+        [
+          134,
+          133,
+          147,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-05-blink-1.png",
+        "attention-05-blink-2.png",
+        "attention-05-blink-3.png",
+        "attention-05-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-05.png",
+      "cropBounds": [
+        1269,
+        56,
+        1492,
+        231
+      ],
+      "registeredSize": [
+        206,
+        162
+      ],
+      "translation": [
+        17,
+        31
+      ],
+      "sourceIndex": 5,
+      "neutralOverride": false,
+      "sha256": "b0c180129273c412f0af3873c2f4422ae52f22f691280d1985af5f222f83903f"
+    },
+    {
+      "file": "attention-06.png",
+      "sourceBounds": [
+        56,
+        280,
+        273,
+        451
+      ],
+      "uniformScale": 0.9237668161434978,
+      "eyes": [
+        [
+          94,
+          125,
+          108,
+          150
+        ],
+        [
+          134,
+          134,
+          147,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-06-blink-1.png",
+        "attention-06-blink-2.png",
+        "attention-06-blink-3.png",
+        "attention-06-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-06.png",
+      "cropBounds": [
+        53,
+        277,
+        276,
+        454
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 6,
+      "neutralOverride": false,
+      "sha256": "f6a76566d65e40390ef6daef956d867089287c284fd4c4e5c38eb2da06b6afe7"
+    },
+    {
+      "file": "attention-07.png",
+      "sourceBounds": [
+        298,
+        282,
+        513,
+        452
+      ],
+      "uniformScale": 0.9321266968325792,
+      "eyes": [
+        [
+          95,
+          124,
+          109,
+          150
+        ],
+        [
+          135,
+          134,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-07-blink-1.png",
+        "attention-07-blink-2.png",
+        "attention-07-blink-3.png",
+        "attention-07-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-07.png",
+      "cropBounds": [
+        295,
+        279,
+        516,
+        455
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 7,
+      "neutralOverride": false,
+      "sha256": "596252a79c0c51458d79b051659591a03021724755e3f958ee4dd31c9017e77b"
+    },
+    {
+      "file": "attention-08.png",
+      "sourceBounds": [
+        540,
+        282,
+        754,
+        451
+      ],
+      "uniformScale": 0.9363636363636364,
+      "eyes": [
+        [
+          94,
+          124,
+          108,
+          150
+        ],
+        [
+          135,
+          134,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-08-blink-1.png",
+        "attention-08-blink-2.png",
+        "attention-08-blink-3.png",
+        "attention-08-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-08.png",
+      "cropBounds": [
+        537,
+        279,
+        757,
+        454
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 8,
+      "neutralOverride": false,
+      "sha256": "44c5d51ab4ebcba62129b3899cf33588c4c168715d515723238bf033e6014e29"
+    },
+    {
+      "file": "attention-09.png",
+      "sourceBounds": [
+        783,
+        282,
+        998,
+        451
+      ],
+      "uniformScale": 0.9321266968325792,
+      "eyes": [
+        [
+          97,
+          123,
+          111,
+          149
+        ],
+        [
+          136,
+          135,
+          148,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-09-blink-1.png",
+        "attention-09-blink-2.png",
+        "attention-09-blink-3.png",
+        "attention-09-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-09.png",
+      "cropBounds": [
+        780,
+        279,
+        1001,
+        454
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 9,
+      "neutralOverride": false,
+      "sha256": "e8c998c00574c4616d0365a004628625d2255817071e7f9145de4c2bef49d455"
+    },
+    {
+      "file": "attention-10.png",
+      "sourceBounds": [
+        1025,
+        282,
+        1240,
+        451
+      ],
+      "uniformScale": 0.9321266968325792,
+      "eyes": [
+        [
+          95,
+          124,
+          109,
+          149
+        ],
+        [
+          136,
+          135,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-10-blink-1.png",
+        "attention-10-blink-2.png",
+        "attention-10-blink-3.png",
+        "attention-10-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-10.png",
+      "cropBounds": [
+        1022,
+        279,
+        1243,
+        454
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 10,
+      "neutralOverride": false,
+      "sha256": "b30bde9e3515a606eba4b4a22b3ec93c8df087cf28c904170be7e811093a13a8"
+    },
+    {
+      "file": "attention-11.png",
+      "sourceBounds": [
+        1273,
+        282,
+        1489,
+        451
+      ],
+      "uniformScale": 0.9279279279279279,
+      "eyes": [
+        [
+          94,
+          124,
+          109,
+          150
+        ],
+        [
+          135,
+          135,
+          148,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-11-blink-1.png",
+        "attention-11-blink-2.png",
+        "attention-11-blink-3.png",
+        "attention-11-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-11.png",
+      "cropBounds": [
+        1270,
+        279,
+        1492,
+        454
+      ],
+      "registeredSize": [
+        206,
+        162
+      ],
+      "translation": [
+        17,
+        31
+      ],
+      "sourceIndex": 11,
+      "neutralOverride": false,
+      "sha256": "4fb922d8b77e839fa861b5dcd5a8a0b581077128e14d8b215dbeddc860e3ba9c"
+    },
+    {
+      "file": "attention-12.png",
+      "sourceBounds": [
+        56,
+        507,
+        271,
+        676
+      ],
+      "uniformScale": 0.9321266968325792,
+      "eyes": [
+        [
+          96,
+          123,
+          110,
+          149
+        ],
+        [
+          136,
+          134,
+          148,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-12-blink-1.png",
+        "attention-12-blink-2.png",
+        "attention-12-blink-3.png",
+        "attention-12-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-12.png",
+      "cropBounds": [
+        53,
+        504,
+        274,
+        679
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 12,
+      "neutralOverride": false,
+      "sha256": "f139c147503ec625e5a938f8ef90573df3ee3a0ed5894566f948588bc5fca528"
+    },
+    {
+      "file": "attention-13.png",
+      "sourceBounds": [
+        302,
+        509,
+        514,
+        675
+      ],
+      "uniformScale": 0.944954128440367,
+      "eyes": [
+        [
+          96,
+          123,
+          111,
+          149
+        ],
+        [
+          136,
+          134,
+          149,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-13-blink-1.png",
+        "attention-13-blink-2.png",
+        "attention-13-blink-3.png",
+        "attention-13-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-13.png",
+      "cropBounds": [
+        299,
+        506,
+        517,
+        678
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 13,
+      "neutralOverride": false,
+      "sha256": "921e79ea50be1e67d08159d20afdb8406f5fce1608874373b0b9d8536f663d31"
+    },
+    {
+      "file": "attention-14.png",
+      "sourceBounds": [
+        542,
+        509,
+        754,
+        675
+      ],
+      "uniformScale": 0.944954128440367,
+      "eyes": [
+        [
+          97,
+          123,
+          112,
+          149
+        ],
+        [
+          137,
+          134,
+          149,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-14-blink-1.png",
+        "attention-14-blink-2.png",
+        "attention-14-blink-3.png",
+        "attention-14-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-14.png",
+      "cropBounds": [
+        539,
+        506,
+        757,
+        678
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 14,
+      "neutralOverride": false,
+      "sha256": "828e14e54463b2cbd72f7cacd84faab1efd122c6ef3cb06f9d765ed1d16f59d4"
+    },
+    {
+      "file": "attention-15.png",
+      "sourceBounds": [
+        784,
+        509,
+        995,
+        675
+      ],
+      "uniformScale": 0.9493087557603687,
+      "eyes": [
+        [
+          98,
+          123,
+          113,
+          149
+        ],
+        [
+          137,
+          134,
+          150,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-15-blink-1.png",
+        "attention-15-blink-2.png",
+        "attention-15-blink-3.png",
+        "attention-15-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-15.png",
+      "cropBounds": [
+        781,
+        506,
+        998,
+        678
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 15,
+      "neutralOverride": false,
+      "sha256": "7057a82d5512625be1c3f5cc21fc5868851bae8da7e8f898b3935a7d6143e42d"
+    },
+    {
+      "file": "attention-16.png",
+      "sourceBounds": [
+        1027,
+        509,
+        1239,
+        676
+      ],
+      "uniformScale": 0.944954128440367,
+      "eyes": [
+        [
+          97,
+          123,
+          112,
+          150
+        ],
+        [
+          136,
+          134,
+          149,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-16-blink-1.png",
+        "attention-16-blink-2.png",
+        "attention-16-blink-3.png",
+        "attention-16-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-16.png",
+      "cropBounds": [
+        1024,
+        506,
+        1242,
+        679
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 16,
+      "neutralOverride": false,
+      "sha256": "b2d44c03342682cd308eea21688a97a155248e0237fc27cc346a13ea1ab73295"
+    },
+    {
+      "file": "attention-17.png",
+      "sourceBounds": [
+        1274,
+        509,
+        1488,
+        677
+      ],
+      "uniformScale": 0.9363636363636364,
+      "eyes": [
+        [
+          97,
+          123,
+          112,
+          149
+        ],
+        [
+          136,
+          134,
+          149,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-17-blink-1.png",
+        "attention-17-blink-2.png",
+        "attention-17-blink-3.png",
+        "attention-17-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-17.png",
+      "cropBounds": [
+        1271,
+        506,
+        1491,
+        680
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 17,
+      "neutralOverride": false,
+      "sha256": "281ca120c7122aede990a8efea18782f35031bd7af2521e1f3460cf423ac9941"
+    },
+    {
+      "file": "attention-18.png",
+      "sourceBounds": [
+        56,
+        734,
+        270,
+        903
+      ],
+      "uniformScale": 0.9363636363636364,
+      "eyes": [
+        [
+          98,
+          123,
+          112,
+          150
+        ],
+        [
+          137,
+          135,
+          149,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-18-blink-1.png",
+        "attention-18-blink-2.png",
+        "attention-18-blink-3.png",
+        "attention-18-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-18.png",
+      "cropBounds": [
+        53,
+        731,
+        273,
+        906
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 18,
+      "neutralOverride": false,
+      "sha256": "20e9398c6ba305ea52f3ba8c8b14b1edf79cbd13a03f07786b481edc0eb73033"
+    },
+    {
+      "file": "attention-19.png",
+      "sourceBounds": [
+        303,
+        736,
+        515,
+        903
+      ],
+      "uniformScale": 0.944954128440367,
+      "eyes": [
+        [
+          100,
+          122,
+          115,
+          149
+        ],
+        [
+          139,
+          134,
+          151,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-19-blink-1.png",
+        "attention-19-blink-2.png",
+        "attention-19-blink-3.png",
+        "attention-19-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-19.png",
+      "cropBounds": [
+        300,
+        733,
+        518,
+        906
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 19,
+      "neutralOverride": false,
+      "sha256": "95ad168fc7c94465489251f905b1dcda6213ee2f50c02b5c5610b00b805df164"
+    },
+    {
+      "file": "attention-20.png",
+      "sourceBounds": [
+        546,
+        737,
+        755,
+        903
+      ],
+      "uniformScale": 0.958139534883721,
+      "eyes": [
+        [
+          100,
+          122,
+          114,
+          149
+        ],
+        [
+          139,
+          135,
+          152,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-20-blink-1.png",
+        "attention-20-blink-2.png",
+        "attention-20-blink-3.png",
+        "attention-20-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-20.png",
+      "cropBounds": [
+        543,
+        734,
+        758,
+        906
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 20,
+      "neutralOverride": false,
+      "sha256": "b394e8be2d2d0978de7a9752cd759367145acaf547eff5dd699f8df2bc0300e4"
+    },
+    {
+      "file": "attention-21.png",
+      "sourceBounds": [
+        788,
+        737,
+        998,
+        902
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          99,
+          123,
+          114,
+          150
+        ],
+        [
+          139,
+          135,
+          151,
+          147
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-21-blink-1.png",
+        "attention-21-blink-2.png",
+        "attention-21-blink-3.png",
+        "attention-21-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-21.png",
+      "cropBounds": [
+        785,
+        734,
+        1001,
+        905
+      ],
+      "registeredSize": [
+        206,
+        163
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 21,
+      "neutralOverride": false,
+      "sha256": "7c2b753d6b74628b122f74c4fe861137db31f581eaa5259b3fb68142e0239597"
+    },
+    {
+      "file": "attention-22.png",
+      "sourceBounds": [
+        1032,
+        737,
+        1242,
+        903
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          99,
+          123,
+          114,
+          150
+        ],
+        [
+          139,
+          136,
+          151,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-22-blink-1.png",
+        "attention-22-blink-2.png",
+        "attention-22-blink-3.png",
+        "attention-22-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-22.png",
+      "cropBounds": [
+        1029,
+        734,
+        1245,
+        906
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 22,
+      "neutralOverride": false,
+      "sha256": "cb6c66bcfdf6f7731d8dc7e00568cbfe8944151a7cf0c1157f5a2f7b0ee9fefc"
+    },
+    {
+      "file": "attention-23.png",
+      "sourceBounds": [
+        1277,
+        737,
+        1487,
+        903
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          99,
+          123,
+          114,
+          150
+        ],
+        [
+          138,
+          137,
+          151,
+          148
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "attention-23-blink-1.png",
+        "attention-23-blink-2.png",
+        "attention-23-blink-3.png",
+        "attention-23-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/attention-23.png",
+      "cropBounds": [
+        1274,
+        734,
+        1490,
+        906
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 23,
+      "neutralOverride": false,
+      "sha256": "12dd2ada3e615218def13b8bf5df249c454d66bd1e77ca66aee3136e06f87df1"
+    }
+  ],
+  "sheet": "sources/attention-sheet.png",
+  "playback": "Enter with 0..23, hold the curious pose with occasional localized blinks while waiting, then reverse.",
+  "processing": "Colored-head isolation, translation and uniform-scale registration only. No shape warping, rotation synthesis, morphing or crossfades. Frame 00 is the exact approved neutral PNG; all raw crops are retained.",
+  "status": "Staged for expression and temporal review; not integrated into the live player.",
+  "blinkPolicy": "localized"
+}

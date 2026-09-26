@@ -1,0 +1,40 @@
+{
+  "created": "2026-09-11T06:22:31.024993+00:00",
+  "provider": "Configured Azure GPT Image deployment",
+  "reference": "characters/copilot/source/generated-sprites/approved-center.png",
+  "references": [
+    {
+      "file": "characters/copilot/source/generated-sprites/approved-center.png",
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    },
+    {
+      "file": "characters/copilot/source/generated-sprites/right-turn-refined-sheet.png",
+      "sha256": "3bca4589f11c5e60f503721060824ea272e047abf4aaa23ff532a37614be0327"
+    }
+  ],
+  "referenceSha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "prompt": "characters/copilot/source/sprite-prompts/up-turn.txt",
+  "promptSha256": "8203a867a104d193a1a706b8cc7f1bfebe3e26adcf9b6f6500e9fd19e437ac15",
+  "size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "format": "png",
+  "generationSeconds": 98.14,
+  "sha256": "18c6d0eb1bd4758cdc2fd5cbcb5014b2da07d6bd2ba3ddc8e0c5984b864b6680",
+  "usage": {
+    "input_tokens": 3755,
+    "input_tokens_details": {
+      "image_tokens": 3282,
+      "text_tokens": 473
+    },
+    "output_tokens": 5488,
+    "output_tokens_details": {
+      "image_tokens": 5488,
+      "text_tokens": 0
+    },
+    "total_tokens": 9243
+  },
+  "layoutGuideSha256": "6b3a4c6703fb268e7be839539c024897d4d9afb1850d8599ddae49891fbcf168"
+}

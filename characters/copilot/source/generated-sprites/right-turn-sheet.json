@@ -1,0 +1,29 @@
+{
+  "created": "2026-09-11T06:08:37.859673+00:00",
+  "provider": "Configured Azure GPT Image deployment",
+  "reference": "characters/copilot/source/copilot-source.png",
+  "referenceSha256": "a93a701f4ce2d99129735fee1f19812646fd06d19b4ed248b89e3e83f159d31e",
+  "prompt": "characters/copilot/source/sprite-prompts/right-turn.txt",
+  "promptSha256": "37e59b14eca530dfc3967a47551ee63235bd2957d80d9aa679c0fcb7389bd2f0",
+  "size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "format": "png",
+  "generationSeconds": 111.28,
+  "sha256": "38b77321edce03bc80c7c280962b9e7e0059879b150702add68c962f9d8e383b",
+  "usage": {
+    "input_tokens": 2030,
+    "input_tokens_details": {
+      "image_tokens": 1350,
+      "text_tokens": 680
+    },
+    "output_tokens": 5488,
+    "output_tokens_details": {
+      "image_tokens": 5488,
+      "text_tokens": 0
+    },
+    "total_tokens": 7518
+  }
+}

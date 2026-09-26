@@ -10,11 +10,12 @@ from scipy.ndimage import distance_transform_edt
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "characters/copilot/tools"))
 from prepare_sprite_animation import blink, eye_bounds
 from create_diagonal_guides import DIAGONALS
 from prepare_device_diagonals import unpack_frame
 
-ASSETS = Path(os.environ.get("SPRITE_ASSETS", str(ROOT / "web/generated-sprites")))
+ASSETS = Path(os.environ.get("SPRITE_ASSETS", str(ROOT / "characters/copilot/sprites")))
 
 
 def pixels(filename):
@@ -88,11 +89,11 @@ class SpriteAssetsTest(unittest.TestCase):
             track = self.manifest["directions"][direction]
             self.assertEqual(track["provider"], "Azure GPT Image")
             provenance = json.loads((ROOT / track["generationProvenance"]).read_text())
-            source = ROOT / "assets/generated-sprites" / track["source"]
+            source = ROOT / "characters/copilot/source/generated-sprites" / track["source"]
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
             self.assertEqual(track["sourceSha256"], digest)
             self.assertEqual(provenance["sha256"], digest)
-            self.assertEqual(provenance["reference"], "assets/generated-sprites/approved-center.png")
+            self.assertEqual(provenance["reference"], "characters/copilot/source/generated-sprites/approved-center.png")
             for frame in track["frames"]:
                 self.assertIn("-generated-", frame["file"])
                 self.assertNotIn("atlasTurn", frame)

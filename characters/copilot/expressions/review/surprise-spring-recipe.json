@@ -1,0 +1,77 @@
+{
+  "algorithm": "localized-approved-eye-light-uniform-spring-v1",
+  "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "source": "characters/copilot/expressions/references/shared-neutral.png",
+  "script": "characters/copilot/tools/spring_surprise.py",
+  "scriptSha256": "65f325aae7ce81439f2e260f8149adef1b97402bbae697df69211dcc4cc64817",
+  "helperSha256": {
+    "characters/copilot/tools/smooth_surprise.py": "f50acfcfa35c3c07b2d642c53626d1e65fe92494c406c1050e337c8b71847230",
+    "characters/copilot/tools/prepare_sprite_animation.py": "cb9de3bc10d9b95c832728eda2edf55ca6a06041576549b4129ee501558ba0f5"
+  },
+  "sourcePngSha256": {
+    "characters/copilot/sprites/right-00.png": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+    "characters/copilot/sprites/right-00-blink-1.png": "42ecf575466a289bbe2760586ccb33452b6b0af6d64eaa2e3c7f9a98a6925eff",
+    "characters/copilot/sprites/right-00-blink-2.png": "c32e03b76b97f3da62e560e6f7be4da69131569dd281fac592cec1be93e9714b",
+    "characters/copilot/sprites/right-00-blink-3.png": "854f3dc15d64e5991fb053001754fcb275731f76e50b066a0b6685dcbf02252b",
+    "characters/copilot/sprites/right-00-blink-4.png": "60cc7bef1cf0337587b6976e876ce9ab2065e36d163244931d2e3d75b74a786c"
+  },
+  "originalReactionManifest": "characters/copilot/expressions/animation.candidate.json",
+  "originalReactionManifestSha256": "b7ab70ea44903e6301dd7637ab551860d852d0e0acba320a268fecec8cc3363f",
+  "originalEndpointPngSha256": "4166961f1f20fd5165ce01d5842e9463eb0e7200dc172bd71562cb222b8428f1",
+  "targetEyes": [
+    [
+      87,
+      120,
+      112,
+      164
+    ],
+    [
+      129,
+      121,
+      153,
+      164
+    ]
+  ],
+  "eyeRegions": [
+    [
+      77,
+      118,
+      122,
+      176
+    ],
+    [
+      119,
+      118,
+      163,
+      176
+    ]
+  ],
+  "parameters": {
+    "count": 24,
+    "durationMs": 800,
+    "compression": 0.085,
+    "damping": 5.0,
+    "angularFrequency": 9.42477796076938,
+    "signedSinePower": 2,
+    "risePixels": 3.0,
+    "taperStart": 0.6,
+    "eyePeakTime": 0.17391304347826086,
+    "eyePulsePower": 2
+  },
+  "sampling": "t=i/23. Equal-time physical samples; no additional playback easing or reversed return.",
+  "displacement": "normalized exp(-5*t)*sin(3*pi*t)*abs(sin(3*pi*t)), with a C2 amplitude taper to rest",
+  "note": "Local deterministic derivative of approved artwork; no new AI generation. Only approved eye-light layers change before one uniform whole-image transform. Both endpoints copy the approved PNG and all four approved blink PNGs exactly. Finish interruptions forward to neutral frame 23.",
+  "springMotion": {
+    "maxCompressionPercent": 8.437789,
+    "compressionPeakFrame": 3,
+    "compressionPeakMs": 104.347826,
+    "maxOversizePercent": 1.600411,
+    "reboundPeakFrame": 11,
+    "reboundPeakMs": 382.608696,
+    "eyePeakFrame": 4,
+    "eyePeakMs": 139.130435,
+    "maxUpwardRecoilPixels": 2.978043,
+    "settledFrame": 23,
+    "settledAtMs": 800
+  }
+}

@@ -2,16 +2,15 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-python3 tools/embed_sprites.py
-python3 tools/embed_openclaw_lab.py
+python3 tools/character_pack.py build
 clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
   tests/test_sprite_predictor.cpp -lz -o build/test-sprite-predictor
 build/test-sprite-predictor
 clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  tests/test_sprite_renderer.cpp firmware/Copilot/src/SpriteRenderer.cpp \
-  firmware/Copilot/src/sprite_data.cpp firmware/Copilot/src/SpriteStorage.cpp \
-  build/sprite_host.S build/openclaw_host.S -lz \
+  tests/test_sprite_renderer.cpp firmware/AgentCompanion/src/SpriteRenderer.cpp \
+  firmware/AgentCompanion/src/CharacterPack.cpp firmware/AgentCompanion/src/SpriteStorage.cpp \
+  build/character_packs_host.S -lz \
   -o build/test-sprite-renderer
 build/test-sprite-renderer

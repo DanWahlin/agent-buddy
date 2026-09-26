@@ -1,0 +1,1210 @@
+{
+  "title": "GPT Image surprise expression",
+  "provider": "Azure GPT Image",
+  "source": "sources/surprise-sheet.png",
+  "sourceSha256": "3732ecf3a65b9380aa1144fc99bd932ab7eaba175f981cd12be27a713bc72c5b",
+  "generationProvenance": "characters/copilot/expressions/sources/surprise-sheet.json",
+  "width": 240,
+  "height": 224,
+  "count": 24,
+  "frames": [
+    {
+      "file": "surprise-00.png",
+      "sourceBounds": [
+        64,
+        69,
+        275,
+        236
+      ],
+      "uniformScale": 0.9493087557603687,
+      "eyes": [
+        [
+          93,
+          125,
+          107,
+          150
+        ],
+        [
+          133,
+          125,
+          147,
+          150
+        ]
+      ],
+      "blinkMaskState": "visible",
+      "blinks": [
+        "surprise-00-blink-1.png",
+        "surprise-00-blink-2.png",
+        "surprise-00-blink-3.png",
+        "surprise-00-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-00.png",
+      "cropBounds": [
+        61,
+        66,
+        278,
+        239
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 0,
+      "neutralOverride": true,
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    },
+    {
+      "file": "surprise-01.png",
+      "sourceBounds": [
+        307,
+        69,
+        517,
+        236
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          95,
+          126,
+          106,
+          150
+        ],
+        [
+          134,
+          126,
+          145,
+          150
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-01-blink-1.png",
+        "surprise-01-blink-2.png",
+        "surprise-01-blink-3.png",
+        "surprise-01-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-01.png",
+      "cropBounds": [
+        304,
+        66,
+        520,
+        239
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 1,
+      "neutralOverride": false,
+      "sha256": "665f5a0a24bd638a293484bd4853babd32682d111818776afd0a03a240a98387"
+    },
+    {
+      "file": "surprise-02.png",
+      "sourceBounds": [
+        548,
+        69,
+        758,
+        236
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          95,
+          126,
+          105,
+          150
+        ],
+        [
+          134,
+          126,
+          145,
+          150
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-02-blink-1.png",
+        "surprise-02-blink-2.png",
+        "surprise-02-blink-3.png",
+        "surprise-02-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-02.png",
+      "cropBounds": [
+        545,
+        66,
+        761,
+        239
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 2,
+      "neutralOverride": false,
+      "sha256": "4afac295b9ea0eb2301c2f7124b643e9d40d9d881f0c55495be8bca6ad5c3b86"
+    },
+    {
+      "file": "surprise-03.png",
+      "sourceBounds": [
+        789,
+        69,
+        999,
+        236
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          94,
+          126,
+          105,
+          150
+        ],
+        [
+          134,
+          126,
+          145,
+          151
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-03-blink-1.png",
+        "surprise-03-blink-2.png",
+        "surprise-03-blink-3.png",
+        "surprise-03-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-03.png",
+      "cropBounds": [
+        786,
+        66,
+        1002,
+        239
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 3,
+      "neutralOverride": false,
+      "sha256": "ebb6717b3cf036ac14872cf92f01c357877bb157a9a0cd4b308cd846fbf9630c"
+    },
+    {
+      "file": "surprise-04.png",
+      "sourceBounds": [
+        1029,
+        69,
+        1239,
+        236
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          94,
+          126,
+          105,
+          151
+        ],
+        [
+          134,
+          126,
+          145,
+          151
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-04-blink-1.png",
+        "surprise-04-blink-2.png",
+        "surprise-04-blink-3.png",
+        "surprise-04-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-04.png",
+      "cropBounds": [
+        1026,
+        66,
+        1242,
+        239
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 4,
+      "neutralOverride": false,
+      "sha256": "bb87bd6f6da45829f3c520f44d5d7b801b975e1d58ca68c95cd2da3f23116836"
+    },
+    {
+      "file": "surprise-05.png",
+      "sourceBounds": [
+        1270,
+        69,
+        1479,
+        236
+      ],
+      "uniformScale": 0.958139534883721,
+      "eyes": [
+        [
+          93,
+          125,
+          106,
+          152
+        ],
+        [
+          133,
+          124,
+          147,
+          152
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-05-blink-1.png",
+        "surprise-05-blink-2.png",
+        "surprise-05-blink-3.png",
+        "surprise-05-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-05.png",
+      "cropBounds": [
+        1267,
+        66,
+        1482,
+        239
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 5,
+      "neutralOverride": false,
+      "sha256": "e754884b16f423ba3f85196eac854ab61eb67f169e8ca5827f2e332eef928a5d"
+    },
+    {
+      "file": "surprise-06.png",
+      "sourceBounds": [
+        64,
+        277,
+        275,
+        444
+      ],
+      "uniformScale": 0.9493087557603687,
+      "eyes": [
+        [
+          94,
+          125,
+          106,
+          150
+        ],
+        [
+          134,
+          125,
+          146,
+          150
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-06-blink-1.png",
+        "surprise-06-blink-2.png",
+        "surprise-06-blink-3.png",
+        "surprise-06-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-06.png",
+      "cropBounds": [
+        61,
+        274,
+        278,
+        447
+      ],
+      "registeredSize": [
+        206,
+        164
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 6,
+      "neutralOverride": false,
+      "sha256": "7c7d187d4a2e5f14cc8f2fa414df4fa8911f5586b24b104d0edc983b44d0e57a"
+    },
+    {
+      "file": "surprise-07.png",
+      "sourceBounds": [
+        307,
+        277,
+        517,
+        444
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          94,
+          126,
+          107,
+          151
+        ],
+        [
+          133,
+          126,
+          146,
+          151
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-07-blink-1.png",
+        "surprise-07-blink-2.png",
+        "surprise-07-blink-3.png",
+        "surprise-07-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-07.png",
+      "cropBounds": [
+        304,
+        274,
+        520,
+        447
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 7,
+      "neutralOverride": false,
+      "sha256": "da47a6f4b477f0b20b2ceae65d450fed327f38031d0b63a4f4bdf9938856517c"
+    },
+    {
+      "file": "surprise-08.png",
+      "sourceBounds": [
+        548,
+        277,
+        758,
+        444
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          93,
+          126,
+          107,
+          151
+        ],
+        [
+          133,
+          125,
+          147,
+          152
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-08-blink-1.png",
+        "surprise-08-blink-2.png",
+        "surprise-08-blink-3.png",
+        "surprise-08-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-08.png",
+      "cropBounds": [
+        545,
+        274,
+        761,
+        447
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 8,
+      "neutralOverride": false,
+      "sha256": "64374830047944e8c6938d1ac27cac7ac3a46de7757e4063450e61dd93b83a62"
+    },
+    {
+      "file": "surprise-09.png",
+      "sourceBounds": [
+        789,
+        277,
+        999,
+        444
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          93,
+          125,
+          107,
+          152
+        ],
+        [
+          133,
+          125,
+          147,
+          153
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-09-blink-1.png",
+        "surprise-09-blink-2.png",
+        "surprise-09-blink-3.png",
+        "surprise-09-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-09.png",
+      "cropBounds": [
+        786,
+        274,
+        1002,
+        447
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 9,
+      "neutralOverride": false,
+      "sha256": "06adc7b3c294d5781e91cee49e7683bab1270dcca7b2598a481e9a23d00986df"
+    },
+    {
+      "file": "surprise-10.png",
+      "sourceBounds": [
+        1029,
+        277,
+        1239,
+        444
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          93,
+          125,
+          108,
+          153
+        ],
+        [
+          133,
+          125,
+          148,
+          154
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-10-blink-1.png",
+        "surprise-10-blink-2.png",
+        "surprise-10-blink-3.png",
+        "surprise-10-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-10.png",
+      "cropBounds": [
+        1026,
+        274,
+        1242,
+        447
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 10,
+      "neutralOverride": false,
+      "sha256": "3ee3a21c6d914d006c256143be4ff1700ba55e1387d2c15376104d4d740cb476"
+    },
+    {
+      "file": "surprise-11.png",
+      "sourceBounds": [
+        1270,
+        277,
+        1479,
+        444
+      ],
+      "uniformScale": 0.958139534883721,
+      "eyes": [
+        [
+          93,
+          124,
+          108,
+          154
+        ],
+        [
+          133,
+          124,
+          148,
+          155
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-11-blink-1.png",
+        "surprise-11-blink-2.png",
+        "surprise-11-blink-3.png",
+        "surprise-11-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-11.png",
+      "cropBounds": [
+        1267,
+        274,
+        1482,
+        447
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 11,
+      "neutralOverride": false,
+      "sha256": "20e2af2958a6ea45963df5b4344dca2ade9f1166c0a44953cc3b9437c5dd0db5"
+    },
+    {
+      "file": "surprise-12.png",
+      "sourceBounds": [
+        64,
+        486,
+        275,
+        654
+      ],
+      "uniformScale": 0.9493087557603687,
+      "eyes": [
+        [
+          92,
+          124,
+          108,
+          153
+        ],
+        [
+          132,
+          124,
+          148,
+          153
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-12-blink-1.png",
+        "surprise-12-blink-2.png",
+        "surprise-12-blink-3.png",
+        "surprise-12-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-12.png",
+      "cropBounds": [
+        61,
+        483,
+        278,
+        657
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 12,
+      "neutralOverride": false,
+      "sha256": "6e9a06c2b872d6ee9a6fb9d1ef559221584e823012e968c399bc9b0e1088ef59"
+    },
+    {
+      "file": "surprise-13.png",
+      "sourceBounds": [
+        307,
+        486,
+        517,
+        654
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          92,
+          123,
+          109,
+          153
+        ],
+        [
+          132,
+          123,
+          149,
+          153
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-13-blink-1.png",
+        "surprise-13-blink-2.png",
+        "surprise-13-blink-3.png",
+        "surprise-13-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-13.png",
+      "cropBounds": [
+        304,
+        483,
+        520,
+        657
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 13,
+      "neutralOverride": false,
+      "sha256": "374222c0eb2c53cf7a5f1d18d3f17c384efcaa1ed94229d49c489b859ca859a5"
+    },
+    {
+      "file": "surprise-14.png",
+      "sourceBounds": [
+        548,
+        486,
+        758,
+        654
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          91,
+          123,
+          109,
+          154
+        ],
+        [
+          131,
+          123,
+          149,
+          155
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-14-blink-1.png",
+        "surprise-14-blink-2.png",
+        "surprise-14-blink-3.png",
+        "surprise-14-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-14.png",
+      "cropBounds": [
+        545,
+        483,
+        761,
+        657
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 14,
+      "neutralOverride": false,
+      "sha256": "e9eb32eded1096f02877735ecd3800e5012dbbbc26e6fb27cd3acb22f113bdfc"
+    },
+    {
+      "file": "surprise-15.png",
+      "sourceBounds": [
+        789,
+        486,
+        999,
+        654
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          90,
+          122,
+          110,
+          156
+        ],
+        [
+          130,
+          122,
+          149,
+          156
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-15-blink-1.png",
+        "surprise-15-blink-2.png",
+        "surprise-15-blink-3.png",
+        "surprise-15-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-15.png",
+      "cropBounds": [
+        786,
+        483,
+        1002,
+        657
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 15,
+      "neutralOverride": false,
+      "sha256": "e361d644e3e31a2f972bec6b6d39d7d1ceee866a367d39ba1710d1a9aa4b6ebc"
+    },
+    {
+      "file": "surprise-16.png",
+      "sourceBounds": [
+        1029,
+        486,
+        1239,
+        654
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          90,
+          121,
+          110,
+          158
+        ],
+        [
+          130,
+          121,
+          150,
+          158
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-16-blink-1.png",
+        "surprise-16-blink-2.png",
+        "surprise-16-blink-3.png",
+        "surprise-16-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-16.png",
+      "cropBounds": [
+        1026,
+        483,
+        1242,
+        657
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 16,
+      "neutralOverride": false,
+      "sha256": "42b1766a4f944dedc5f1b632f4452a217e3fc627cfc61d416f228104a29fcbe9"
+    },
+    {
+      "file": "surprise-17.png",
+      "sourceBounds": [
+        1270,
+        486,
+        1479,
+        654
+      ],
+      "uniformScale": 0.958139534883721,
+      "eyes": [
+        [
+          89,
+          121,
+          111,
+          160
+        ],
+        [
+          130,
+          121,
+          151,
+          160
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-17-blink-1.png",
+        "surprise-17-blink-2.png",
+        "surprise-17-blink-3.png",
+        "surprise-17-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-17.png",
+      "cropBounds": [
+        1267,
+        483,
+        1482,
+        657
+      ],
+      "registeredSize": [
+        206,
+        167
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 17,
+      "neutralOverride": false,
+      "sha256": "2c1458f243aa4b36075536ce9adea8e6f3b71cbb4cbb64bfaac6f881830fa782"
+    },
+    {
+      "file": "surprise-18.png",
+      "sourceBounds": [
+        64,
+        701,
+        275,
+        869
+      ],
+      "uniformScale": 0.9493087557603687,
+      "eyes": [
+        [
+          90,
+          122,
+          111,
+          157
+        ],
+        [
+          130,
+          122,
+          151,
+          157
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-18-blink-1.png",
+        "surprise-18-blink-2.png",
+        "surprise-18-blink-3.png",
+        "surprise-18-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-18.png",
+      "cropBounds": [
+        61,
+        698,
+        278,
+        872
+      ],
+      "registeredSize": [
+        206,
+        165
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 18,
+      "neutralOverride": false,
+      "sha256": "725216cae77dccb6149167c6c2fe03590d0240c8271fffdefd8436093d9aa9c8"
+    },
+    {
+      "file": "surprise-19.png",
+      "sourceBounds": [
+        307,
+        701,
+        517,
+        869
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          89,
+          121,
+          111,
+          160
+        ],
+        [
+          129,
+          122,
+          151,
+          159
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-19-blink-1.png",
+        "surprise-19-blink-2.png",
+        "surprise-19-blink-3.png",
+        "surprise-19-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-19.png",
+      "cropBounds": [
+        304,
+        698,
+        520,
+        872
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 19,
+      "neutralOverride": false,
+      "sha256": "caa213da244963ab525ac4a83cf1bc6db563de95a609879a9e6c6bc4d445d784"
+    },
+    {
+      "file": "surprise-20.png",
+      "sourceBounds": [
+        548,
+        701,
+        758,
+        869
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          88,
+          121,
+          112,
+          161
+        ],
+        [
+          129,
+          122,
+          152,
+          161
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-20-blink-1.png",
+        "surprise-20-blink-2.png",
+        "surprise-20-blink-3.png",
+        "surprise-20-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-20.png",
+      "cropBounds": [
+        545,
+        698,
+        761,
+        872
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 20,
+      "neutralOverride": false,
+      "sha256": "4d0559ca5c217ab03e1d196dff8f96ca0775d9d050c44787f93721ef3bee53cd"
+    },
+    {
+      "file": "surprise-21.png",
+      "sourceBounds": [
+        789,
+        701,
+        999,
+        869
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          87,
+          121,
+          111,
+          162
+        ],
+        [
+          128,
+          122,
+          152,
+          162
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-21-blink-1.png",
+        "surprise-21-blink-2.png",
+        "surprise-21-blink-3.png",
+        "surprise-21-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-21.png",
+      "cropBounds": [
+        786,
+        698,
+        1002,
+        872
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 21,
+      "neutralOverride": false,
+      "sha256": "940fc62329be286bdc8742fe955c039dbe9104a0530b8e3839138be3b35167de"
+    },
+    {
+      "file": "surprise-22.png",
+      "sourceBounds": [
+        1029,
+        701,
+        1239,
+        869
+      ],
+      "uniformScale": 0.9537037037037037,
+      "eyes": [
+        [
+          87,
+          121,
+          112,
+          163
+        ],
+        [
+          129,
+          122,
+          153,
+          163
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-22-blink-1.png",
+        "surprise-22-blink-2.png",
+        "surprise-22-blink-3.png",
+        "surprise-22-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-22.png",
+      "cropBounds": [
+        1026,
+        698,
+        1242,
+        872
+      ],
+      "registeredSize": [
+        206,
+        166
+      ],
+      "translation": [
+        17,
+        30
+      ],
+      "sourceIndex": 22,
+      "neutralOverride": false,
+      "sha256": "a921311b48c95105165b99984487f1e16149578ef6a57c9d69417d629c7f3a20"
+    },
+    {
+      "file": "surprise-23.png",
+      "sourceBounds": [
+        1270,
+        701,
+        1479,
+        869
+      ],
+      "uniformScale": 0.958139534883721,
+      "eyes": [
+        [
+          87,
+          120,
+          112,
+          164
+        ],
+        [
+          129,
+          121,
+          153,
+          164
+        ]
+      ],
+      "blinkMaskState": "expression-preserved",
+      "blinks": [
+        "surprise-23-blink-1.png",
+        "surprise-23-blink-2.png",
+        "surprise-23-blink-3.png",
+        "surprise-23-blink-4.png"
+      ],
+      "rawCrop": "raw-crops/surprise-sheet/surprise-23.png",
+      "cropBounds": [
+        1267,
+        698,
+        1482,
+        872
+      ],
+      "registeredSize": [
+        206,
+        167
+      ],
+      "translation": [
+        17,
+        29
+      ],
+      "sourceIndex": 23,
+      "neutralOverride": false,
+      "sha256": "4166961f1f20fd5165ce01d5842e9463eb0e7200dc172bd71562cb222b8428f1"
+    }
+  ],
+  "sheet": "sources/surprise-sheet.png",
+  "playback": "Play 0..23 on touch, hold briefly, then reverse the identical frames to neutral.",
+  "processing": "Colored-head isolation, shell-aligned translation and uniform-scale registration only. Temporal smoothing applies only to global registration parameters, never to image pixels. No shape warping, rotation synthesis, morphing or crossfades. Frame 00 is the exact approved neutral PNG; all raw crops are retained.",
+  "status": "Staged for expression and temporal review; not integrated into the live player.",
+  "blinkPolicy": "expression-preserved",
+  "recommendedPlaybackIndices": [
+    0,
+    8,
+    10,
+    12,
+    14,
+    16,
+    18,
+    20,
+    22,
+    23
+  ],
+  "recommendedLoopIndices": [
+    23
+  ],
+  "recommendedLoopFrameMs": 120,
+  "qualityNotes": "All 24 generated source poses are retained. The optional surprise subset skips a redundant early narrow-eye phase and gives a quicker touch reaction."
+}

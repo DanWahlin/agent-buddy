@@ -28,7 +28,7 @@ class CharacterPreviewTests(unittest.TestCase):
         self.assertTrue(any(before))
         stride = 412 * 2
         art = before[57*stride:409*stride]
-        assets = json.loads((ROOT / "assets/sprite-firmware.json").read_text())
+        assets = json.loads((ROOT / "characters/copilot/frames.json").read_text())
         self.assertEqual(hashlib.sha256(art).hexdigest(),
                          assets["centerRgb565Sha256"][0])
         self.assertEqual(before[:57*stride], bytes(57*stride))
@@ -183,6 +183,23 @@ class CharacterPreviewTests(unittest.TestCase):
         self.assertNotEqual(turns[0], center)
         self.assertNotEqual(turns[1], center)
         self.assertNotEqual(turns[0], turns[1])
+
+    def test_switching_from_openclaw_clears_pixels_outside_copilot_art(self):
+        clean = self.create()
+        expected = [clean.frame({
+            "playing": False, "character": "copilot", "delta": 0,
+        })[0] for _ in range(2)]
+
+        renderer = self.create()
+        for _ in range(2):
+            renderer.frame({"playing": False, "character": "copilot", "delta": 0})
+        for _ in range(2):
+            renderer.frame({"playing": False, "character": "openclaw", "delta": 0})
+        actual = [renderer.frame({
+            "playing": False, "character": "copilot", "delta": 0,
+        })[0] for _ in range(2)]
+
+        self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

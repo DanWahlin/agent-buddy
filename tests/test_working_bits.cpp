@@ -1,4 +1,4 @@
-#include "../firmware/Copilot/src/CharacterEffects.h"
+#include "../firmware/AgentCompanion/src/CharacterEffects.h"
 #include <algorithm>
 #include <array>
 #include <cassert>

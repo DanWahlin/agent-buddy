@@ -5,7 +5,8 @@ cd "$ROOT"
 mkdir -p build
 "${CXX:-clang++}" -std=c++17 -O1 -g -Wall -Wextra -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  tests/test_working_bits.cpp firmware/Copilot/src/CharacterEffects.cpp \
+  tests/test_working_bits.cpp firmware/AgentCompanion/src/AgentBadges.cpp \
+  firmware/AgentCompanion/src/CharacterEffects.cpp \
   -o build/test-working-bits
 build/test-working-bits
 python3 <<'PY'
@@ -17,9 +18,9 @@ import json
 sys.path.insert(0, 'tools')
 from sprite_codec import decode_pixels
 
-metadata = json.loads(Path('assets/sprite-firmware.json').read_text())
+metadata = json.loads(Path('characters/copilot/frames.json').read_text())
 records = {(frame['direction'], frame['step']): frame['base'] for frame in metadata['frames']}
-blob = Path('assets/sprite-firmware.bin').read_bytes()
+blob = Path('characters/copilot/frames.bin').read_bytes()
 width = metadata['width']
 assert width == 412
 inset = (width - 400) // 2

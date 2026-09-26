@@ -1,0 +1,19 @@
+{
+  "name": "esp32-agent-companion",
+  "private": true,
+  "description": "One-word commands for setting up and customizing the ESP32 Agent Companion.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "setup": "node tools/companion.mjs setup",
+    "settings": "node tools/companion.mjs settings",
+    "status": "node tools/companion.mjs status",
+    "wifi": "node tools/companion.mjs wifi",
+    "pair": "node tools/companion.mjs pair",
+    "character": "node tools/companion.mjs character",
+    "connection": "node tools/companion.mjs connection",
+    "agents": "node tools/companion.mjs agents",
+    "badges": "node tools/companion.mjs badges"
+  }
+}

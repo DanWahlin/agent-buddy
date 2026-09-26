@@ -13,13 +13,13 @@ ESPTOOL_VERSION = "5.3.0"
 FLASH_BYTES = 0x1000000
 IMAGE_NAMES = (
     "bin/bootloader.bin", "bin/partitions.bin", "bin/boot_app0.bin",
-    "bin/application.bin", "bin/sprite-firmware.bin",
+    "bin/application.bin", "bin/character-copilot.acpk",
 )
 PAYLOAD_NAMES = (*IMAGE_NAMES, "flash.py", "requirements.txt", "manifest.json", "INSTALL.txt")
 WARNING = (
-    "WARNING: This replaces the current firmware, partition table, and internal sprite assets.\n"
+    "WARNING: This replaces the current firmware, partition table, and installed character.\n"
     "NVS bytes at 0x9000..0xe000 are preserved, but settings from an existing layout may be "
-    "incompatible. The SD card is not modified. No erase-flash is performed."
+    "incompatible. No erase-flash is performed."
 )
 
 

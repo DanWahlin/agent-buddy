@@ -1,0 +1,38 @@
+{
+  "created": "2026-09-11T08:55:40.616751+00:00",
+  "provider": "Configured Azure GPT Image deployment",
+  "reference": "characters/copilot/expressions/references/shared-neutral.png",
+  "references": [
+    {
+      "file": "characters/copilot/expressions/references/shared-neutral.png",
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    }
+  ],
+  "referenceSha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "prompt": "characters/copilot/expressions/prompts/attention.txt",
+  "promptText": "Create one polished production sprite sheet for the expression 'attention'.\n\nImage 1 is the EXACT approved front-center character. Image 2 is a placement and\nidentity guide showing that same neutral head in all 24 slots. Edit those heads\ninto 24 successive rendered states of ONE identical rigid character. This is a\nprofessional technical-animation asset sheet, not a collage of redesigned heads.\n\nOUTPUT: 1536x1024 PNG, high quality. Exactly SIX columns and FOUR rows, 24 complete\nseparate heads in reading order. Keep the guide's exact centers and generous\nproper margins. Each head is approximately 200 pixels wide and 158 pixels high,\nwith fixed camera scale. Solid pure BLACK background. Ensure all content is fully\nvisible. REMOVE ALL guide lines, captions, numbers and text in the final artwork.\nNo labels, letters, question marks, punctuation, icons, particles, confetti,\nfireworks, stars, sparkles, hands, arms, body, pedestal, floor or cast shadows.\n\nIDENTITY LOCK: preserve the reference's glossy blue/violet smooth helmet dome,\ntwo thick cyan/cobalt rounded-square goggles perched ABOVE the faceplate, the\ngoggles' dark saturated-blue inset lenses, separate dark-blue faceplate below\nthem, pale blue/violet curved visor rim, and rounded blue/violet ear pods.\nThe goggles and shell are RIGID and IDENTICAL in every frame, with the same\nproportions, silhouette, material, bevels, illumination and recessed lenses.\nNEVER use the large goggle lenses as expressive eyes. The ONLY expressive eyes\nare the TWO SMALL LUMINOUS CYAN MARKS in the LOWER FACEPLATE below the goggles.\nDo not add a mouth, nose, eyebrows, hair, teeth or any facial feature.\nRetain clean subtle glossy gradients without grain, stipple or texture changes.\n\nEXPRESSION: A friendly inquisitive expression asking the developer for input. The TWO SMALL CYAN EYES IN THE LOWER FACEPLATE become gently asymmetric: the viewer-left eye is slightly taller and wider, while the viewer-right eye narrows to about half its neutral height. Keep both eyes luminous, friendly and readable. Add a curious rigid 5-degree counterclockwise head roll, with no more than 1 degree of yaw. It must look interested and patient, never frightened, angry, sad, or alarmed. No eyebrow marks.\n\nTEMPORAL PLAN: frame 00 is exactly the neutral reference. Progress steadily and\nvery gradually toward 'curious asymmetric cyan eyes; friendly questioning tilt' at frame 23. The changes per adjacent\nframe are tiny, with no jump at row boundaries. Row 1 covers expression strength\n0-22%, row 2 26-48%, row 3 52-74%, row 4 78-100%. No animation restart in a new row.\nDo not make all frames reach the final emotion immediately. No surprise extra\nexpressions between frames. Never rotate the head more than 6 degrees total.\n\nRender each frame as a clean discrete view, NOT a blend or morph. No double\noutlines, melting goggles, stretchy visor rims, squash/stretch, changes in ear\nsize, camera zoom, head shrinking or lighting changes. The head must remain\ninstantly recognizable as the exact approved mascot in image 1.\n",
+  "promptSha256": "aebcca97a44317138782252fdc7dd284fb8deaa9097737c2baa14af8cd96e1fd",
+  "size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "format": "png",
+  "generationSeconds": 102.25,
+  "sha256": "f20e8dcc529d3f6a5bc94652f7fd574f42585699582313bb832c292adabc3e6d",
+  "usage": {
+    "input_tokens": 2433,
+    "input_tokens_details": {
+      "image_tokens": 1746,
+      "text_tokens": 687
+    },
+    "output_tokens": 5488,
+    "output_tokens_details": {
+      "image_tokens": 5488,
+      "text_tokens": 0
+    },
+    "total_tokens": 7921
+  },
+  "layoutGuide": "characters/copilot/expressions/guides/attention-layout.png",
+  "layoutGuideSha256": "e7148e9c0027b65c54f2b9483fb995dd2a02e3f4ce39a56c5c2d58de5572111d"
+}

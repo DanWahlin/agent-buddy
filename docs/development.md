@@ -11,8 +11,9 @@ A quietly expressive desktop companion for the **Waveshare
 ESP32-S3-Touch-AMOLED-1.75-B**: the supplied blue/violet Copilot artwork, deep
 directional head turns, relaxed pauses,
 and occasional asymmetric-timed blinks and double blinks. No scrolling text,
-UI chrome, Wi-Fi, cloud service, or microSD card is required. Sound cues require
-a compatible speaker, but all visual behavior works without one.
+cloud service or Wi-Fi is required for standalone animation.
+Optional local Wi-Fi carries daemon state when USB data is disconnected. Sound
+cues require a compatible speaker, but all visual behavior works without one.
 
 ## Run on this Mac
 
@@ -24,15 +25,15 @@ bash tools/arduino.sh upload /dev/cu.usbmodem2101
 
 **Uploading replaces the current firmware.** It does not erase the whole flash,
 but the application and partition table change. Do not assume existing factory
-application data remains compatible. This project only reads microSD files and
-never writes to the battery charger configuration.
+application data remains compatible. This project never writes to the battery
+charger configuration.
 
 The current source uses a custom **2 MiB application partition** and a separate
-**13.875 MiB read-only sprite partition**. The uploader writes the matched
-application, partition table, and sprite payload together. Firmware verifies the
-sprite SHA256 before animation starts. There is no OTA slot or flash filesystem;
-the optional microSD filesystem is used only for reading.
-This replaces the earlier 11 MiB application layout that embedded all artwork.
+**13.875 MiB character partition** that holds exactly one character pack. The
+application is a shell: it contains no artwork or frame tables. A complete
+upload writes the application, partition table, and default Copilot pack
+together. Firmware verifies the pack's SHA-256 before animation starts. There is
+no OTA slot or flash filesystem.
 
 The scripts use the existing Arduino IDE CLI, its configuration, and Waveshare's
 bundled GFX library. Overrides: `ARDUINO_CLI`, `ARDUINO_CONFIG`, `WAVESHARE_DIR`.
@@ -67,7 +68,7 @@ to compile or upload the checked-in firmware assets.
 
 ### Arduino IDE settings
 
-Open `firmware/Copilot/Copilot.ino`. Make the vendor GFX library available
+Open `firmware/AgentCompanion/AgentCompanion.ino`. Make the vendor GFX library available
 to your sketchbook, then select:
 
 | Setting | Value |
@@ -87,110 +88,190 @@ Hardware: 466 x 466 CO5300 AMOLED; QSPI CS=12, CLK=38, D0..D3=4..7,
 RESET=39; vendor column offset=6. The `-B` variant is the standard board
 with a protective case. USB data uses GPIO19/20 and is not repurposed.
 
-Before the first IDE build, run `python3 tools/embed_sprites.py`. The CLI build
-does this automatically. Use the CLI workflow to upload: it derives offsets and
-size limits from the partition CSV and includes the separately flashed sprite
-payload. An ordinary IDE sketch upload alone does not install that payload.
-Build/upload guards reject changed inputs or mismatched binaries rather than
-flashing an incompatible set.
-After a complete upload, `bash tools/arduino.sh upload-code PORT` can update only
-firmware when the sprites and partition layout are unchanged. Boot-time SHA256
-validation still rejects mismatched assets; use a complete `upload` after changing
-artwork or flash layout.
+Use the CLI workflow to upload: it builds the character packs, derives offsets
+and size limits from the partition CSV, and includes the default Copilot pack.
+An ordinary IDE sketch upload alone doesn't install a character; the device then
+shows **No character installed** until the daemon pushes one. Build/upload
+guards reject changed inputs or mismatched binaries rather than flashing an
+incompatible set. `bash tools/arduino.sh upload-code PORT` updates only the
+application and keeps the installed character, as long as the partition layout
+is unchanged.
 
-## microSD storage (read-only)
+## Character packs
 
-The board's TF/microSD slot uses SD_MMC in 1-bit mode: CLK GPIO2, CMD GPIO1,
-and D0 GPIO3, at 20 MHz. A FAT32 card is mounted at boot with automatic formatting
-explicitly disabled. This firmware never creates, changes, deletes, or formats
-files during normal operation and does not expose the card as a USB drive.
+`tools/character_pack.py build` wraps each validated export into a
+self-describing pack in `build/characters/`: a 256-byte header (id, display
+name, layout, animation model, base/patch bounds, motion speed, walk cycle, and
+SHA-256), the frame table, and the unchanged compressed RGB565 frames. The
+format is documented at the top of that script. Two layouts are supported:
 
-The built-in Copilot flash sprites remain the reliable default. The optional
-OpenClaw pack must be located at
-**`/characters/openclaw/sprites.bin`** and match the size and SHA256 compiled
-into the firmware. Arbitrary PNGs and unrecognized character packs are rejected.
+- **Base/patch** (Copilot, 9,540,870 bytes): one base image per reachable pose
+  plus four blink patches around the eyes.
+- **Full frame** (OpenClaw, 10,000,700 bytes): one complete image per pose and
+  blink level, with a 12 FPS walk cycle on the Working track.
 
-The preferred installation path keeps the card in the device:
+At boot the firmware reads the header, memory-maps only that pack from flash,
+validates every table entry, and checks the SHA-256. Frames are decoded straight
+from the mapped flash, so PSRAM holds only the framebuffers and the active
+layout's decode caches. OpenClaw no longer needs an SD card or its PSRAM block
+cache, and its cold blink frames no longer stall on card reads.
 
-```bash
-npm --prefix daemon run install:openclaw
-```
-
-The Node CLI temporarily pauses the installed daemon, negotiates device protocol
-2, streams `assets/openclaw-lab.bin`, and waits for the firmware to validate and
-atomically rename the temporary file. Interrupted or invalid transfers do not
-replace an existing pack. The device reboots after each attempt so SD cache state
-cannot survive a replacement.
-
-As a manual fallback, extract the release's `-sd-card.zip` at the card root with
-a card reader. No JSON file is needed because the matching firmware contains the
-validated frame table and expected digest.
-
-The OpenClaw pack does not fit entirely in PSRAM. Its generated layout groups
-the normal open-eye frames first, allowing that 2.0 MiB hot region to be loaded
-into PSRAM while the pack is verified at boot. Ordinary movement therefore does
-not wait for the card. A separate bounded 512 KiB compressed-data cache uses
-eight 64 KiB windows for colder blink variants, with 32 KiB alignment and a
-low-priority reader task. Stable center poses prefetch the complete blink
-sequence, moving poses prefetch the first blink level, and demand reads are
-placed ahead of queued speculative work. The first uncached blink frame waits
-up to 500 ms for its window; subsequent nearby frames use cached bytes. Leases
-protect pages while decoding. A read failure disables the SD source and returns
-rendering to built-in Copilot. USB replacement gates new OpenClaw renders and
-cooperatively stops the reader before closing or modifying its file.
-SD-only characters will require their own asset catalog and loading policy.
-
-A missing pack, mount failure, incompatible hash, or later read failure is
-reported explicitly and leaves flash playback available. After a read failure,
-the reader is disabled until restart; hot-swapping/remounting is not implemented.
-Startup validation of a present pack can take several seconds.
-
-Query card capacity, pack status, and cache activity without modifying the card:
+Install a pack with the daemon over USB or Wi-Fi:
 
 ```bash
-.venv/bin/python tools/device.py --storage --seconds 15
-bash tools/test_sprite_cache.sh
+npm run character openclaw
+npm run character /path/to/custom.acpk
 ```
 
-`SD state=pack_missing` means the card mounted but needs the matching file.
-`state=ready` means the pack was verified and its caches are enabled; `hits`
-counts blocks served from either PSRAM tier, while `misses` counts requests that
-had to schedule an SD window read.
+Over USB the daemon sends `u`; the device pauses rendering, erases the first
+64 KiB of the partition, and answers `UPLOAD_READY max_bytes=N chunk=4096`. The
+daemon then sends 4 KiB chunks and waits for `UPLOAD_ACK received=N total=N`
+after each one, because the USB Serial/JTAG receive queue drops bytes when it's
+full. Over Wi-Fi the daemon posts the pack to `POST /character` with the paired
+bearer token and an exact `Content-Length`; the web server streams the raw body
+into the same installer. Flash is erased 64 KiB at a time as data arrives. The
+first 4 KiB sector, which holds the header, is written only after the whole
+stream's SHA-256 matches, and the installed pack is then re-verified from flash.
+Every attempt ends in a restart. A failed or interrupted install leaves no valid
+header, so the shell boots without a character, reports `character=none` over
+USB and in `GET /status`, and the daemon reinstalls the remembered character
+(`character.json` beside `state.json`, default `copilot`).
 
-The inserted 64 GB card reports **63,864,569,856 bytes**. With the matching
-OpenClaw pack installed, open-eye frames remain resident in PSRAM and repeated
-poses avoid decompression through a final decoded-frame cache. Live idle
-measurements reduced the original recurring 250-300 ms presentation stalls to
-about 52 ms after blink pages warmed. Cold blink pages measured approximately
-160-200 ms, with 4.28 MB PSRAM and 139 KB internal heap remaining.
+Query the installed pack without changing it:
+
+```bash
+.venv/bin/python tools/device.py --character --seconds 6
+python3 tools/character_pack.py validate build/characters/openclaw.acpk
+```
 
 ## Preview and development
 
 ### Copilot CLI companion daemon
 
-`daemon/` contains the TypeScript listener used by local Copilot CLI sessions.
-Copilot hooks send lifecycle JSON over a user-private Unix socket; the daemon
+`daemon/` contains the TypeScript listener used by local AI-agent sessions.
+Agent hooks send lifecycle JSON over a user-private Unix socket; the daemon
 aggregates concurrent sessions and subagents, then writes bounded mode commands
-through the first `/dev/cu.usbmodem*` device without toggling DTR/RTS or HUPCL.
+through USB or a paired local Wi-Fi device. USB remains preferred and does not
+toggle DTR/RTS or HUPCL.
 Needs attention has global priority, followed by Working; Complete plays only
 when the last active task finishes.
 
 ```bash
-cd daemon
-npm install
-npm test
-npm run install:daemon
+npm run setup
+npm run agents
+npm --prefix daemon test
 npm run status
 ```
 
-The installer writes `~/.copilot/hooks/agent-companion.json` and either a macOS
-LaunchAgent or Linux systemd user service. On Windows, run both Copilot CLI and
-the daemon inside the same WSL distribution, with systemd enabled and the ESP32
-USB serial device attached to WSL; native Windows service installation is not
-currently supported. Hook failures are intentionally ignored so a missing daemon
-or disconnected device never blocks Copilot. Restart Copilot CLI after changing
-hook configuration. The daemon only transmits lifecycle state and session IDs;
-it does not send prompts, responses, source code, or tool arguments to the ESP32.
+The daemon has adapter modules under `daemon/src/agents/`. Each adapter owns
+detection, hook install/uninstall, hook status, and native-event normalization.
+Hook file edits are read-modify-write and create a `.bak` beside a previous file
+the first time the companion changes it. Our entries are identified by the
+compiled `cli.js` path plus `hook <agent>` arguments, so reinstalling doesn't
+duplicate commands and uninstalling doesn't remove another tool's hook.
+
+| Agent | Install target | Event notes | Approval notes |
+| --- | --- | --- | --- |
+| Copilot CLI | `~/.copilot/hooks/agent-companion.json` | Existing v1 event names map directly. The old `hook <event>` command still works and is treated as Copilot. | Restart Copilot CLI after setup. |
+| Claude Code | `~/.claude/settings.json` | `PermissionRequest`, `Elicitation`, and selected notifications become Needs attention. `AskUserQuestion` and `ExitPlanMode` are treated as waiting for the user. | Claude may ask for folder trust. |
+| Codex CLI | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. |
+| Grok Build | `~/.grok/hooks/agent-companion.json` | Permission and elicitation notifications become Needs attention. `Stop` only completes when its reason is `end_turn`; channel shutdown clears. | Grok's hook directory is trusted. Claude hooks invoked by Grok are ignored when Grok's own hook is installed and enabled. |
+| Hermes Agent | `~/.hermes/config.yaml` | `pre_llm_call` starts work, `pre_tool_call`/`post_tool_call` track tools, `pre_approval_request` surfaces attention, and turn `on_session_end` completes. | Hermes asks you to approve the shell hook the first time it runs. Don't pre-seed its allowlist. |
+| OpenClaw | `<daemon data>/integrations/openclaw-plugin/` | Native plugin forwards lifecycle events directly to the daemon socket. Gateway WebSocket approvals aren't implemented yet. | Installer links/enables the plugin through `openclaw` only when the command is on `PATH`. |
+
+Agent enablement lives in `agents.json` beside `state.json`. Missing entries
+mean "enabled if detected", so setup monitors all detected agents by default.
+The daemon checks this file when a hook arrives, which means `npm run agents
+disable claude` takes effect immediately without editing Claude's settings.
+Status includes per-agent detection, hook status, enabled state, last event time,
+active session count, and the agents currently driving the display.
+
+Agent badges are negotiated through device protocol 6. The firmware stays
+agent-agnostic: the daemon sends icon data after connect or after a boot-id
+change, then sends the current active list. Older protocol 5 devices only
+receive state packets.
+
+USB packets:
+
+| Packet | Meaning |
+| --- | --- |
+| `%<id>:<RRGGBB>:<base64 mask>\n` | Defines or replaces an in-RAM icon. `id` is up to 16 `[a-z0-9-]` characters, color is badge fill, and the mask is 72 bytes for a 24 x 24 1-bit glyph. The device replies `ICON accepted=<id>`. |
+| `&<id>=<w|a|c>,<id>=<w|a|c>\n` | Sets the active badge list in display order. `w` means Working, `a` means Needs attention, and `c` means Complete. `&\n` clears the list. The device replies `AGENTS accepted=N`. |
+
+Malformed badge packets return `COMMAND_ERROR ...`. The firmware stores up to
+eight icon definitions and eight active entries in RAM, protected by a short
+critical section so USB/Wi-Fi updates on core 1 don't race the render task on
+core 0. Rendering copies a snapshot once per frame, draws at most four badges,
+and uses the same restore/damage tracking as the other character effects.
+
+Wi-Fi exposes the same data as authenticated text bodies:
+
+| Endpoint | Body | Notes |
+| --- | --- | --- |
+| `POST /icon` | the `%...` icon packet | Requires `Authorization: Bearer <token>`. |
+| `POST /agents` | the `&...` active-list packet | `&\n` clears badges. |
+
+`GET /status` includes the firmware `protocol` number so the daemon can skip
+badge endpoints for older firmware. Badge visibility lives in `display.json`
+beside `state.json` and defaults to on. The settings page exposes the toggle and
+shows badge previews from the same 24 x 24 masks the daemon sends to the device.
+
+Default glyphs live in `daemon/src/agent-badges.ts` as 24-line ASCII masks with
+brand-evocative colors. They're hand-drawn pixel art, and some (like OpenClaw's
+critter and Grok's ring) are simplified takes on the agent's own logo. Users can
+override them locally with `<daemon data>/icons/<id>.png`; the dependency-free
+decoder accepts 8-bit, non-interlaced grayscale, grayscale+alpha, RGB, and RGBA
+PNGs and converts alpha or luminance to the mask. An optional adjacent
+`<id>.json` can set `{ "color": "#RRGGBB" }`, the accent used for the glyph and ring on the dark badge.
+
+### Settings page
+
+The daemon serves a dependency-free settings page from `daemon/web/` at
+`http://127.0.0.1:4667` (override with `AGENT_COMPANION_SETTINGS_PORT`).
+`npm run settings` asks the daemon for the session link and opens it. The page
+and CLI share `CompanionService`, so status, Wi-Fi setup, connection mode, and
+character installs behave the same in both. Live status streams over
+server-sent events from `/api/events`.
+
+The server treats every request as potentially hostile because browsers let any
+website send requests to loopback addresses:
+
+- It listens on `127.0.0.1` only.
+- It rejects any `Host` other than `127.0.0.1:<port>` or `localhost:<port>`,
+  which blocks DNS rebinding, and any cross-site `Origin`.
+- Every `/api/` call needs the random token from the link. It's passed in the
+  URL fragment, stored in `sessionStorage`, and sent in the `X-Companion-Token`
+  header. Only the event stream and thumbnail images, which can't set headers,
+  accept it as a query parameter. The daemon reuses the token saved in
+  `settings.json` when it restarts, so open tabs keep working; delete that file
+  to issue a new one. A page opened without the link, or with an old one, shows
+  only instructions to run `npm run settings`.
+- JSON and upload routes require their exact `Content-Type`, uploads are capped
+  at 16 MiB, and responses carry a strict CSP, `X-Frame-Options: DENY`,
+  `nosniff`, and `no-store`.
+- The link is written to `settings.json` in the daemon's private data
+  directory, and the Wi-Fi password is never stored.
+
+Characters added from the page are saved in `characters/` inside that data
+directory and installed by id like the built-in ones; built-in ids can't be
+replaced. Each pack's optional thumbnail PNG sits between the frame table and
+the frame data, and the header records its offset and size at bytes 148-155.
+Older firmware already accepts that gap and ignores those reserved bytes.
+
+`npm run connection auto|wifi|usb` stores the transport preference in
+`connection.json` beside `state.json`; `wifi` closes the serial port so a cable
+supplies power only. The root `package.json` has no dependencies; its scripts call
+`tools/companion.mjs`, which installs and rebuilds `daemon/` when needed and then
+runs the daemon CLI. `npm --prefix daemon run ...` scripts remain available.
+
+The installer writes detected-agent hooks and either a macOS LaunchAgent or
+Linux systemd user service. On Windows, run both agent CLIs and the daemon inside
+the same WSL distribution, with systemd enabled and the ESP32 USB serial device
+attached to WSL; native Windows service installation is not currently supported.
+Hook failures are intentionally ignored so a missing daemon or disconnected
+device never blocks the agent. Restart running agent CLIs after changing hook
+configuration. The hook path extracts only lifecycle fields before forwarding;
+it doesn't send prompts, responses, source code, or tool arguments to the ESP32.
 
 The daemon persists minimal lease metadata in
 `~/Library/Application Support/ESP32 Agent Companion/state.json`, written
@@ -205,6 +286,31 @@ replaying when the device reconnects. Subagent starts that provide only a shared
 name are correlated with stops that later add a unique agent ID; stop events are
 resolved against their parent lease, and legacy name-only leases are discarded
 on restart so completed task agents cannot leave the display stuck in Working.
+
+The preferred Wi-Fi provisioning path is
+`npm run wifi "SSID"` while USB is connected. The CLI
+reads the password without echoing it, sends it through the user-private daemon
+socket, and the daemon forwards a base64-framed protocol 4 command over USB.
+The ESP32 saves the credentials in the `agent-network` NVS namespace and returns
+its existing device ID and random token over USB, allowing the daemon to pair
+automatically without storing the SSID or password.
+
+The on-device Settings screen remains the no-USB fallback. The ESP32 creates a
+WPA2 access point whose eight-digit password is also a temporary pairing code. A
+captive page at `192.168.4.1` saves the 2.4 GHz credentials. The access point and
+pairing window expire after ten minutes. The device then advertises
+`_agent-companion._tcp` through mDNS and responds to
+`ESP32_AGENT_COMPANION_DISCOVER_V1` broadcasts on UDP 4666.
+
+`npm run pair CODE` exchanges the displayed one-time
+code for a random 128-bit device token. The daemon stores it in `wifi.json` beside
+`state.json`, with user-only permissions. Runtime `POST /state` and `GET /status`
+requests require `Authorization: Bearer TOKEN`; prompts, source code, and hook
+payloads are never sent. The daemon first probes the last known address, then
+uses UDP discovery if DHCP changed it. A boot identifier ensures the desired
+state is resent after the ESP32 restarts without periodically replaying commands.
+Networks with wireless client isolation must disable it or place both systems on
+a LAN where local HTTP and UDP traffic is permitted.
 
 ### Character Lab
 
@@ -239,8 +345,7 @@ trigger Surprise first. A tapped Surprise returns to Idle after the spring,
 regardless of the previous persistent state. Explicit Surprise signals retain
 their existing resume behavior. Swipe up opens the settings menu for brightness,
 0-100% sound volume, and character-state selection; swipe down or tap Close to
-dismiss it. Sound defaults to 50% and is persisted in internal NVS, never on the
-microSD card.
+dismiss it. Sound defaults to 50% and is persisted in internal NVS.
 All five non-Idle mode links are also available on `/sprite-preview.html`.
 Transitions use shared-center artwork before switching tracks. The spring
 reaction settles forward to its neutral final frame rather than reversing the impact.
@@ -294,8 +399,7 @@ Apache-2.0 SPDX headers and matches the driver in Waveshare's pinned example.
 
 The board routes audio through MCLK GPIO42, BCLK GPIO9, WS GPIO45, playback data
 GPIO8, and its two-pin speaker connector. A compatible external speaker is
-required when the board or enclosure does not include one. The audio path does
-not access the read-only microSD card.
+required when the board or enclosure does not include one.
 
 The character output spans 412 x 466 pixels at panel position (27, 0),
 giving the 400-pixel orbit room for the balls themselves. The original 400 x 352
@@ -356,16 +460,16 @@ The selected second pass uses an explicit angle/layout guide:
 ```bash
 python3 tools/create_sprite_guide.py
 python3 tools/generate_sprite_sheet.py \
-  --prompt assets/sprite-prompts/right-turn-refined.txt \
-  --guide assets/generated-sprites/right-turn-layout.png \
-  --output assets/generated-sprites/right-turn-refined-sheet.png
+  --prompt characters/copilot/source/sprite-prompts/right-turn-refined.txt \
+  --guide characters/copilot/source/generated-sprites/right-turn-layout.png \
+  --output characters/copilot/source/generated-sprites/right-turn-refined-sheet.png
 python3 tools/prepare_generated_sprites.py \
-  --source assets/generated-sprites/right-turn-refined-sheet.png
+  --source characters/copilot/source/generated-sprites/right-turn-refined-sheet.png
 ```
 
 Requests use 1536 x 1024, high quality, PNG, one image per request. Original
 generated sheets, prompts, provenance, and hashes are retained under
-`assets/generated-sprites/` and `assets/sprite-prompts/`.
+`characters/copilot/source/generated-sprites/` and `characters/copilot/source/sprite-prompts/`.
 
 The sprite review page defaults to one generated frame at a time, using the exact
 reverse sequence to return to center. It never applies image warping.
@@ -420,10 +524,10 @@ python3 tools/create_diagonal_guides.py
 # Repeat the generation command for up_right, up_left, down_right, down_left.
 # Generation is a paid API operation; preparation/review below is local.
 python3 tools/generate_sprite_sheet.py \
-  --reference assets/generated-sprites/approved-center.png \
-  --guide assets/generated-sprites/up_right-generated-layout.png \
-  --prompt assets/sprite-prompts/up_right-generated.txt \
-  --output assets/generated-sprites/up_right-generated-sheet.png
+  --reference characters/copilot/source/generated-sprites/approved-center.png \
+  --guide characters/copilot/source/generated-sprites/up_right-generated-layout.png \
+  --prompt characters/copilot/source/sprite-prompts/up_right-generated.txt \
+  --output characters/copilot/source/generated-sprites/up_right-generated-sheet.png
 python3 tools/prepare_generated_diagonals.py
 SPRITE_ASSETS=build/generated-diagonals python3 -m unittest discover -s tests -p 'test_sprite_assets.py'
 # After inspecting the contact sheets and blink masks:
@@ -453,17 +557,17 @@ Rebuild the full animation assets after generating the directional sheets:
 python3 tools/create_direction_guides.py
 # For each direction: left, up, down. Image generation is a paid API operation.
 # Left uses only the approved center and its guide; up/down also use
-# --reference assets/generated-sprites/right-turn-refined-sheet.png.
+# --reference characters/copilot/source/generated-sprites/right-turn-refined-sheet.png.
 python3 tools/generate_sprite_sheet.py \
-  --reference assets/generated-sprites/approved-center.png \
-  --guide assets/generated-sprites/left-turn-layout.png \
-  --prompt assets/sprite-prompts/left-turn.txt \
-  --output assets/generated-sprites/left-turn-sheet.png
+  --reference characters/copilot/source/generated-sprites/approved-center.png \
+  --guide characters/copilot/source/generated-sprites/left-turn-layout.png \
+  --prompt characters/copilot/source/sprite-prompts/left-turn.txt \
+  --output characters/copilot/source/generated-sprites/left-turn-sheet.png
 python3 tools/prepare_sprite_animation.py
 python3 -m unittest discover -s tests -p 'test_sprite_assets.py'
 ```
 
-`web/generated-sprites/animation.json` contains direction/frame references, eye
+`characters/copilot/sprites/animation.json` contains direction/frame references, eye
 bounds, closure images and the shared-center hash. The raw left-sheet first
 attempt is retained as `left-turn-rejected-wrong-direction.png`: it turned right
 despite its instructions and was not selected. Prompt angle labels describe
@@ -517,7 +621,7 @@ To regenerate the image assets or preview:
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-art.txt
-.venv/bin/python tools/prepare_turn_atlas.py
+.venv/bin/python characters/copilot/legacy-atlas/tools/prepare_turn_atlas.py
 .venv/bin/python tools/preview.py
 bash tools/test.sh
 ```
@@ -533,8 +637,8 @@ Regenerate the display-ready firmware assets after changing any selected sprite 
 the browser manifest:
 
 ```bash
-python3 tools/export_sprite_firmware.py
-python3 tools/embed_sprites.py
+python3 characters/copilot/tools/export_sprite_firmware.py
+python3 tools/character_pack.py build
 bash tools/run_sprite_motion_tests.sh
 bash tools/test_sprite_renderer.sh
 python3 -m unittest discover -s tests -p 'test_sprite_firmware_assets.py'
@@ -552,10 +656,10 @@ pre-scaled offline to the original 400 x 352 display region within the logical
 412-pixel row stride. Shared black borders are then cropped without changing
 any displayed pixels. The deployed thirteen-track payload is **9,526,790 bytes**,
 down from 13,776,811 bytes: **4,250,021 bytes saved (30.85%)**, with
-**5,022,202 bytes free** in the sprite partition. The largest decoded eye patch remains
+**5,022,202 bytes free** in the character partition. The largest decoded eye patch remains
 14,904 bytes. Its SHA256 is
 `ca175574c42c39d0c40b07a2d484cf9a7b463f721eb911c292e1187d8f1764e3`.
-Changing the sprite payload requires a full upload rather than `upload-code`.
+Install changed artwork with a full upload or `npm run character copilot`.
 
 - Thirteen tracks remain: eight idle directions and five expression tracks,
   including the alternate attention tilt. Firmware stores 288 reachable poses:
@@ -698,7 +802,7 @@ binary-stream implementation.
 - No per-frame allocation, blocking animation delays, or flash writes.
   Brightness fades in at startup.
 
-`firmware/Copilot/build_opt.h` enables `-O3` and the vendor QSPI chunk size for
+`firmware/AgentCompanion/build_opt.h` enables `-O3` and the vendor QSPI chunk size for
 both CLI and Arduino IDE builds. Do not remove it when copying the sketch.
 
 For current firmware, tune display brightness (0..255), target frame rate and SPI
@@ -774,7 +878,11 @@ New character firmware accepts `!idle\n`, `!surprise\n`, `!working\n`,
 second of inactivity. `COMMAND accepted=...` acknowledges queueing;
 `STATE mode=... requested=... event=...` distinguishes the visible mode from a
 pending transition. The single byte `i` reports protocol version, uptime,
-reset reason, current/requested mode, and sprite size.
+reset reason, current/requested mode, character pack size and id, and Wi-Fi
+status. Protocol 3 adds local Wi-Fi transport, protocol 4 adds USB Wi-Fi
+provisioning, and protocol 5 replaces the SD OpenClaw upload with character-pack
+installation (`u`). The boot banner `READY: ... character=ID` also tells the
+daemon about software restarts, which keep the USB port open.
 
 The observer negotiates protocol support before sending a mode packet, so it
 does not accidentally trigger legacy capture commands on older firmware:
@@ -802,7 +910,7 @@ This project does not modify that repository or its factory image.
 ## Artwork
 
 Source: [GitHub brand mascot sheet](https://brand.github.com/_next/static/media/mascots-02.51566f45.png).
-The source image is preserved in `assets/copilot-source.png`.
+The source image is preserved in `characters/copilot/source/copilot-source.png`.
 SHA-256: `a93a701f4ce2d99129735fee1f19812646fd06d19b4ed248b89e3e83f159d31e`.
 
 GitHub Copilot artwork and marks belong to GitHub. This project does not

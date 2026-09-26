@@ -209,7 +209,7 @@ const baseURL = process.env.SPRITE_PREVIEW_URL || 'http://127.0.0.1:8765/sprite-
     assert.deepEqual(errors, []);
 
     const missing = await browser.newPage();
-    await missing.route('**/generated-sprites/*-blink-4.png*', route => route.fulfill({status: 404, body: 'missing'}));
+    await missing.route('**/characters/copilot/sprites/*-blink-4.png*', route => route.fulfill({status: 404, body: 'missing'}));
     await missing.goto(baseURL);
     await missing.locator('#error').waitFor({state: 'visible'});
     assert.match(await missing.locator('#error').textContent(), /Cannot load.*No substitute sprites/s);

@@ -1,5 +1,3 @@
-import hashlib
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,12 +9,10 @@ class FirmwareBundleTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
-        self.put("firmware/Copilot/partitions.csv",
+        self.put("firmware/AgentCompanion/partitions.csv",
                  "factory,app,factory,0x10000,0x200000,\nassets,data,0x40,0x210000,0xDE0000,\n")
-        self.put("firmware/Copilot/Copilot.ino", "void setup() {}")
-        self.put("assets/sprite-firmware.bin", b"sprite pixels")
-        self.put("assets/sprite-firmware.json", json.dumps(
-            dict(dataBytes=13, dataSha256=hashlib.sha256(b"sprite pixels").hexdigest())))
+        self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
+        self.put("build/characters/copilot.acpk", b"default character pack")
         for path in BINARIES:
             self.put(path, b"compiled")
 
@@ -33,7 +29,7 @@ class FirmwareBundleTests(unittest.TestCase):
 
     def test_source_changed_during_build(self):
         snapshot(self.root)
-        self.put("firmware/Copilot/Copilot.ino", "changed")
+        self.put("firmware/AgentCompanion/AgentCompanion.ino", "changed")
         with self.assertRaisesRegex(ValueError, "during compilation"):
             record(self.root)
 
@@ -44,13 +40,18 @@ class FirmwareBundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifacts changed"):
             check(self.root)
         self.put(BINARIES[0], b"compiled")
-        self.put("firmware/Copilot/Copilot.ino", "changed")
+        self.put("firmware/AgentCompanion/AgentCompanion.ino", "changed")
         with self.assertRaisesRegex(ValueError, "since compilation"):
             check(self.root)
 
-    def test_rejects_corrupted_asset(self):
-        self.put("assets/sprite-firmware.bin", b"wrong content")
-        with self.assertRaisesRegex(ValueError, "SHA256"):
+    def test_default_pack_is_part_of_the_matched_set(self):
+        snapshot(self.root)
+        record(self.root)
+        self.put("build/characters/copilot.acpk", b"different pack")
+        with self.assertRaisesRegex(ValueError, "default character changed"):
+            check(self.root)
+        self.put("build/characters/copilot.acpk", b"")
+        with self.assertRaisesRegex(ValueError, "empty or exceeds"):
             snapshot(self.root)
 
     def test_rejects_oversized_app(self):
@@ -60,7 +61,7 @@ class FirmwareBundleTests(unittest.TestCase):
             record(self.root)
 
     def test_rejects_partition_overlap(self):
-        self.put("firmware/Copilot/partitions.csv",
+        self.put("firmware/AgentCompanion/partitions.csv",
                  "factory,app,factory,0x10000,0x200000,\nassets,data,0x40,0x200000,0xDE0000,\n")
         with self.assertRaisesRegex(ValueError, "overlap"):
             layout(self.root)

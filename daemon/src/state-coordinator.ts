@@ -1,4 +1,6 @@
 import type {CharacterState, HookEvent, HookPayload} from './protocol.js';
+import type {AgentId} from './agents/types.js';
+import type {AgentBadgeActive} from './agent-badges.js';
 
 export interface PersistedSubagent {
   id: string;
@@ -50,6 +52,7 @@ export class StateCoordinator {
   readonly #subagentLeaseMs: number;
   readonly #retainedSessionMs: number;
   #state: CharacterState = 'idle';
+  #drivingAgents = new Set<AgentId>();
   #completeTimer: NodeJS.Timeout | undefined;
   #sweepTimer: NodeJS.Timeout | undefined;
 
@@ -74,6 +77,54 @@ export class StateCoordinator {
 
   get sessionCount(): number {
     return this.#sessions.size;
+  }
+
+  get drivingAgents(): AgentId[] {
+    return [...this.#drivingAgents];
+  }
+
+  agentBadgeRoles(): {
+    working: AgentId[];
+    attention: AgentId[];
+    complete: AgentId[];
+    active: AgentBadgeActive[];
+  } {
+    const now = this.#now();
+    const sessions = [...this.#sessions.values()];
+    const attention = this.#orderedAgents(sessions.filter(session => session.attentionUntil > now));
+    const working = this.#orderedAgents(sessions.filter(session => session.activeUntil > now || session.subagents.size > 0));
+    const complete = this.#state === 'complete' ? [...this.#drivingAgents] : [];
+    const ids = this.#state === 'attention' ? attention
+      : this.#state === 'working' ? working : this.#state === 'complete' ? complete : [];
+    const role = this.#state === 'attention' ? 'a' : this.#state === 'complete' ? 'c' : 'w';
+    return {
+      working,
+      attention,
+      complete,
+      active: ids.map(id => ({id, role})),
+    };
+  }
+
+  agentActivity(): Map<AgentId, {activeSessions: number; driving: boolean}> {
+    const now = this.#now();
+    const activity = new Map<AgentId, {activeSessions: number; driving: boolean}>();
+    for (const session of this.#sessions.values()) {
+      const agent = this.#agentFromSession(session.id);
+      if (!agent) continue;
+      const active = session.activeUntil > now || session.attentionUntil > now
+        || session.subagents.size > 0 || session.completionPending;
+      if (!active) continue;
+      const entry = activity.get(agent) ?? {activeSessions: 0, driving: false};
+      entry.activeSessions += 1;
+      entry.driving ||= this.#drivingAgents.has(agent);
+      activity.set(agent, entry);
+    }
+    for (const agent of this.#drivingAgents) {
+      const entry = activity.get(agent) ?? {activeSessions: 0, driving: true};
+      entry.driving = true;
+      activity.set(agent, entry);
+    }
+    return activity;
   }
 
   handle(event: HookEvent, payload: HookPayload): boolean {
@@ -161,6 +212,7 @@ export class StateCoordinator {
         break;
       case 'agentStop':
         session.activeUntil = 0;
+        if (payload.clearAttention === true) session.attentionUntil = 0;
         session.completionPending = session.hadWork && session.attentionUntil <= now;
         break;
       default:
@@ -227,8 +279,14 @@ export class StateCoordinator {
       if (!saved.id || !Number.isFinite(saved.lastSeenAt)) continue;
       const subagents = saved.subagents.filter(agent => !agent.id.startsWith('name:'));
       sanitized ||= subagents.length !== saved.subagents.length;
-      this.#sessions.set(saved.id, {
+      // Sessions saved before multi-agent support were all Copilot and had no agent prefix.
+      const id = this.#agentFromSession(saved.id) ? saved.id : `copilot:${saved.id}`;
+      sanitized ||= id !== saved.id;
+      const existing = this.#sessions.get(id);
+      if (existing && existing.lastSeenAt >= saved.lastSeenAt) continue;
+      this.#sessions.set(id, {
         ...saved,
+        id,
         completionPending: false,
         subagents: new Map(subagents.map(agent => [agent.id, {...agent}])),
       });
@@ -313,21 +371,29 @@ export class StateCoordinator {
 
   #recompute(now: number): void {
     const sessions = [...this.#sessions.values()];
-    if (sessions.some(session => session.attentionUntil > now)) {
+    const attention = sessions.filter(session => session.attentionUntil > now);
+    if (attention.length) {
+      this.#setDrivers(attention);
       this.#setState('attention');
       return;
     }
-    if (sessions.some(session => session.activeUntil > now || session.subagents.size > 0)) {
+    const working = sessions.filter(session => session.activeUntil > now || session.subagents.size > 0);
+    if (working.length) {
+      this.#setDrivers(working);
       this.#setState('working');
       return;
     }
     const completed = sessions.filter(session => session.completionPending);
     if (completed.length > 0) {
+      this.#setDrivers(completed);
       for (const session of completed) session.completionPending = false;
       this.#pulseComplete();
       return;
     }
-    if (!this.#completeTimer) this.#setState('idle');
+    if (!this.#completeTimer) {
+      this.#drivingAgents.clear();
+      this.#setState('idle');
+    }
   }
 
   #pulseComplete(): void {
@@ -350,5 +416,24 @@ export class StateCoordinator {
     if (this.#state === state) return;
     this.#state = state;
     this.#onState(state);
+  }
+
+  #setDrivers(sessions: SessionState[]): void {
+    this.#drivingAgents = new Set(this.#orderedAgents(sessions));
+  }
+
+  #orderedAgents(sessions: SessionState[]): AgentId[] {
+    const agents: AgentId[] = [];
+    for (const session of sessions) {
+      const agent = this.#agentFromSession(session.id);
+      if (agent && !agents.includes(agent)) agents.push(agent);
+    }
+    return agents;
+  }
+
+  #agentFromSession(sessionId: string): AgentId | undefined {
+    const prefix = sessionId.split(':', 1)[0] ?? '';
+    return ['copilot', 'claude', 'codex', 'grok', 'hermes', 'openclaw'].includes(prefix)
+      ? prefix as AgentId : undefined;
   }
 }

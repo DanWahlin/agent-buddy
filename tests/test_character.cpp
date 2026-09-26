@@ -1,5 +1,5 @@
-#include "../firmware/Copilot/src/CharacterEffects.h"
-#include "../firmware/Copilot/generated/sprite_assets.h"
+#include "../firmware/AgentCompanion/src/CharacterEffects.h"
+#include "../firmware/AgentCompanion/src/CharacterModel.h"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -454,6 +454,113 @@ static void effectRestoration() {
   assert(!invalid.restore(first.data()));
 }
 
+static void agentBadgeLayoutAndRestoration() {
+  const auto mask = std::string(96, '/');
+  AgentBadges badges;
+  for (const char* id : {"copilot", "claude", "codex", "grok"}) {
+    const std::string packet = std::string(id) + ":6F7CFF:" + mask;
+    assert(badges.setIconPacket(packet.c_str()));
+  }
+  const std::string badPacket = std::string("Bad:6F7CFF:") + mask;
+  assert(!badges.setIconPacket(badPacket.c_str()));
+  assert(!badges.setActivePacket("copilot=w,claude=x"));
+  // Attention badges start opposite the "?" and fan out without leaving the round display.
+  const auto attentionStart = CharacterEffects::badgeAnchor(Mode::Attention, AgentBadgeRole::Attention, 0, 4, 0);
+  // Opposite the "?" (-141 degrees), 200 px from the display center.
+  assert(std::abs(attentionStart.x - 45) <= 1 && std::abs(attentionStart.y - 50) <= 1);
+  for (int i = 0; i < 4; ++i) {
+    const auto point = CharacterEffects::badgeAnchor(Mode::Attention, AgentBadgeRole::Attention, i, 4, 0);
+    const int dx = point.x + kCharacterFrameX + kCharacterArtX - kDisplaySize / 2;
+    const int dy = point.y + kFrameY - kDisplaySize / 2;
+    assert(point.visible && dx * dx + dy * dy <= (kDisplaySize / 2 - 21) * (kDisplaySize / 2 - 21));
+    for (int j = 0; j < i; ++j) {
+      const auto other = CharacterEffects::badgeAnchor(Mode::Attention, AgentBadgeRole::Attention, j, 4, 0);
+      assert((point.x - other.x) * (point.x - other.x) + (point.y - other.y) * (point.y - other.y) >= 44 * 44);
+    }
+  }
+  // The lead badge replaces the head of the orbiting dot trail at every point of the lap.
+  for (double seconds = 0; seconds < 12; seconds += .25) {
+    const auto lead = CharacterEffects::badgeAnchor(Mode::Working, AgentBadgeRole::Working, 0, 1, seconds);
+    const double angle = seconds * 3.14159265358979323846 / 6 + 6 * .16;
+    const int headX = kFrameWidth / 2 + int(std::lround(186 * std::cos(angle)));
+    const int headY = kFrameHeight / 2 + int(std::lround(186 * std::sin(angle)));
+    assert(lead.x == headX && lead.y == headY);
+    assert(lead.x - 19 + kCharacterArtX >= 0 && lead.x + 19 + kCharacterArtX < kCharacterFrameWidth);
+  }
+  for (int count = 1; count <= 4; ++count) {
+    std::vector<AgentBadgePoint> points;
+    for (int i = 0; i < count; ++i) {
+      const auto point = CharacterEffects::badgeAnchor(Mode::Working, AgentBadgeRole::Working, i, count, 0);
+      assert(point.visible);
+      const int dx = point.x - kFrameWidth / 2, dy = point.y - kFrameHeight / 2;
+      // Badges ride the dot orbit on a true circle that fits entirely inside the frame.
+      const long radius = std::lround(std::sqrt(dx * dx + dy * dy));
+      assert(std::abs(radius - 186) <= 1);
+      assert(point.x - 19 + kCharacterArtX >= 0 && point.x + 19 + kCharacterArtX < kCharacterFrameWidth);
+      for (const auto& previous : points) {
+        const int pdx = point.x - previous.x, pdy = point.y - previous.y;
+        assert(pdx * pdx + pdy * pdy > 60 * 60);
+      }
+      points.push_back(point);
+    }
+  }
+
+  constexpr size_t pixels = kCharacterFrameWidth * kCharacterFrameHeight;
+  std::vector<uint16_t> first(pixels + 2), second(pixels + 2), baseline(pixels);
+  first.front() = first.back() = second.front() = second.back() = 0xbeef;
+  std::copy(baseline.begin(), baseline.end(), first.begin() + 1);
+  std::copy(baseline.begin(), baseline.end(), second.begin() + 1);
+  CharacterEffects effects(first.data() + 1, second.data() + 1, &badges);
+  CharacterState state{};
+  state.requestedMode = state.mode = Mode::Working;
+  state.effectSeconds = 0;
+  assert(badges.setActivePacket("copilot=w,claude=w,codex=w,grok=w"));
+  noAllocations = true;
+  assert(effects.restore(first.data() + 1));
+  assert(effects.render(state, first.data() + 1));
+  noAllocations = false;
+  size_t damage = 0;
+  for (size_t i = 0; i < pixels; ++i) damage += first[i + 1] != baseline[i];
+  assert(damage > 3000 && damage <= CharacterEffects::kDamageBudget);
+  assert(first.front() == 0xbeef && first.back() == 0xbeef);
+  assert(effects.restore(first.data() + 1));
+  assert(std::equal(baseline.begin(), baseline.end(), first.begin() + 1));
+
+  state.requestedMode = state.mode = Mode::Attention;
+  assert(badges.setActivePacket("copilot=a"));
+  assert(effects.restore(second.data() + 1));
+  assert(effects.render(state, second.data() + 1));
+  assert(effects.restore(second.data() + 1));
+  state.requestedMode = state.mode = Mode::Complete;
+  assert(badges.setActivePacket("copilot=c"));
+  assert(effects.render(state, second.data() + 1));
+  assert(effects.restore(second.data() + 1));
+
+  // With overlay scratch, badges paint over character art and restore it exactly.
+  std::vector<uint16_t> art(pixels), overArt(pixels + 2), otherArt(pixels);
+  for (size_t i = 0; i < pixels; ++i) art[i] = static_cast<uint16_t>(0x1000 + i % 977);
+  overArt.front() = overArt.back() = 0xbeef;
+  std::copy(art.begin(), art.end(), overArt.begin() + 1);
+  std::copy(art.begin(), art.end(), otherArt.begin());
+  std::vector<uint16_t> scratch(CharacterEffects::kOverlayScratchPixels);
+  CharacterEffects above(overArt.data() + 1, otherArt.data(), &badges, scratch.data());
+  for (Mode mode : {Mode::Working, Mode::Attention, Mode::Complete}) {
+    state.requestedMode = state.mode = mode;
+    assert(badges.setActivePacket(mode == Mode::Working ? "copilot=w,claude=w,codex=w,grok=w"
+                                  : mode == Mode::Attention ? "copilot=a,claude=a,codex=a,grok=a" : "copilot=c"));
+    noAllocations = true;
+    assert(above.restore(overArt.data() + 1));
+    assert(above.render(state, overArt.data() + 1));
+    noAllocations = false;
+    size_t covered = 0;
+    for (size_t i = 0; i < pixels; ++i) covered += overArt[i + 1] != art[i];
+    assert(covered > 500);
+    assert(overArt.front() == 0xbeef && overArt.back() == 0xbeef);
+    assert(above.restore(overArt.data() + 1));
+    assert(std::equal(art.begin(), art.end(), overArt.begin() + 1));
+  }
+}
+
 static void benchmarkEffects() {
   constexpr int frames = 100000;
   std::vector<uint16_t> first(kCharacterFrameWidth * kCharacterFrameHeight), second(first.size());
@@ -489,6 +596,7 @@ int main(int argc, char**) {
   sleepsAfterSustainedIdleAndWakes();
   springSurprise();
   effectRestoration();
+  agentBadgeLayoutAndRestoration();
   std::cout << "Character tests passed: idle parity; center-only handoffs; all modes/interruptions; "
-               "sleep cycle; pause/stalls; allocation-free updates; dual-buffer effects/canaries/body preservation\n";
+               "sleep cycle; pause/stalls; allocation-free updates; dual-buffer effects/canaries/body preservation; agent badges\n";
 }

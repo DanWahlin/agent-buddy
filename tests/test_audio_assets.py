@@ -20,15 +20,15 @@ class AudioAssetTests(unittest.TestCase):
                 self.assertGreater(wav.getnframes(), 0)
                 self.assertLess(wav.getnframes(), 24000)
         tracked = (
-            ROOT / "firmware" / "Copilot" / "generated" / "audio_assets.h",
-            ROOT / "firmware" / "Copilot" / "src" / "audio_data.cpp",
+            ROOT / "firmware" / "AgentCompanion" / "generated" / "audio_assets.h",
+            ROOT / "firmware" / "AgentCompanion" / "src" / "audio_data.cpp",
         )
         before = [sha256(path.read_bytes()).digest() for path in tracked]
         subprocess.run(["python3", str(ROOT / "tools" / "embed_audio.py")], check=True)
         self.assertEqual(before, [sha256(path.read_bytes()).digest() for path in tracked])
 
     def test_embedded_metadata_matches_wav_files(self):
-        header = (ROOT / "firmware" / "Copilot" / "generated" / "audio_assets.h").read_text()
+        header = (ROOT / "firmware" / "AgentCompanion" / "generated" / "audio_assets.h").read_text()
         names = {
             "working": "Working",
             "needs-attention": "Attention",

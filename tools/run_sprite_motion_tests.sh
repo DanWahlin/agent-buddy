@@ -5,7 +5,7 @@ cd "$ROOT"
 mkdir -p build
 "${CXX:-clang++}" -std=c++17 -O1 -g -Wall -Wextra -Werror \
   -fsanitize=address,undefined -fno-omit-frame-pointer \
-  tests/test_sprite_motion.cpp firmware/Copilot/src/SpriteMotion.cpp \
+  tests/test_sprite_motion.cpp firmware/AgentCompanion/src/SpriteMotion.cpp \
   -o build/test-sprite-motion
 build/test-sprite-motion
 node --test tests/sprite-motion.test.cjs

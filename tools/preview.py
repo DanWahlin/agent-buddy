@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
-CONFIG = (ROOT / "firmware/Copilot/src/Config.h").read_text()
+CONFIG = (ROOT / "firmware/AgentCompanion/src/Config.h").read_text()
 
 
 def constant(name):
@@ -26,13 +26,13 @@ FRAMES = FPS * 18
 
 def main():
     BUILD.mkdir(exist_ok=True)
-    subprocess.run([sys.executable, str(ROOT / "tools/embed_atlas.py")], check=True)
-    sources = ROOT / "firmware/Copilot/src"
+    subprocess.run([sys.executable, str(ROOT / "characters/copilot/legacy-atlas/tools/embed_atlas.py")], check=True)
+    sources = ROOT / "firmware/AgentCompanion/src"
     subprocess.run([
         "clang++", "-std=c++17", "-O3", "-Wall", "-Wextra", "-Werror",
-        str(ROOT / "tools/preview.cpp"),
-        *map(str, [sources / "AtlasRenderer.cpp", sources / "Motion.cpp",
-                   sources / "turn_atlas.cpp", BUILD / "atlas_host.S"]),
+        str(ROOT / "characters/copilot/legacy-atlas/tools/preview.cpp"),
+        *map(str, [ROOT / "characters/copilot/legacy-atlas/src/AtlasRenderer.cpp", sources / "Motion.cpp",
+                   ROOT / "characters/copilot/legacy-atlas/src/turn_atlas.cpp", BUILD / "atlas_host.S"]),
         "-lz",
         "-o", str(BUILD / "preview-renderer"),
     ], check=True)

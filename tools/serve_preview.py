@@ -15,15 +15,32 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def available_characters():
+    results = []
+    for manifest in sorted((ROOT / "characters").glob("*/character.json")):
+        try:
+            record = json.loads(manifest.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        pack_id = record.get("id")
+        name = record.get("name")
+        if isinstance(pack_id, str) and isinstance(name, str):
+            results.append({"id": pack_id, "name": name})
+    return results
+
+
+def available_character_ids():
+    return {record["id"] for record in available_characters()}
+
 
 def build_renderer():
-    subprocess.run([sys.executable, str(ROOT / "tools/embed_atlas.py")], check=True)
-    sources = ROOT / "firmware/Copilot/src"
+    subprocess.run([sys.executable, str(ROOT / "characters/copilot/legacy-atlas/tools/embed_atlas.py")], check=True)
+    sources = ROOT / "firmware/AgentCompanion/src"
     executable = ROOT / "build/live-preview"
     subprocess.run([
         "clang++", "-std=c++17", "-O3", "-Wall", "-Wextra", "-Werror",
-        str(ROOT / "tools/live_preview.cpp"), str(sources / "AtlasRenderer.cpp"),
-        str(sources / "Motion.cpp"), str(sources / "turn_atlas.cpp"),
+        str(ROOT / "characters/copilot/legacy-atlas/tools/live_preview.cpp"), str(ROOT / "characters/copilot/legacy-atlas/src/AtlasRenderer.cpp"),
+        str(sources / "Motion.cpp"), str(ROOT / "characters/copilot/legacy-atlas/src/turn_atlas.cpp"),
         str(ROOT / "build/atlas_host.S"), "-lz", "-o", str(executable),
     ], check=True)
     return executable
@@ -118,8 +135,8 @@ class NativeCharacterRenderer(NativeRenderer):
             raise ValueError("Character mode must be -1 (unchanged) or 0..5.")
         if type(playing) is not bool:
             raise ValueError("playing must be a boolean.")
-        if character not in ("copilot", "openclaw"):
-            raise ValueError("Character must be copilot or openclaw.")
+        if not isinstance(character, str) or character not in available_character_ids():
+            raise ValueError("Character is not available.")
         if type(direction) is not int or not -1 <= direction <= 7:
             raise ValueError("Direction must be -1 (automatic) or 0..7.")
         if not self.lock.acquire(blocking=False):
@@ -127,9 +144,8 @@ class NativeCharacterRenderer(NativeRenderer):
         try:
             if self.process.poll() is not None:
                 raise RuntimeError("Character renderer is no longer running.")
-            character_id = 0 if character == "copilot" else 1
             self.process.stdin.write(
-                f"{delta:.12f} {mode} {int(playing)} {character_id} {direction}\n".encode("ascii"))
+                f"{delta:.12f} {mode} {int(playing)} {character} {direction}\n".encode("ascii"))
             deadline = time.monotonic() + 5
             header = bytearray()
             while not header.endswith(b"\n") and len(header) < 1024:
@@ -209,6 +225,28 @@ def main():
         def log_message(self, format_string, *arguments):
             if self.command != "POST" or len(arguments) < 2 or str(arguments[1]) != "200":
                 super().log_message(format_string, *arguments)
+
+        def translate_path(self, path):
+            if path == "/characters" or path.startswith("/characters/"):
+                from urllib.parse import unquote, urlsplit
+                relative = unquote(urlsplit(path).path).lstrip("/")
+                target = (ROOT / relative).resolve()
+                characters = (ROOT / "characters").resolve()
+                if target == characters or characters in target.parents:
+                    return str(target)
+                return str(characters)
+            return super().translate_path(path)
+
+        def do_GET(self):
+            if self.path == "/api/characters":
+                data = json.dumps({"characters": available_characters()}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            super().do_GET()
 
         def do_POST(self):
             if self.path not in ("/api/frame", "/api/close", "/api/character/frame", "/api/character/close"):

@@ -4,7 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from tools.device import (NonResettingSerial, read_frame_end, parse_memory, validate_memory,
-                          request_mode, capture, parse_sd_status, request_storage_status)
+                          request_mode, capture, parse_character_status,
+                          request_character_status)
 
 
 class Port:
@@ -15,35 +16,34 @@ class Port:
         return next(self.chunks, b"")
 
 
-class StorageTelemetryTests(unittest.TestCase):
-    def test_large_card_and_flash_fallback(self):
-        line = "SD state=pack_missing card=sdhc_sdxc capacity_bytes=63864569856 cache_bytes=0 hits=0 misses=0"
-        status = parse_sd_status(line)
-        self.assertEqual(status["capacity_bytes"], 63864569856)
-        self.assertEqual(status["state"], "pack_missing")
-        self.assertEqual(status["cache_bytes"], 0)
-        self.assertIsNone(parse_sd_status("SD_DETAIL No card writes."))
+class CharacterTelemetryTests(unittest.TestCase):
+    def test_installed_and_missing_packs(self):
+        status = parse_character_status("CHARACTER id=openclaw layout=full-frame bytes=10000700 name=OpenClaw")
+        self.assertEqual(status, dict(id="openclaw", layout="full-frame", bytes=10000700, name="OpenClaw"))
+        self.assertEqual(parse_character_status("CHARACTER id=none reason=No character pack is installed."),
+                         dict(id="none", reason="No character pack is installed."))
+        self.assertIsNone(parse_character_status("WIFI configured=1"))
 
     def test_invalid_status_fails_explicitly(self):
-        for line in ("SD state=ready", "SD state=ready card=sdhc_sdxc capacity_bytes=-1 cache_bytes=0 hits=0 misses=0"):
+        for line in ("CHARACTER id=Copilot", "CHARACTER id=copilot layout=other bytes=1 name=x"):
             with self.assertRaises(RuntimeError):
-                parse_sd_status(line)
+                parse_character_status(line)
 
     def test_query_uses_only_existing_info_command(self):
         class QueryPort:
             def __init__(self):
                 self.writes = []
-                self.lines = iter((b"INFO protocol=1\n",
-                                   b"SD state=ready card=sdhc_sdxc capacity_bytes=64000000000 cache_bytes=524288 hits=8 misses=2\n"))
+                self.lines = iter((b"INFO protocol=5\n",
+                                   b"CHARACTER id=copilot layout=base-patch bytes=9540870 name=Copilot\n"))
             def write(self, data):
                 self.writes.append(data)
             def readline(self):
                 return next(self.lines, b"")
         port = QueryPort()
-        self.assertEqual(request_storage_status(port)["hits"], 8)
+        self.assertEqual(request_character_status(port)["id"], "copilot")
         self.assertEqual(port.writes, [b"i"])
         with self.assertRaises(TimeoutError):
-            request_storage_status(port, timeout=0)
+            request_character_status(port, timeout=0)
 
 
 class FrameProtocolTests(unittest.TestCase):
@@ -153,8 +153,18 @@ class ModeCommandTests(unittest.TestCase):
         request_mode(port, "working")
         self.assertEqual(port.written, [b"i", b"!working\n"])
 
+    def test_accepts_backward_compatible_protocols(self):
+        for protocol in (1, 2, 3, 4, 5):
+            with self.subTest(protocol=protocol):
+                port = ControlPort([
+                    f"INFO protocol={protocol}\n".encode(),
+                    b"COMMAND accepted=surprise\n",
+                ])
+                request_mode(port, "surprise")
+                self.assertEqual(port.written, [b"i", b"!surprise\n"])
+
     def test_rejects_unsupported_protocol_before_mode(self):
-        port = ControlPort([b"INFO protocol=2\n"])
+        port = ControlPort([b"INFO protocol=6\n"])
         with self.assertRaises(RuntimeError):
             request_mode(port, "surprise")
         self.assertEqual(port.written, [b"i"])

@@ -5,7 +5,7 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const {SpriteMotion, DIRECTIONS} = SpritePlayer;
 let player, manifest, tracks, last = 0, stripDirection, lastSprite, lastTelemetry, lastControls;
 const assetVersion = Date.now().toString(36);
-const assetURL = file => `/generated-sprites/${file}?v=${assetVersion}`;
+const assetURL = file => `/characters/copilot/sprites/${file}?v=${assetVersion}`;
 const directionLabel = direction => direction.replaceAll('_', '-');
 const eyesAreOccluded = frame => frame.eyesOccluded === true || frame.blinkMaskState === 'occluded-or-rim-clipped';
 const controls = document.querySelectorAll('button, input:not(#notes), select');
@@ -122,7 +122,7 @@ function validateManifest(value) {
 }
 async function initialize() {
   try {
-    const response = await fetch('/generated-sprites/animation.json', {cache: 'no-store'});
+    const response = await fetch('/characters/copilot/sprites/animation.json', {cache: 'no-store'});
     if (!response.ok) throw new Error(`Cannot load animation.json (HTTP ${response.status}).`);
     manifest = await response.json();
     validateManifest(manifest);

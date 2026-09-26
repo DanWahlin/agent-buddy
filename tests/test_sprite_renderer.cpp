@@ -1,12 +1,15 @@
-#include "../firmware/Copilot/src/SpriteRenderer.h"
-#include "../firmware/Copilot/src/SpriteStorage.h"
+#include "../firmware/AgentCompanion/src/SpriteRenderer.h"
+#include "../firmware/AgentCompanion/src/SpriteStorage.h"
 #include "../tools/HostSpriteInflate.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <vector>
+
+extern "C" const uint8_t kCopilotPack[], kCopilotPackEnd[];
 
 using namespace copilot;
 static unsigned calls = 0;
@@ -21,30 +24,39 @@ static bool inflate(uint8_t* output, size_t size, const uint8_t* input, size_t c
 }
 
 int main() {
+  assert(!initializeSpriteStorage() && spriteStorageError());
+  assert(loadCharacterPack(kCopilotPack, kCopilotPackEnd - kCopilotPack));
   assert(initializeSpriteStorage());
-  const auto flash = acquireSpriteBlock(0, kSpriteDataSize);
-  assert(flash.data == kSpriteData && flash.slot == -1);
-  releaseSpriteBlock(flash);
-  assert(!acquireSpriteBlock(kSpriteDataSize, 1).data);
-  assert(!acquireSpriteBlock(0, 0).data);
-  assert(!acquireSpriteBlock(1, kSpriteDataSize).data);
+  const CharacterPack& pack = *characterPack();
+  const PackHeader& header = pack.header;
+  const uint32_t kSpriteDataSize = header.dataBytes;
+  const uint8_t* kSpriteData = pack.data;
+  const SpriteFrame* kSpriteFrames = pack.frames;
+  const int kSpriteBaseX = header.baseX, kSpriteBaseY = header.baseY;
+  const int kSpriteBaseWidth = header.baseWidth, kSpriteBaseHeight = header.baseHeight;
+  assert(std::string(header.id) == "copilot" && header.layout == PackLayout::BasePatch);
+  assert(spriteBlock({0, kSpriteDataSize}) == kSpriteData);
+  assert(!spriteBlock({kSpriteDataSize, 1}));
+  assert(!spriteBlock({0, 0}));
+  assert(!spriteBlock({1, kSpriteDataSize}));
   constexpr size_t sourcePixels = kSpriteWidth * kSpriteHeight;
   constexpr size_t outputPixels = sourcePixels;
   std::vector<uint16_t> expected(sourcePixels);
-  const size_t guardedPatch = std::max<size_t>(1, kSpriteMaxPatchPixels) + 2;
+  const size_t patchPixels = header.maxPatchPixels;
+  const size_t guardedPatch = patchPixels + 2;
   std::vector<uint16_t> firstOpen(guardedPatch, 0xa55a), secondOpen(guardedPatch, 0xa55a);
   std::vector<uint16_t> patch(guardedPatch, 0xa55a);
   std::vector<uint16_t> guarded(outputPixels + 2, 0xa55a), second(outputPixels);
   uint16_t* frame = guarded.data() + 1;
   SpriteRenderer renderer(firstOpen.data() + 1, secondOpen.data() + 1, patch.data() + 1,
-                          frame, second.data(), inflate);
+                          patchPixels, frame, second.data(), inflate);
   constexpr size_t canvasPixels = kCharacterFrameWidth * kCharacterFrameHeight;
   std::vector<uint16_t> canvas(canvasPixels + 2, 0xa55a), otherCanvas(canvasPixels);
   std::vector<uint16_t> expectedCanvas(canvasPixels);
   std::vector<uint16_t> canvasOpen(guardedPatch), otherOpen(guardedPatch), canvasPatch(guardedPatch);
   uint16_t* canvasFrame = canvas.data() + 1;
   SpriteRenderer expanded(canvasOpen.data(), otherOpen.data(), canvasPatch.data(),
-                          canvasFrame, otherCanvas.data(), inflate,
+                          patchPixels, canvasFrame, otherCanvas.data(), inflate,
                           kCharacterFrameWidth, kCharacterFrameHeight);
   std::ofstream hashes("build/sprite-renderer-pixels.fnv");
   for (int index = 0; index < kSpriteFrameCount; ++index) {
@@ -136,7 +148,10 @@ int main() {
   assert(renderer.render({4, 12, 0}, frame) && !renderer.error());
   assert(std::equal(open.begin(), open.end(), frame));
   SpriteRenderer aliased(firstOpen.data() + 1, firstOpen.data() + 1, patch.data() + 1,
-                         frame, second.data(), inflate);
+                         patchPixels, frame, second.data(), inflate);
+  SpriteRenderer undersized(firstOpen.data() + 1, secondOpen.data() + 1, patch.data() + 1,
+                            patchPixels - 1, frame, second.data(), inflate);
+  assert(!undersized.render({0, 0, 0}, frame) && undersized.error());
   assert(!aliased.render({0, 0, 0}, frame) && aliased.error());
   assert(expanded.render({0, 0, 0}, canvasFrame));
   const std::vector<uint16_t> previousCanvas(canvasFrame, canvasFrame + canvasPixels);
@@ -146,10 +161,10 @@ int main() {
   assert(expanded.render({0, 0, 0}, canvasFrame));
   assert(std::equal(previousCanvas.begin(), previousCanvas.end(), canvasFrame));
   SpriteRenderer tooSmall(canvasOpen.data(), otherOpen.data(), canvasPatch.data(),
-                          canvasFrame, otherCanvas.data(), inflate, 399, 466);
+                          patchPixels, canvasFrame, otherCanvas.data(), inflate, 399, 466);
   assert(!tooSmall.render({0, 0, 0}, canvasFrame) && tooSmall.error());
   SpriteRenderer wrongStride(canvasOpen.data(), otherOpen.data(), canvasPatch.data(),
-                             canvasFrame, otherCanvas.data(), inflate, 414, 466);
+                             patchPixels, canvasFrame, otherCanvas.data(), inflate, 414, 466);
   assert(!wrongStride.render({0, 0, 0}, canvasFrame) && wrongStride.error());
   std::ofstream image("build/sprite-host-frame.ppm", std::ios::binary);
   image << "P6\n" << kSpriteWidth << " " << kSpriteHeight << "\n255\n";

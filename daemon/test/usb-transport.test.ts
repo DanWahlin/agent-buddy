@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {selectCharacterInstallerPort} from '../src/character-installer.js';
-import {isLikelyEsp32Port} from '../src/usb-transport.js';
+import {isLikelyEsp32Port, parseUploadReady} from '../src/usb-transport.js';
+import {parseUploadResponse} from '../src/wifi-transport.js';
 
 test('recognizes macOS and Linux USB serial device paths', () => {
   assert.equal(isLikelyEsp32Port('/dev/cu.usbmodem2101', 'darwin'), true);
@@ -12,25 +12,17 @@ test('recognizes macOS and Linux USB serial device paths', () => {
   assert.equal(isLikelyEsp32Port('COM5', 'linux'), false);
 });
 
-test('character installer strictly honors explicit ports and macOS aliases', () => {
-  const ports = [
-    {path: '/dev/tty.usbmodem2101', vendorId: '303A'},
-    {path: '/dev/tty.usbmodem3101', vendorId: '303A'},
-  ];
-  assert.equal(
-      selectCharacterInstallerPort(ports, '/dev/cu.usbmodem3101', 'darwin'),
-      '/dev/cu.usbmodem3101');
-  assert.throws(
-      () => selectCharacterInstallerPort(ports, '/dev/cu.usbmodem9999', 'darwin'),
-      /Requested ESP32 USB serial port was not found/);
+test('parses USB upload limits and rejects unusable responses', () => {
+  assert.deepEqual(parseUploadReady('UPLOAD_READY max_bytes=14548992 chunk=4096'),
+    {maxBytes: 14548992, chunk: 4096});
+  assert.throws(() => parseUploadReady('UPLOAD_ERROR renderer_busy'), /cannot install/);
+  assert.throws(() => parseUploadReady('UPLOAD_READY bytes=9987964'), /invalid upload response/);
+  assert.throws(() => parseUploadReady('UPLOAD_READY max_bytes=100 chunk=16'), /invalid upload response/);
 });
 
-test('character installer discovers a likely ESP32 only without an explicit port', () => {
-  assert.equal(selectCharacterInstallerPort([
-    {path: '/dev/ttyS0'},
-    {path: '/dev/ttyACM1', vendorId: '303a'},
-  ], undefined, 'linux'), '/dev/ttyACM1');
-  assert.throws(
-      () => selectCharacterInstallerPort([{path: '/dev/ttyS0'}], undefined, 'linux'),
-      /No ESP32 USB serial port found/);
+test('parses Wi-Fi upload results', () => {
+  assert.equal(parseUploadResponse('{"ok":true,"character":"openclaw"}'), 'openclaw');
+  assert.throws(() => parseUploadResponse('{"ok":false,"error":"Character pack SHA-256 mismatch."}'),
+    /SHA-256 mismatch/);
+  assert.throws(() => parseUploadResponse('<html>'), /invalid upload response/);
 });

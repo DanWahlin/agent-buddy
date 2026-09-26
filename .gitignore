@@ -1,8 +1,8 @@
 build/
 daemon/dist/
 daemon/node_modules/
-tools/openclaw/node_modules/
-web/openclaw-sprites/
+characters/openclaw/model/node_modules/
+characters/openclaw/renders/
 .deps/
 .venv/
 __pycache__/
@@ -10,5 +10,5 @@ __pycache__/
 .env
 .env.*
 !.env.example
-firmware/Copilot/generated/atlas_bytes.h
-firmware/Copilot/generated/sprite_bytes.h
+characters/copilot/legacy-atlas/generated/atlas_bytes.h
+firmware/AgentCompanion/generated/sprite_bytes.h

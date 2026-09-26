@@ -1,3 +1,6 @@
+import type {ConnectionMode} from './connection-mode.js';
+import type {AgentId, AgentStatus} from './agents/types.js';
+
 export const characterStates = ['idle', 'surprise', 'working', 'complete', 'attention'] as const;
 export type CharacterState = typeof characterStates[number];
 
@@ -37,14 +40,31 @@ export interface HookPayload {
 }
 
 export type DaemonRequest =
-  | {type: 'hook'; event: HookEvent; payload: HookPayload}
+  | {type: 'hook'; agent?: AgentId; event?: HookEvent | string; nativeEvent?: string; payload: HookPayload}
   | {type: 'send'; state: CharacterState}
-  | {type: 'status'};
+  | {type: 'status'}
+  | {type: 'agents'}
+  | {type: 'agentEnable'; agent: AgentId; enabled: boolean}
+  | {type: 'agentInstall'; agent: AgentId}
+  | {type: 'agentUninstall'; agent: AgentId}
+  | {type: 'reloadWifi'}
+  | {type: 'configureWifi'; ssid: string; password: string}
+  | {type: 'installCharacter'; character: string}
+  | {type: 'setConnection'; mode: ConnectionMode}
+  | {type: 'badges'; enabled: boolean}
+  | {type: 'listCharacters'}
+  | {type: 'settings'};
 
 export interface DaemonStatus {
   state: CharacterState;
   transport: string | null;
   connected: boolean;
   port: string | null;
+  character: string | null;
+  mode: ConnectionMode;
   sessions: number;
+  agents?: AgentStatus[];
+  drivingAgents?: AgentId[];
 }
+
+export type InstallProgress = (sent: number, total: number) => void;

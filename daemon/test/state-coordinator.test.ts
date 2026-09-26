@@ -257,3 +257,47 @@ test('does not celebrate a turn that performed no work', () => {
   assert.deepEqual(states, ['working', 'idle']);
   coordinator.close();
 });
+
+test('migrates sessions saved before multi-agent support to Copilot', () => {
+  const now = 1_000_000;
+  const session = (id: string, lastSeenAt: number, attentionUntil = 0) => ({
+    id, activeUntil: 0, attentionUntil, lastMainEventAt: lastSeenAt, lastSeenAt, hadWork: false, completionPending: false, subagents: []});
+  const coordinator = new StateCoordinator(() => undefined, {
+    now: () => now,
+    restored: {version: 1, sessions: [
+      session('legacy-only', now - 10, now + 60_000),
+      session('shared', now - 50),
+      session('copilot:shared', now - 5),
+    ]},
+  });
+  const ids = coordinator.snapshot().sessions.map(item => item.id).sort();
+  assert.deepEqual(ids, ['copilot:legacy-only', 'copilot:shared']);
+  assert.equal(coordinator.snapshot().sessions.find(item => item.id === 'copilot:shared')?.lastSeenAt, now - 5);
+  assert.deepEqual(coordinator.drivingAgents, ['copilot']);
+  coordinator.close();
+});
+
+test('reports stable per-agent badge roles for active display state', async () => {
+  const {coordinator, payload, advance} = fixture({completeMs: 5});
+  coordinator.handle('userPromptSubmitted', payload('claude:one'));
+  coordinator.handle('preToolUse', payload('claude:one'));
+  advance(1);
+  coordinator.handle('userPromptSubmitted', payload('copilot:two'));
+  coordinator.handle('preToolUse', payload('copilot:two'));
+  assert.deepEqual(coordinator.agentBadgeRoles().active, [
+    {id: 'claude', role: 'w'},
+    {id: 'copilot', role: 'w'},
+  ]);
+  coordinator.handle('notification', payload('copilot:two'));
+  assert.deepEqual(coordinator.agentBadgeRoles().active, [{id: 'copilot', role: 'a'}]);
+  coordinator.handle('preToolUse', payload('copilot:two'));
+  coordinator.handle('agentStop', payload('claude:one'));
+  coordinator.handle('agentStop', payload('copilot:two'));
+  assert.deepEqual(coordinator.agentBadgeRoles().active, [
+    {id: 'claude', role: 'c'},
+    {id: 'copilot', role: 'c'},
+  ]);
+  await delay(10);
+  assert.deepEqual(coordinator.agentBadgeRoles().active, []);
+  coordinator.close();
+});

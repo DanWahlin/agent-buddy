@@ -1,0 +1,42 @@
+{
+  "created": "2026-09-11T09:02:47.829420+00:00",
+  "provider": "Configured Azure GPT Image deployment",
+  "reference": "characters/copilot/expressions/references/shared-neutral.png",
+  "references": [
+    {
+      "file": "characters/copilot/expressions/references/shared-neutral.png",
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    },
+    {
+      "file": "characters/copilot/expressions/references/attention-endpoint-v1.png",
+      "sha256": "12dd2ada3e615218def13b8bf5df249c454d66bd1e77ca66aee3136e06f87df1"
+    }
+  ],
+  "referenceSha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "prompt": "characters/copilot/expressions/prompts/attention-refined.txt",
+  "promptText": "Create one polished production sprite sheet for the expression 'attention'.\n\nImage 1 is the EXACT approved front-center character. Image 2 is the desired final curious expression, NOT the starting pose.\nImage 3 is a placement and identity guide showing the neutral head in all 24 slots. Edit those heads\ninto 24 successive rendered states of ONE identical rigid character. This is a\nprofessional technical-animation asset sheet, not a collage of redesigned heads.\n\nOUTPUT: 1536x1024 PNG, high quality. Exactly SIX columns and FOUR rows, 24 complete\nseparate heads in reading order. Keep the guide's exact centers and generous\nproper margins. Each head is approximately 200 pixels wide and 158 pixels high,\nwith fixed camera scale. Solid pure BLACK background. Ensure all content is fully\nvisible. REMOVE ALL guide lines, captions, numbers and text in the final artwork.\nNo labels, letters, question marks, punctuation, icons, particles, confetti,\nfireworks, stars, sparkles, hands, arms, body, pedestal, floor or cast shadows.\n\nIDENTITY LOCK: preserve the reference's glossy blue/violet smooth helmet dome,\ntwo thick cyan/cobalt rounded-square goggles perched ABOVE the faceplate, the\ngoggles' dark saturated-blue inset lenses, separate dark-blue faceplate below\nthem, pale blue/violet curved visor rim, and rounded blue/violet ear pods.\nThe goggles and shell are RIGID and IDENTICAL in every frame, with the same\nproportions, silhouette, material, bevels, illumination and recessed lenses.\nNEVER use the large goggle lenses as expressive eyes. The ONLY expressive eyes\nare the TWO SMALL LUMINOUS CYAN MARKS in the LOWER FACEPLATE below the goggles.\nDo not add a mouth, nose, eyebrows, hair, teeth or any facial feature.\nRetain clean subtle glossy gradients without grain, stipple or texture changes.\n\nEXPRESSION: A friendly inquisitive expression asking the developer for input. The TWO SMALL CYAN EYES IN THE LOWER FACEPLATE become gently asymmetric: the viewer-left eye is slightly taller and wider, while the viewer-right eye narrows to about half its neutral height. Keep both eyes luminous, friendly and readable. Add a curious rigid 5-degree counterclockwise head roll, with no more than 1 degree of yaw. It must look interested and patient, never frightened, angry, sad, or alarmed. No eyebrow marks.\n\nTEMPORAL PLAN: frame 00 is exactly the neutral reference. Progress steadily and\nvery gradually toward 'curious asymmetric cyan eyes; friendly questioning tilt' at frame 23. The changes per adjacent\nframe are tiny, with no jump at row boundaries. Row 1 covers expression strength\n0-22%, row 2 26-48%, row 3 52-74%, row 4 78-100%. No animation restart in a new row.\nDo not make all frames reach the final emotion immediately. No surprise extra\nexpressions between frames. Never rotate the head more than 6 degrees total.\n\nRender each frame as a clean discrete view, NOT a blend or morph. No double\noutlines, melting goggles, stretchy visor rims, squash/stretch, changes in ear\nsize, camera zoom, head shrinking or lighting changes. The head must remain\ninstantly recognizable as the exact approved mascot in image 1.\n\n\nCRITICAL CORRECTION TO THE PREVIOUS ATTEMPT: do not make the first row already\ncurious. The first two heads MUST still have two equally open upright cyan eyes,\nmatching Image 1 exactly. Curiosity increases only gradually after those frames.\nThe FIRST ROW is almost neutral, NOT a line of already-half-closed right eyes.\nMatch the following approximate viewer-right eye heights in pixels in reading\norder (one value per frame): [25, 25, 24, 24, 23, 22, 22, 21, 21, 20, 20, 19, 19, 18, 18, 17, 16, 16, 15, 15, 14, 14, 13, 12].\nThe viewer-left eye stays 25 pixels tall until frame 8, then very gradually\nincreases to 27 pixels by frame 23. Both eye widths remain about 14-15 pixels.\nKeep each eye's center in its normal faceplate location. Do not make the small\nright eye a dot. Its final height is about HALF neutral, not nearly fully closed.\nRigid roll progresses evenly from zero to only 5 degrees counterclockwise.\nFrame 00 and frame 01 should be visually almost identical to Image 1.\nAgain, the large goggles never change expression, size, lens shape, or design.\nNo text of any kind in the output. The guide's pixel values are instructions,\nnot labels to include in the generated image. Preserve generous black margins.\n",
+  "promptSha256": "15666b4472d59abcd642f672dc1c30bcc0c885eae85141439aa1b152c28c4f1c",
+  "size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "format": "png",
+  "generationSeconds": 91.94,
+  "sha256": "f84f263d29b21635dc395ba77fc8587af02b5ef0ba554421d4435fba6c0c8910",
+  "usage": {
+    "input_tokens": 2976,
+    "input_tokens_details": {
+      "image_tokens": 1956,
+      "text_tokens": 1020
+    },
+    "output_tokens": 5488,
+    "output_tokens_details": {
+      "image_tokens": 5488,
+      "text_tokens": 0
+    },
+    "total_tokens": 8464
+  },
+  "layoutGuide": "characters/copilot/expressions/guides/attention-refined-layout.png",
+  "layoutGuideSha256": "72a44c58a5a6916bc272f06d041ab3f984cffecf4aa228ba0845896e981bf215"
+}

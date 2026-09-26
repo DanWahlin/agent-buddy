@@ -8,6 +8,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "characters/copilot/tools"))
 from alternate_attention import COUNTER_ROLL_DEGREES, swap_eye_lights
 from prepare_generated_expressions import apparent_goggle_roll
 from prepare_sprite_animation import blink

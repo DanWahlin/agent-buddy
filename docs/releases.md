@@ -38,17 +38,18 @@ An optional `COPILOT_SESSION_ID` adds Copilot attribution/session trailers.
 | Asset | Purpose |
 | --- | --- |
 | `<repo>-v<version>-firmware.zip` | Python installer, checksums, and all matching flash `.bin` files |
-| `<repo>-v<version>-sd-card.zip` | Optional `characters/openclaw/sprites.bin` for a FAT32 card |
+| `<repo>-v<version>-characters.zip` | Every built-in character pack (`copilot.acpk`, `openclaw.acpk`) |
 | `SHA256SUMS` | Checksums for the downloadable ZIP files |
 
 The installer validates the included files and writes each at its declared
-address. It does not use `erase-flash`, pad a merged image over NVS, or modify the
-SD card. A different existing firmware may use a different partition layout, so
-users should back up its data before installing.
+address, including the default Copilot pack in the character partition. It does
+not use `erase-flash` or pad a merged image over NVS. A different existing
+firmware may use a different partition layout, so users should back up its data
+before installing.
 
-The OpenClaw SD file is intentionally paired with its firmware: pose tables and
-the expected size and SHA256 are compiled into the application. A mismatched
-card pack is rejected in favor of built-in Copilot.
+Character packs are self-describing and SHA-256 protected, so any pack that uses
+the firmware's animation model can be installed later with
+`npm run character path/to/pack.acpk` from a source checkout.
 
 ## Build release bundles locally
 

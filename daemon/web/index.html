@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Companion Settings</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Agent Companion</h1>
+        <p id="summary">Connecting to the companion service…</p>
+      </div>
+    </div>
+    <span id="connection" class="pill offline">Offline</span>
+  </header>
+
+  <main>
+    <p id="token-error" class="notice" hidden>
+      <strong id="token-error-title">This page needs its private link.</strong>
+      Run <code>npm run settings</code> from the repository folder. It opens this page with the link that
+      lets it talk to the companion service.
+    </p>
+
+    <section id="setup" class="card setup" aria-labelledby="setup-title" hidden>
+      <h2 id="setup-title">Finish setting up your agents</h2>
+      <p class="hint">These go away on their own once each step is done.</p>
+      <ol id="setup-steps" class="setup-steps"></ol>
+    </section>
+
+    <section class="card" aria-labelledby="status-title">
+      <h2 id="status-title">Status</h2>
+      <dl class="facts">
+        <div><dt>Connection</dt><dd id="fact-connection">—</dd></div>
+        <div><dt>Character</dt><dd id="fact-character">—</dd></div>
+        <div><dt>State</dt><dd id="fact-state">—</dd></div>
+        <div><dt>Agent sessions</dt><dd id="fact-sessions">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="card" aria-labelledby="agents-title">
+      <h2 id="agents-title">Agents</h2>
+      <label class="setting-row" for="badges-toggle">
+        <span>
+          <strong>Show agent badges on the device</strong>
+          <span class="hint">Small icons in the animation show which agent is working, needs you, or just finished.</span>
+        </span>
+        <input id="badges-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <p class="hint">Setup installs hooks for the agents it finds. Turn one off below without editing its config.</p>
+      <ul id="agents" class="agents" aria-live="polite"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="characters-title">
+      <div class="card-head">
+        <h2 id="characters-title">Characters</h2>
+        <label class="button secondary" for="upload">Add character…</label>
+        <input id="upload" type="file" accept=".acpk" class="visually-hidden">
+      </div>
+      <div id="install" class="install" hidden>
+        <div class="install-head">
+          <strong id="install-title">Installing</strong>
+          <span id="install-percent">0%</span>
+        </div>
+        <div class="bar" role="progressbar" aria-labelledby="install-title" aria-valuemin="0" aria-valuemax="100">
+          <div id="install-bar"></div>
+        </div>
+        <p class="hint">Keep the device powered. It restarts when the install finishes.</p>
+      </div>
+      <ul id="characters" class="grid" aria-live="polite"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="wifi-title">
+      <h2 id="wifi-title">Wi-Fi</h2>
+      <p class="hint" id="wifi-hint">
+        Connect the device over USB, then enter a 2.4 GHz network. The password goes straight to
+        the device and isn't stored on this computer.
+      </p>
+      <form id="wifi-form" class="form">
+        <label>Network name <input id="ssid" name="ssid" maxlength="32" required autocomplete="off"></label>
+        <label>Password <input id="password" name="password" type="password" maxlength="63" autocomplete="off"></label>
+        <button type="submit" class="button">Connect device</button>
+      </form>
+
+      <h3>Connection</h3>
+      <div class="segmented" role="radiogroup" aria-label="Connection mode" id="modes">
+        <button type="button" role="radio" aria-checked="false" data-mode="auto">Auto</button>
+        <button type="button" role="radio" aria-checked="false" data-mode="wifi">Wi-Fi only</button>
+        <button type="button" role="radio" aria-checked="false" data-mode="usb">USB only</button>
+      </div>
+      <p class="hint" id="mode-hint"></p>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

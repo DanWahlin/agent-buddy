@@ -1,4 +1,4 @@
-#include "../firmware/Copilot/src/DeviceCommands.h"
+#include "../firmware/AgentCompanion/src/DeviceCommands.h"
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -12,6 +12,7 @@ static DeviceCommand send(DeviceCommands& parser, const std::string& text) {
 }
 
 int main() {
+  static_assert(kDeviceProtocol == 6);
   DeviceCommands parser;
   for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
                                 DeviceCommand::Complete, DeviceCommand::Attention}) {
@@ -20,7 +21,20 @@ int main() {
   assert(send(parser, "s") == DeviceCommand::Capture);
   assert(send(parser, "h") == DeviceCommand::Heap);
   assert(send(parser, "i") == DeviceCommand::Info);
-  assert(send(parser, "u") == DeviceCommand::UploadOpenClaw);
+  assert(send(parser, "u") == DeviceCommand::UploadCharacter);
+  assert(send(parser, "@TXkgV2ktRmk=:cGFzc3dvcmQ=\n") == DeviceCommand::ConfigureWifi);
+  assert(std::strcmp(parser.wifiPayload(), "TXkgV2ktRmk=:cGFzc3dvcmQ=") == 0);
+  assert(send(parser, "@b3Blbg==:\n") == DeviceCommand::ConfigureWifi);
+  const std::string mask(96, 'A');
+  assert(send(parser, "%copilot:6F7CFF:" + mask + "\n") == DeviceCommand::DefineAgentIcon);
+  assert(std::strcmp(parser.payload(), ("copilot:6F7CFF:" + mask).c_str()) == 0);
+  assert(send(parser, "&copilot=w,claude=a,codex=c\n") == DeviceCommand::SetAgentBadges);
+  assert(std::strcmp(parser.payload(), "copilot=w,claude=a,codex=c") == 0);
+  assert(send(parser, "&\n") == DeviceCommand::SetAgentBadges);
+  assert(std::strcmp(parser.payload(), "") == 0);
+  assert(send(parser, "@invalid packet\n") == DeviceCommand::Invalid);
+  assert(send(parser, "%copilot?:6F7CFF:" + mask + "\n") == DeviceCommand::Invalid);
+  assert(send(parser, "&copilot=W\n") == DeviceCommand::Invalid);
   assert(send(parser, "\n") == DeviceCommand::None);
   assert(send(parser, "x") == DeviceCommand::Invalid);
   assert(send(parser, "!not-a-mode\n") == DeviceCommand::Invalid);
@@ -30,5 +44,6 @@ int main() {
   assert(parser.expire(999) == DeviceCommand::None);
   assert(parser.expire(1000) == DeviceCommand::Invalid);
   assert(send(parser, "!attention\n") == DeviceCommand::Attention);
-  std::cout << "PASS: bounded mode packets, legacy diagnostics, CRLF, overflow and timeout recovery\n";
+  assert(send(parser, "%" + std::string(192, 'a') + "\n") == DeviceCommand::Invalid);
+  std::cout << "PASS: bounded mode, Wi-Fi, badge packets, legacy diagnostics, CRLF, overflow and timeout recovery\n";
 }

@@ -1,0 +1,41 @@
+{
+  "created": "2026-09-11T06:22:34.506163+00:00",
+  "provider": "Configured Azure GPT Image deployment",
+  "reference": "characters/copilot/source/generated-sprites/approved-center.png",
+  "references": [
+    {
+      "file": "characters/copilot/source/generated-sprites/approved-center.png",
+      "sha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc"
+    },
+    {
+      "file": "characters/copilot/source/generated-sprites/right-turn-refined-sheet.png",
+      "sha256": "3bca4589f11c5e60f503721060824ea272e047abf4aaa23ff532a37614be0327"
+    }
+  ],
+  "referenceSha256": "c10f395a4a1174822e23a1bf438d8ab93ae42b9e195c98c0fe28a6b70fdc10bc",
+  "prompt": "characters/copilot/source/sprite-prompts/left-turn-rejected.txt",
+  "status": "Rejected: generated right-facing poses instead of the requested left turn.",
+  "promptSha256": "8ed0daa0e066ca9696b3f6841d59489b2255cbbca55735974384272d3f36360a",
+  "size": [
+    1536,
+    1024
+  ],
+  "quality": "high",
+  "format": "png",
+  "generationSeconds": 101.59,
+  "sha256": "673923c52772b82198a0f2e5a750ff020868307de0198fbbb1a0e8213642a389",
+  "usage": {
+    "input_tokens": 3724,
+    "input_tokens_details": {
+      "image_tokens": 3282,
+      "text_tokens": 442
+    },
+    "output_tokens": 5488,
+    "output_tokens_details": {
+      "image_tokens": 5488,
+      "text_tokens": 0
+    },
+    "total_tokens": 9212
+  },
+  "layoutGuideSha256": "1acb9f101493523ef09989b28f2b2a9af44444927f771a6d86ee8bd9366ce030"
+}

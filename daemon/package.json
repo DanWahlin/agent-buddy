@@ -11,12 +11,17 @@
     "test": "npm run build && node --test dist/test/*.test.js",
     "start": "node dist/src/cli.js daemon",
     "status": "node dist/src/cli.js status",
-    "install:openclaw": "npm run build && node dist/src/cli.js install-character openclaw ../assets/openclaw-lab.bin",
-    "install:daemon": "npm run build && node dist/src/install.js",
+    "agents": "node dist/src/cli.js agents",
+    "setup:wifi": "npm run build && node dist/src/cli.js setup-wifi",
+    "pair:wifi": "npm run build && node dist/src/cli.js pair-wifi",
+    "build:characters": "python3 ../tools/character_pack.py build",
+    "setup:character": "npm run build && npm run build:characters && node dist/src/cli.js setup-character",
+    "install:daemon": "npm run build && npm run build:characters && node dist/src/install.js",
     "install:macos": "npm run install:daemon"
   },
   "dependencies": {
-    "serialport": "13.0.0"
+    "serialport": "13.0.0",
+    "yaml": "2.8.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

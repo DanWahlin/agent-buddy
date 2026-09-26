@@ -1,5 +1,5 @@
 #pragma once
-#include "../firmware/Copilot/src/SpritePredictor.h"
+#include "../firmware/AgentCompanion/src/SpritePredictor.h"
 #include <array>
 #include <limits>
 #include <zlib.h>

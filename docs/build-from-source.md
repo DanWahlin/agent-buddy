@@ -53,19 +53,19 @@ variables above avoid depending on those machine-specific paths.
 
 ## Regenerate graphics or run the native preview
 
-Ordinary builds use the checked-in `.bin` and generated tables. Re-exporting sprites
+Ordinary builds wrap the checked-in `.bin` exports into character packs. Re-exporting sprites
 requires the art dependencies, but does **not** call an AI service. Use Python
 3.11 for this separate environment, matching CI and the pinned NumPy/SciPy wheels:
 
 ```bash
 python3.11 -m venv build/art-venv
 build/art-venv/bin/python -m pip install -r requirements-art.txt
-build/art-venv/bin/python tools/export_sprite_firmware.py
-build/art-venv/bin/python tools/embed_sprites.py
+build/art-venv/bin/python characters/copilot/tools/export_sprite_firmware.py
+build/art-venv/bin/python tools/character_pack.py build
 ```
 
-Keep the source PNGs, manifests, exported binary/JSON, and generated firmware
-tables together in the same commit. CI re-exports them and rejects mismatches.
+Keep the source PNGs, manifests, and exported binary/JSON together in the same
+commit. CI re-exports them and rejects mismatches.
 New image generation is a separate, optional paid operation using locally
 configured Azure credentials; release workflows never need those credentials.
 

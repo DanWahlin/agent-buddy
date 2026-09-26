@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: build/sprite-compression
-          key: sprites-${{ runner.os }}-${{ hashFiles('requirements-art.txt', 'tools/sprite_*.py', 'tools/export_sprite_firmware.py', 'web/generated-*/animation.json') }}
+          key: sprites-${{ runner.os }}-${{ hashFiles('requirements-art.txt', 'tools/sprite_*.py', 'characters/copilot/tools/export_sprite_firmware.py', 'characters/copilot/sprites/animation.json', 'characters/copilot/expressions/animation.json') }}
           restore-keys: sprites-${{ runner.os }}-
       - name: Install build dependencies
         run: |
@@ -57,16 +57,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang zlib1g-dev
       - name: Reproduce and verify generated assets
         run: |
-          python tools/export_sprite_firmware.py
+          python characters/copilot/tools/export_sprite_firmware.py
           python tools/embed_audio.py
-          git diff --exit-code -- assets/sprite-firmware.bin assets/sprite-firmware.json firmware/Copilot/generated/sprite_assets.h firmware/Copilot/src/sprite_data.cpp
-          git diff --exit-code -- firmware/Copilot/generated/audio_assets.h firmware/Copilot/src/audio_data.cpp
+          git diff --exit-code -- characters/copilot/frames.bin characters/copilot/frames.json
+          git diff --exit-code -- firmware/AgentCompanion/generated/audio_assets.h firmware/AgentCompanion/src/audio_data.cpp
       - name: Test native renderer and release tools
         run: |
           bash tools/test.sh
-          bash tools/test_sprite_cache.sh
           bash tools/test_sprite_renderer.sh
-          bash tools/test_openclaw_renderer.sh
+          bash tools/test_character_packs.sh
           bash tools/test_character.sh
           bash tools/test_working_bits.sh
           bash tools/test_device_inputs.sh
@@ -99,7 +98,7 @@ jobs:
           ARDUINO_CONFIG="$RUNNER_TEMP/arduino/arduino-cli.yaml" \
           WAVESHARE_DIR="$GITHUB_WORKSPACE/.deps/waveshare" \
           bash tools/arduino.sh build
-      - name: Package firmware and SD card
+      - name: Package firmware and character packs
         run: |
           python tools/package_release.py --version "$(cat VERSION)" \
             --name "${GITHUB_REPOSITORY#*/}" --repository "$GITHUB_REPOSITORY"
@@ -109,7 +108,7 @@ jobs:
           name: release-bundles
           path: |
             build/release/*-firmware.zip
-            build/release/*-sd-card.zip
+            build/release/*-characters.zip
             build/release/SHA256SUMS
           if-no-files-found: error
           compression-level: 0
@@ -149,10 +148,9 @@ jobs:
             ## Install
 
             Download the **firmware.zip** asset and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#install).
-            It includes the matching application, boot files, sprite data, and a checksum-validating Python installer.
+            It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
 
-            The **sd-card.zip** asset is optional. Extract its `copilot` folder onto a FAT32 card.
-            Always use firmware and SD sprites from the same release. This device is not a USB card reader.
+            The **characters.zip** asset holds every built-in character pack. Install one from a source checkout with `npm run character path/to/openclaw.acpk`.
 
             ## Changes
 

@@ -1,4 +1,4 @@
-#include "../firmware/Copilot/src/SpriteMotion.h"
+#include "../firmware/AgentCompanion/src/SpriteMotion.h"
 #include <algorithm>
 #include <array>
 #include <cassert>

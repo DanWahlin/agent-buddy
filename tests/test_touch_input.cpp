@@ -1,4 +1,4 @@
-#include "../firmware/Copilot/src/TouchInput.h"
+#include "../firmware/AgentCompanion/src/TouchInput.h"
 #include <cassert>
 #include <iostream>
 

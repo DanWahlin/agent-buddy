@@ -1,0 +1,10 @@
+{
+  "id": "openclaw",
+  "name": "OpenClaw",
+  "layout": "full-frame",
+  "frames": "frames.bin",
+  "metadata": "frames.json",
+  "motionSpeed": 1.3,
+  "walk": {"track": 9, "first": 1, "frames": 23, "fps": 12.0},
+  "validator": "tools/embed_openclaw_lab.py"
+}

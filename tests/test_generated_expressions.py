@@ -10,6 +10,7 @@ from scipy.ndimage import distance_transform_edt, label
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "characters/copilot/tools"))
 from prepare_generated_expressions import (
     APPROVED, COUNT, DIRECTIONS, HEIGHT, OUTPUT, WIDTH, colored_heads,
     apparent_goggle_roll, digest, expression_eyes, reconstruct_frame,

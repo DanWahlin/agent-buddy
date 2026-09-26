@@ -8,6 +8,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "characters/copilot/tools"))
 from smooth_surprise import APPROVED, OUTPUT, digest, recoil, recoil_matrix, render
 
 
