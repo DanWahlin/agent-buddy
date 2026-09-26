@@ -10,6 +10,9 @@ import subprocess
 import sys
 
 ESPTOOL_VERSION = "5.3.0"
+MIN_PYTHON = (3, 10)
+# The marker lets pip skip esptool on older Pythons so require_python() can explain the fix.
+REQUIREMENTS = f'esptool=={ESPTOOL_VERSION}; python_version >= "{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"\n'
 FLASH_BYTES = 0x1000000
 IMAGE_NAMES = (
     "bin/bootloader.bin", "bin/partitions.bin", "bin/boot_app0.bin",
@@ -110,12 +113,28 @@ def verify_bundle(root):
     for name, data in files.items():
         if sha256(data) != checksums[name]:
             raise ValueError(f"SHA256 mismatch: {name}.")
-    if files["requirements.txt"] != f"esptool=={ESPTOOL_VERSION}\n".encode():
+    if files["requirements.txt"] != REQUIREMENTS.encode():
         raise ValueError("Unsupported installer requirements.")
     return validate_manifest(json.loads(files["manifest.json"]), files)
 
 
+def require_python(version_info=None):
+    current = tuple((version_info or sys.version_info)[:2])
+    if current >= MIN_PYTHON:
+        return
+    minimum = f"{MIN_PYTHON[0]}.{MIN_PYTHON[1]}"
+    raise ValueError(
+        f"Python {minimum} or newer is required to flash, but this is Python "
+        f"{current[0]}.{current[1]} ({sys.executable}).\n"
+        f"Install a newer Python from https://www.python.org/downloads/, then recreate the "
+        f"environment in this folder with it and reinstall the requirements, for example:\n"
+        f"  python3.13 -m venv --clear .venv          (Windows: py -3.13 -m venv --clear .venv)\n"
+        f"  .venv/bin/python -m pip install -r requirements.txt"
+    )
+
+
 def require_dependencies():
+    require_python()
     command = f'"{sys.executable}" -m pip install esptool=={ESPTOOL_VERSION}'
     try:
         version = importlib.metadata.version("esptool")

@@ -9,11 +9,11 @@ import zipfile
 
 if __package__:
     from . import character_pack, firmware_artifacts
-    from .flash_release import IMAGE_NAMES, WARNING, sha256, validate_identity, validate_manifest
+    from .flash_release import IMAGE_NAMES, REQUIREMENTS, WARNING, sha256, validate_identity, validate_manifest
 else:
     import character_pack
     import firmware_artifacts
-    from flash_release import IMAGE_NAMES, WARNING, sha256, validate_identity, validate_manifest
+    from flash_release import IMAGE_NAMES, REQUIREMENTS, WARNING, sha256, validate_identity, validate_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,8 +73,8 @@ def package(root, version, name="esp32-agent-companion", output=None,
     files["manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     files["flash.py"] = (root / "tools/flash_release.py").read_bytes()
     files["requirements.txt"] = (root / "requirements-flash.txt").read_bytes()
-    if files["requirements.txt"] != b"esptool==5.3.0\n":
-        raise ValueError("requirements-flash.txt must pin esptool==5.3.0.")
+    if files["requirements.txt"] != REQUIREMENTS.encode():
+        raise ValueError(f"requirements-flash.txt must be exactly: {REQUIREMENTS.strip()}")
     files["INSTALL.txt"] = (
         f"{name} v{version} — ESP32-S3 / 16MB flash\n\n"
         "Download both ZIPs and SHA256SUMS from a trusted release:\n"

@@ -41,7 +41,6 @@ def validate(root=ROOT):
         "packExporterSha256": character / "tools/export_openclaw_lab.py",
         "packageLockSha256": character / "model/package-lock.json",
         "referenceSvgSha256": character / "reference/reference.svg",
-        "manifestSha256": character / "renders/animation.json",
     }
     for field, path in checks.items():
         if metadata.get(field) != sha(path):
@@ -49,10 +48,15 @@ def validate(root=ROOT):
     png_hashes = metadata.get("sourcePngSha256")
     if not isinstance(png_hashes, dict) or not png_hashes:
         raise ValueError("OpenClaw source PNG inventory is missing.")
-    for name, expected in png_hashes.items():
-        path = character / "renders" / name
-        if expected != sha(path):
-            raise ValueError(f"OpenClaw lab pack is stale for {path}.")
+    # Renders are generated locally and ignored by git; verify them only when they exist.
+    renders = character / "renders"
+    if renders.is_dir():
+        if metadata.get("manifestSha256") != sha(renders / "animation.json"):
+            raise ValueError(f"OpenClaw lab pack is stale for {renders / 'animation.json'}.")
+        for name, expected in png_hashes.items():
+            path = renders / name
+            if expected != sha(path):
+                raise ValueError(f"OpenClaw lab pack is stale for {path}.")
     print(f"OpenClaw lab payload: {len(data):,} bytes, SHA256 {metadata['dataSha256']}")
 
 

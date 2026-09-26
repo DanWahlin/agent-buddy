@@ -276,6 +276,11 @@ py -3 -m venv .venv
 This installs the pinned `esptool` flashing utility into a local environment.
 Some Linux distributions also require their `python3-venv` package.
 
+Check `python3 --version` first. The `python3` that comes with macOS is 3.9,
+which is too old for `esptool`. If your environment was created with an older
+Python, `flash.py` tells you so and shows how to recreate it with a newer one
+(for example, `python3.13 -m venv --clear .venv`).
+
 ### 3. Connect and flash
 
 Connect the device using the USB data cable. Close any serial monitor using it.

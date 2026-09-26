@@ -289,6 +289,9 @@ class ReleaseBundleTests(unittest.TestCase):
 
     def test_missing_dependency_guidance_and_failure_status(self):
         extracted, _, _ = self.bundle()
+        python_check = mock.patch.object(flash_release, "require_python")
+        python_check.start()
+        self.addCleanup(python_check.stop)
         with mock.patch.object(importlib.metadata, "version",
                                side_effect=importlib.metadata.PackageNotFoundError):
             with self.assertRaisesRegex(ValueError, "pip install esptool==5.3.0"):
@@ -300,6 +303,19 @@ class ReleaseBundleTests(unittest.TestCase):
         with mock.patch.object(flash_release, "require_dependencies"), \
                 mock.patch.object(flash_release.subprocess, "run", side_effect=subprocess.CalledProcessError(2, "esptool")):
             self.assertEqual(self.invoke(extracted, ["--yes", "--port", "COM7"]), 1)
+
+    def test_old_python_gets_a_clear_upgrade_message(self):
+        extracted, _, _ = self.bundle()
+        with self.assertRaisesRegex(ValueError, r"Python 3\.10 or newer is required.*this is Python 3\.9"):
+            flash_release.require_python((3, 9, 6))
+        flash_release.require_python((3, 10, 0))
+        with mock.patch.object(flash_release, "require_python",
+                               side_effect=ValueError("Python 3.10 or newer is required")), \
+                mock.patch.object(importlib.metadata, "version") as version:
+            self.assertEqual(self.invoke(extracted, ["--list-ports"]), 1)
+            version.assert_not_called()
+        self.assertEqual((extracted / "requirements.txt").read_text(),
+                         'esptool==5.3.0; python_version >= "3.10"\n')
 
     def test_list_ports_only_loads_optional_modules_for_that_action(self):
         ports = mock.Mock()

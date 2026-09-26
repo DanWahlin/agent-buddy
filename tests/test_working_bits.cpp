@@ -119,9 +119,11 @@ void visibleShapesAndDirection() {
   assert(entering == middle && leaving > 0 && leaving < middle);
   for (const auto& sample : {std::pair<float, int>{.2f, 176}, {2.8f, 210}}) {
     draw(effects, working(sample.first), first.data() + 1);
+    // Effects clip to the round display, whose edge sits a row or two below the frame's top here.
     bool reachesEdge = false;
-    for (int x = sample.second; x < sample.second + 5; ++x)
-      reachesEdge |= first[1 + x + kCharacterArtX] != 0;
+    for (int y = 0; y < 4; ++y)
+      for (int x = sample.second; x < sample.second + 5; ++x)
+        reachesEdge |= first[1 + y * kCharacterFrameWidth + x + kCharacterArtX] != 0;
     assert(reachesEdge);
   }
 }
@@ -189,11 +191,12 @@ void circularOrbitHasClearance() {
     assert(count == 81);  // The leading five-pixel-radius ball is never clipped.
     x /= count;
     y /= count;
-    assert(std::abs(std::hypot(x - kCharacterFrameWidth / 2, y - 233) - 200) < .8);
+    // Radius 186 keeps the orbit (and a badge riding it) fully inside the round display.
+    assert(std::abs(std::hypot(x - kCharacterFrameWidth / 2, y - 233) - 186) < .8);
     minX = std::min(minX, x); maxX = std::max(maxX, x);
     minY = std::min(minY, y); maxY = std::max(maxY, y);
   }
-  assert(maxX-minX == 400 && maxY-minY == 400);
+  assert(maxX-minX == 372 && maxY-minY == 372);
 }
 
 void sleepingZsAlternateSides() {
@@ -215,8 +218,10 @@ void sleepingZsAlternateSides() {
 }
 
 void protectionRestorationAndBudget() {
-  static_assert(CharacterEffects::kDamageBudget == 4096);
-  static_assert(sizeof(CharacterEffects) <= 2 * CharacterEffects::kDamageBudget * sizeof(uint32_t) + 64);
+  // Agent badges raised the budget from 4096; each saved overlay region adds a small fixed record.
+  static_assert(CharacterEffects::kDamageBudget == 6144);
+  static_assert(sizeof(CharacterEffects) <= 2 * CharacterEffects::kDamageBudget * sizeof(uint32_t)
+                + 2 * CharacterEffects::kOverlayBadges * 16 + 64);
   std::array<uint16_t, kPixels> original{};
   for (size_t i = 0; i < kPixels; ++i) {
     const int x = i % kCharacterFrameWidth, y = i / kCharacterFrameWidth;

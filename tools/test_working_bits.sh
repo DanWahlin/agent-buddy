@@ -41,8 +41,10 @@ for direction in (0, 1, 9):
             pixels.frombytes(frame)
             radius = math.sqrt(max((i % width - inset - 200)**2 + (i // width - 176)**2
                                    for i, value in enumerate(pixels) if value))
-            assert 200 - 5 - radius > 12, (
-                f'Orbit clearance too small: direction={direction}, pose={pose}')
+            # The orbit shrank from 200 to 186 so badges riding it stay on the round display.
+            # Its centerline must still clear the artwork; dots only draw on black pixels.
+            assert 186 - radius > 3, (
+                f'Orbit path too close to the artwork: direction={direction}, pose={pose}')
         for y in range(0, 33):
             for lane in (176, 188, 210, 222):
                 for x in range(lane, lane + 5):
@@ -50,5 +52,5 @@ for direction in (0, 1, 9):
                     assert frame[offset:offset + 2] == b'\0\0', (
                         f'Artwork hides binary lane: direction={direction}, pose={pose}, x={x}, y={y}')
 print('All 72 focused/unfocus/left/right exported poses leave the binary lanes unobstructed')
-print('Every rendered Working pose has more than twelve pixels of full-ball orbit clearance')
+print('Every rendered Working pose keeps the orbit path outside the artwork')
 PY
