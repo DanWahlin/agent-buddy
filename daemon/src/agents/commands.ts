@@ -37,7 +37,7 @@ function probeVersion(executable: string, ctx: AgentContext): string | undefined
       timeout: 1000,
       env: ctx.env,
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim().split(/\r?\n/)[0];
+    }).trim().split(/\r?\n/)[0]?.replace(/\.$/, '');
   } catch {
     return undefined;
   }

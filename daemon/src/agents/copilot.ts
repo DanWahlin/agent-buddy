@@ -11,7 +11,7 @@ export const copilotAdapter: AgentAdapter = {
   hint: status => status === 'missing' ? 'Run setup to install the Copilot hook file.' : undefined,
   detect(ctx) {
     const configPath = copilotHookPath(ctx.home);
-    return {installed: true, version: versionOf('gh', ctx), configPath};
+    return {installed: true, version: versionOf('copilot', ctx), configPath};
   },
   hookStatus(ctx) {
     return hasCopilotHooks(ctx) ? 'installed' : 'missing';
