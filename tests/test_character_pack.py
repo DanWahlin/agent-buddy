@@ -84,6 +84,21 @@ class CharacterPackTests(unittest.TestCase):
         with self.assertRaisesRegex(packs.PackError, "thumbnail"):
             packs.decode(bytes(changed))
 
+    def test_thumbnails_center_the_visible_character(self):
+        width, height = packs.WIDTH, packs.HEIGHT
+        frame = bytearray(width * height * 2)
+        for y in range(10, 60):
+            for x in range(300, 380):
+                frame[(y * width + x) * 2:(y * width + x) * 2 + 2] = b"\xff\xff"
+        centered = packs.centered_frame(bytes(frame))
+        lit = [(i // 2 % width, i // 2 // width) for i in range(0, len(centered), 2) if centered[i]]
+        xs, ys = [x for x, _ in lit], [y for _, y in lit]
+        self.assertEqual(len(lit), 80 * 50)
+        self.assertLessEqual(abs(min(xs) - (width - 1 - max(xs))), 1)
+        self.assertLessEqual(abs(min(ys) - (height - 1 - max(ys))), 1)
+        blank = bytes(width * height * 2)
+        self.assertEqual(packs.centered_frame(blank), blank)
+
     def test_encoder_validates_identity(self):
         for pack_id in ("", "Copilot", "-copilot", "x" * 17):
             with self.subTest(pack_id=pack_id), self.assertRaises(packs.PackError):

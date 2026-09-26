@@ -319,8 +319,29 @@ def png(width, height, rows):
             + chunk(b"IDAT", zlib.compress(bytes(rows), 9)) + chunk(b"IEND", b""))
 
 
+def centered_frame(frame):
+    """Shift an RGB565 frame so its visible (non-black) pixels sit in the middle of the canvas."""
+    columns = [x for x in range(WIDTH) if any(frame[(y * WIDTH + x) * 2] | frame[(y * WIDTH + x) * 2 + 1]
+                                               for y in range(HEIGHT))]
+    rows = [y for y in range(HEIGHT) if any(frame[y * WIDTH * 2:(y + 1) * WIDTH * 2])]
+    if not columns or not rows:
+        return frame
+    dx = (WIDTH - 1 - columns[0] - columns[-1]) // 2
+    dy = (HEIGHT - 1 - rows[0] - rows[-1]) // 2
+    if not dx and not dy:
+        return frame
+    shifted = bytearray(len(frame))
+    for y in range(max(0, -dy), min(HEIGHT, HEIGHT - dy)):
+        left, right = max(0, -dx), min(WIDTH, WIDTH - dx)
+        source = (y * WIDTH + left) * 2
+        target = ((y + dy) * WIDTH + left + dx) * 2
+        shifted[target:target + (right - left) * 2] = frame[source:source + (right - left) * 2]
+    return bytes(shifted)
+
+
 def thumbnail_png(frame, scale=2):
-    """Box-downscale an RGB565 big-endian frame into an RGB PNG."""
+    """Center the character, then box-downscale the RGB565 big-endian frame into an RGB PNG."""
+    frame = centered_frame(frame)
     width, height = WIDTH // scale, HEIGHT // scale
     samples = scale * scale
     rows = bytearray()
