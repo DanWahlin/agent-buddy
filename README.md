@@ -50,7 +50,7 @@ automatically falls back to a paired device on the same local Wi-Fi network.
 The TypeScript daemon connects AI agent lifecycle hooks to the device over USB
 or local Wi-Fi.
 It supports macOS and Linux directly, plus Windows through WSL 2. Install
-[Node.js 22.12 or newer](https://nodejs.org/) and flash the device first.
+[Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and flash the device first.
 
 **macOS or Linux**
 

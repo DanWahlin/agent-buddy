@@ -12,6 +12,13 @@ const cliPath = join(daemon, 'dist', 'src', 'cli.js');
 const characters = join(root, 'build', 'characters');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
+const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 11)) {
+  console.error(`Agent Companion needs Node.js 24 LTS (24.11 or newer), but this is Node.js ${process.versions.node}.\n`
+    + 'Install it from https://nodejs.org/ (or run `nvm install 24`), then try again.');
+  process.exit(1);
+}
+
 function run(command, args, {cwd = root, quiet = false} = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {cwd, stdio: quiet ? ['ignore', 'pipe', 'pipe'] : 'inherit'});

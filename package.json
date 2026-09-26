@@ -3,7 +3,7 @@
   "private": true,
   "description": "One-word commands for setting up and customizing the ESP32 Agent Companion.",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.11.0"
   },
   "scripts": {
     "setup": "node tools/companion.mjs setup",
