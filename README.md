@@ -432,6 +432,10 @@ You can also pass the path to any `.acpk` pack, such as one from a release's
 interrupted, the device shows **No character installed** until the daemon
 reinstalls your character, which it does as soon as the device reconnects.
 
+Some characters, such as Claude, need newer firmware than others. If the daemon
+says a character needs newer device firmware, reflash the latest release
+([see Update](#update)) and install it again.
+
 ## Wi-Fi
 
 Wi-Fi lets the companion run from a wall adapter or any USB power source. Your

@@ -26,6 +26,7 @@ export class WifiTransport {
   #scanActive = false;
   #commands = Promise.resolve();
   #character: string | null = null;
+  #adaptivePatchRam = false;
   #installing = false;
   readonly #changed: () => void;
 
@@ -43,6 +44,10 @@ export class WifiTransport {
 
   get character(): string | null {
     return this.#connected ? this.#character : null;
+  }
+
+  get adaptivePatchRam(): boolean {
+    return this.#connected && this.#adaptivePatchRam;
   }
 
   async start(): Promise<void> {
@@ -121,10 +126,12 @@ export class WifiTransport {
         signal: AbortSignal.timeout(1200),
       });
       if (!response.ok) return false;
-      const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number};
+      const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
+                                               patchRam?: string};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
       this.#character = typeof status.character === 'string' ? status.character : null;
+      this.#adaptivePatchRam = status.patchRam === 'adaptive';
       const needsSync = !this.#connected || endpoint !== this.#endpoint || status.boot !== this.#boot;
       this.#endpoint = endpoint;
       this.#boot = status.boot!;

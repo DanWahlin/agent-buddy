@@ -45,6 +45,10 @@ export class DeviceTransport {
     return this.#usb.connected ? this.#usb.character : this.#wifi.character;
   }
 
+  get adaptivePatchRam(): boolean {
+    return this.#usb.connected ? this.#usb.adaptivePatchRam : this.#wifi.adaptivePatchRam;
+  }
+
   get installing(): boolean {
     return this.#installing;
   }

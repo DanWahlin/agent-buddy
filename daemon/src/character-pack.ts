@@ -14,6 +14,8 @@ export interface CharacterPackHeader {
   id: string;
   name: string;
   thumbnail: {offset: number; bytes: number} | null;
+  // Largest blink patch in a base/patch pack; 0 for full-frame packs.
+  maxPatchPixels: number;
 }
 
 export interface CharacterPackFile extends CharacterPackHeader {
@@ -81,7 +83,18 @@ export function parseCharacterPackHeader(header: Buffer, fileBytes = header.leng
   const dataOffset = header.readUInt32LE(140);
   const thumbnail = bytes > 0 && offset >= headerBytes && offset + bytes <= dataOffset
     && dataOffset <= fileBytes ? {offset, bytes} : null;
-  return {id, name, thumbnail};
+  const maxPatchPixels = header.readUInt8(12) === 1 ? header.readUInt32LE(68) : 0;
+  return {id, name, thumbnail, maxPatchPixels};
+}
+
+// Copilot's blink patches, the largest that firmware without adaptive patch RAM is known to run
+// with Wi-Fi still working. That firmware keeps every blink buffer in internal RAM, so bigger
+// patches leave Wi-Fi without memory to send packets.
+export const legacyMaxPatchPixels = 7452;
+
+export function packNeedsFirmwareUpdate(pack: Pick<CharacterPackHeader, 'maxPatchPixels'>,
+                                        adaptivePatchRam: boolean): boolean {
+  return pack.maxPatchPixels > legacyMaxPatchPixels && !adaptivePatchRam;
 }
 
 async function readPackHeader(path: string): Promise<CharacterPackHeader & {bytes: number}> {

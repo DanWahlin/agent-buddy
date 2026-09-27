@@ -16,6 +16,7 @@ import {
   addCharacterPack,
   listCharacters,
   loadCharacterPreference,
+  packNeedsFirmwareUpdate,
   readCharacterPack,
   removeCharacterPack,
   saveCharacterPreference,
@@ -198,11 +199,20 @@ export class CompanionService extends EventEmitter {
     if (this.#installBusy) throw new Error('A character installation is already in progress.');
     this.#installBusy = true;
     let pack: Awaited<ReturnType<typeof readCharacterPack>>;
+    let name = character;
     try {
       await this.#characterBuilder.refresh();
       pack = await readCharacterPack(character);
+      name = pack.name;
+      if (this.#transport.connected && packNeedsFirmwareUpdate(pack, this.#transport.adaptivePatchRam))
+        throw new Error(`${pack.name} needs newer device firmware. Update the firmware (see "Update" in `
+          + `the README), then install ${pack.name} again.`);
     } catch (error) {
       this.#installBusy = false;
+      // The settings page learns about failures from lastInstall, so report ones that happen before the transfer too.
+      this.#lastInstall = {ok: false, character, name,
+                           error: error instanceof Error ? error.message : String(error)};
+      this.emit('change');
       throw error;
     }
     this.#installing = {character: pack.id, name: pack.name, percent: 0};

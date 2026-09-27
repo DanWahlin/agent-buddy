@@ -11,6 +11,7 @@ import {
   removeCharacterPack,
   defaultCharacter,
   loadCharacterPreference,
+  packNeedsFirmwareUpdate,
   parseCharacterPackHeader,
   readCharacterPack,
   resolveCharacterPack,
@@ -35,12 +36,31 @@ function pack(id = 'openclaw', name = 'OpenClaw', size = 512, thumbnail?: Buffer
 }
 
 test('reads the id and display name from a pack header', () => {
-  assert.deepEqual(parseCharacterPackHeader(pack()), {id: 'openclaw', name: 'OpenClaw', thumbnail: null});
+  assert.deepEqual(parseCharacterPackHeader(pack()),
+                   {id: 'openclaw', name: 'OpenClaw', thumbnail: null, maxPatchPixels: 0});
   assert.throws(() => parseCharacterPackHeader(Buffer.from('not a pack')), /version 1 character pack/);
   const truncated = pack();
   truncated.writeUInt32LE(1024, 8);
   assert.throws(() => parseCharacterPackHeader(truncated), /size does not match/);
   assert.throws(() => parseCharacterPackHeader(pack('Bad')), /id or name/);
+});
+
+test('large blink patches need firmware that keeps internal RAM free for Wi-Fi', () => {
+  const basePatch = (pixels: number) => {
+    const data = pack('claude', 'Claude');
+    data.writeUInt8(1, 12);
+    data.writeUInt32LE(pixels, 68);
+    return parseCharacterPackHeader(data);
+  };
+  const fullFrame = pack();
+  fullFrame.writeUInt8(2, 12);
+  fullFrame.writeUInt32LE(99_999, 68);
+  assert.equal(basePatch(14_100).maxPatchPixels, 14_100);
+  assert.equal(parseCharacterPackHeader(fullFrame).maxPatchPixels, 0);
+  assert.equal(packNeedsFirmwareUpdate(basePatch(14_100), false), true);
+  assert.equal(packNeedsFirmwareUpdate(basePatch(14_100), true), false);
+  assert.equal(packNeedsFirmwareUpdate(basePatch(7_452), false), false);
+  assert.equal(packNeedsFirmwareUpdate(parseCharacterPackHeader(fullFrame), false), false);
 });
 
 test('names select built-in packs and other values are absolute paths', () => {

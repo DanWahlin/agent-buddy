@@ -35,6 +35,7 @@ export class UsbTransport {
   #activeSignature = '';
   #enabled = true;
   #character: string | null = null;
+  #adaptivePatchRam = false;
   readonly #changed: () => void;
 
   constructor(changed: () => void = () => undefined) {
@@ -43,6 +44,11 @@ export class UsbTransport {
 
   get character(): string | null {
     return this.connected ? this.#character : null;
+  }
+
+  // Firmware that reports patch_ram=adaptive keeps enough internal RAM free for Wi-Fi with any pack.
+  get adaptivePatchRam(): boolean {
+    return this.connected && this.#adaptivePatchRam;
   }
 
   get connected(): boolean {
@@ -151,6 +157,7 @@ export class UsbTransport {
         throw new Error(`Unsupported device protocol: ${info}`);
       }
       this.#protocol = protocol;
+      this.#adaptivePatchRam = /\bpatch_ram=adaptive\b/.test(info);
       this.#iconSignature = '';
       this.#activeSignature = '';
       this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(info)?.[1] ?? null;

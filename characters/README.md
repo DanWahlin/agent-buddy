@@ -17,6 +17,8 @@ Each lowercase folder is a self-contained character pack source. `character.json
 
 `layout` is either `base-patch` (metadata has `frames`, `baseBounds`, `maxPatchPixels`, and `trackSteps`) or `full-frame` (metadata has `blocks` as `[offset, size]` entries). Validators are loaded from the character folder and should expose `validate(root)`.
 
+Keep `maxPatchPixels` small where you can: the firmware holds three buffers of that size. Packs above Copilot's 7,452 pixels, such as Claude, need firmware that reports `patch_ram=adaptive`, and the daemon won't install them on older firmware.
+
 Each pack also carries a small PNG thumbnail for the settings page. By default
 the packer renders it from the character's idle center pose; add
 `"thumbnail": "thumbnail.png"` to the manifest to supply your own (PNG, up to

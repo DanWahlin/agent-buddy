@@ -101,10 +101,10 @@ void NetworkManager::configureRoutes() {
       server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
       return;
     }
-    char response[224];
+    char response[256];
     snprintf(response, sizeof(response),
              "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
-             "\"character\":\"%s\"}",
+             "\"character\":\"%s\",\"patchRam\":\"adaptive\"}",
              deviceId_, hostname_, connected_ ? "true" : "false",
              static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
              upload_ ? upload_->installedId() : "none");

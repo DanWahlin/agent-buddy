@@ -866,6 +866,20 @@ instead of blocking animation; `dropped_logs` makes that backpressure visible.
 `INFO max_gap_us` retains the worst normal presentation interval since boot.
 Explicit framebuffer captures are excluded from that lifetime interval because
 they intentionally pause animation.
+
+`INFO patch_internal` counts the blink buffers (two open-eye caches and one
+patch, each `maxPatchPixels` × 2 bytes) that fit in internal RAM, and
+`startup_internal` is the internal heap free just before they were allocated
+(218,696 bytes on the current build). A buffer goes in internal RAM only while
+`kPatchInternalReserveBytes` (176 KiB) stays free, because the render task, Wi-Fi,
+and TCP/IP take about 130 KB afterward and Wi-Fi needs about 40 KB spare while
+running. Firmware before this rule kept all three buffers in internal RAM, so
+Claude's 14,100-pixel patches left 3.5 KB free and every Wi-Fi packet failed with
+`ENOMEM`. Measured on hardware, Copilot now keeps two buffers internal and Claude
+one. Both run at the same frame rate as before and keep at least 43 KB free.
+`INFO patch_ram=adaptive` and `"patchRam":"adaptive"` in `GET /status` advertise
+this, and the daemon refuses packs with patches over Copilot's 7,452 pixels on
+firmware that doesn't.
 Allocation, panel startup,
 and renderer-stall errors print `FATAL` rather than silently continuing.
 If a panel is unstable at 80 MHz, lower `kSpiFrequency` to 40000000 and rebuild.

@@ -43,6 +43,10 @@ constexpr unsigned kCharacterUploadRetries = 8;
 constexpr size_t kCharacterUploadChunkBytes = 4096;
 constexpr size_t kCharacterUploadRxBufferBytes = kCharacterUploadChunkBytes + 512;
 constexpr unsigned kRenderPauseTimeoutMs = 1000;
+// Internal RAM that a character's blink buffers must leave free. Measured on the device: the render
+// task, Wi-Fi, and TCP/IP take about 130 KB after the buffers, and Wi-Fi needs about 40 KB spare
+// while it runs, or it can't send packets.
+constexpr size_t kPatchInternalReserveBytes = 176 * 1024;
 constexpr uint16_t kNetworkDiscoveryPort = 4666;
 constexpr float kHeadDelay = 0.09f;
 constexpr float kMoveMin = 1.15f;

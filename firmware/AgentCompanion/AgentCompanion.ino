@@ -54,6 +54,9 @@ bool installStarted = false;
 bool installOwnsFlash = false;
 uint32_t restartAt = 0;
 uint32_t worstPresentationGap = 0;
+// How many blink buffers fit in internal RAM, and how much was free before they were allocated.
+unsigned patchBuffersInternal = 0;
+size_t startupFreeInternal = 0;
 bool captureInterrupted = false;
 SettingsMenu settings(kBrightness);
 NetworkManager network;
@@ -895,14 +898,16 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
     case DeviceCommand::Info: {
       const CharacterPack* pack = characterPack();
       logMessage("INFO protocol=%u uptime_ms=%llu reset_reason=%u mode=%s requested=%s assets=%u "
-                 "max_gap_us=%u dropped_logs=%u audio_ready=%u sound_volume=%u character=%s\n",
+                 "max_gap_us=%u dropped_logs=%u audio_ready=%u sound_volume=%u character=%s "
+                 "patch_ram=adaptive patch_internal=%u startup_internal=%u\n",
                     kDeviceProtocol, static_cast<unsigned long long>(esp_timer_get_time() / 1000),
                     static_cast<unsigned>(esp_reset_reason()),
                     frame ? modeName(frame->state.mode) : "none",
                     frame ? modeName(frame->state.requestedMode) : "none",
                     static_cast<unsigned>(pack ? pack->header.totalBytes : 0), worstPresentationGap,
                     droppedLogs.load(std::memory_order_relaxed), static_cast<unsigned>(audioReady()),
-                    static_cast<unsigned>(soundVolume()), installedCharacterId());
+                    static_cast<unsigned>(soundVolume()), installedCharacterId(),
+                    patchBuffersInternal, static_cast<unsigned>(startupFreeInternal));
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",
@@ -943,9 +948,18 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
 }
 }
 
-void* allocatePreferInternal(size_t bytes, const char* error) {
-  void* result = heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  return result ? result : allocate(bytes, MALLOC_CAP_SPIRAM, error);
+// Wi-Fi and TCP/IP allocate internal RAM after the character starts, and again whenever Wi-Fi is set
+// up later. Blink buffers use internal RAM only while kPatchInternalReserveBytes stays free for them,
+// so a pack with large blink patches can't starve the network. The rest go to PSRAM.
+void* allocatePatchBuffer(size_t bytes, const char* error) {
+  constexpr uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+  if (heap_caps_get_free_size(caps) >= bytes + kPatchInternalReserveBytes) {
+    if (void* result = heap_caps_malloc(bytes, caps)) {
+      ++patchBuffersInternal;
+      return result;
+    }
+  }
+  return allocate(bytes, MALLOC_CAP_SPIRAM, error);
 }
 
 void startCharacter() {
@@ -969,11 +983,12 @@ void startCharacter() {
   } else {
     const size_t patchPixels = std::max<size_t>(1, pack.maxPatchPixels);
     const size_t patchBytes = patchPixels * sizeof(uint16_t);
-    auto* firstOpenPatch = static_cast<uint16_t*>(allocatePreferInternal(
+    startupFreeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    auto* firstOpenPatch = static_cast<uint16_t*>(allocatePatchBuffer(
         patchBytes, "First open-eye cache allocation failed."));
-    auto* secondOpenPatch = static_cast<uint16_t*>(allocatePreferInternal(
+    auto* secondOpenPatch = static_cast<uint16_t*>(allocatePatchBuffer(
         patchBytes, "Second open-eye cache allocation failed."));
-    auto* patch = static_cast<uint16_t*>(allocatePreferInternal(
+    auto* patch = static_cast<uint16_t*>(allocatePatchBuffer(
         patchBytes, "Blink patch allocation failed."));
     patchRenderer = new (allocate(sizeof(SpriteRenderer), MALLOC_CAP_INTERNAL,
         "Renderer allocation failed.")) SpriteRenderer(
