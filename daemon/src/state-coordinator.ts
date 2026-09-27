@@ -13,6 +13,7 @@ export interface PersistedSession {
   id: string;
   activeUntil: number;
   attentionUntil: number;
+  attentionReason?: 'input' | 'error';
   lastMainEventAt: number;
   lastSeenAt: number;
   hadWork: boolean;
@@ -208,11 +209,14 @@ export class StateCoordinator {
       case 'errorOccurred':
         session.activeUntil = 0;
         session.attentionUntil = occurredAt + this.#attentionLeaseMs;
+        session.attentionReason = event === 'errorOccurred' ? 'error' : 'input';
         this.#cancelComplete();
         break;
       case 'agentStop':
         session.activeUntil = 0;
-        if (payload.clearAttention === true) session.attentionUntil = 0;
+        // A normal turn end after an error means the agent recovered. Agents report
+        // turn-ending failures with their own error event instead of agentStop.
+        if (payload.clearAttention === true || session.attentionReason === 'error') session.attentionUntil = 0;
         session.completionPending = session.hadWork && session.attentionUntil <= now;
         break;
       default:
@@ -257,6 +261,7 @@ export class StateCoordinator {
         id: session.id,
         activeUntil: session.activeUntil,
         attentionUntil: session.attentionUntil,
+        ...(session.attentionReason ? {attentionReason: session.attentionReason} : {}),
         lastMainEventAt: session.lastMainEventAt,
         lastSeenAt: session.lastSeenAt,
         hadWork: session.hadWork,

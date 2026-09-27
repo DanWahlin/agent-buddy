@@ -244,6 +244,33 @@ test('agent-specific stop events can clear attention when the native agent resol
   coordinator.close();
 });
 
+test('a normal turn end clears error attention but keeps pending permission prompts', () => {
+  let now = 1000;
+  const coordinator = new StateCoordinator(() => undefined, {now: () => now, sweepMs: 0});
+  coordinator.handle('preToolUse', {sessionId: 'hermes:s', timestamp: now++});
+  coordinator.handle('errorOccurred', {sessionId: 'hermes:s', timestamp: now++});
+  assert.equal(coordinator.state, 'attention');
+  coordinator.handle('agentStop', {sessionId: 'hermes:s', timestamp: now++});
+  assert.equal(coordinator.state, 'complete');
+  assert.equal(coordinator.snapshot().sessions[0]?.attentionUntil, 0);
+
+  coordinator.handle('notification', {sessionId: 'claude:s', notification_type: 'permission_prompt', timestamp: now++});
+  coordinator.handle('agentStop', {sessionId: 'claude:s', timestamp: now++});
+  assert.equal(coordinator.state, 'attention');
+  coordinator.close();
+});
+
+test('error attention survives a restart and still clears on the next turn end', () => {
+  const first = new StateCoordinator(() => undefined, {now: () => 1000, sweepMs: 0});
+  first.handle('errorOccurred', {sessionId: 'grok:s', timestamp: 1000});
+  const restored = new StateCoordinator(() => undefined, {now: () => 2000, sweepMs: 0, restored: first.snapshot()});
+  first.close();
+  assert.equal(restored.state, 'attention');
+  restored.handle('agentStop', {sessionId: 'grok:s', timestamp: 2000});
+  assert.notEqual(restored.state, 'attention');
+  restored.close();
+});
+
 test('Claude hooks invoked by Grok are ignored when Grok is enabled', async () => {
   const {home, cleanup} = await fixture();
   const oldPath = process.env.AGENT_COMPANION_AGENTS_CONFIG;
