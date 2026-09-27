@@ -2,6 +2,43 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.5.0]
+
+### Build and maintenance
+
+- Rebuild character packs automatically when characters change
+
+
+### Documentation
+
+- Restructure the README into a step-by-step guide
+
+- Document the 16 MiB flash ceiling and the character art pipeline
+
+- Make the README a focused step-by-step guide
+
+
+### Features and improvements
+
+- Add Claude as a built-in character pack
+
+
+### Other changes
+
+- Ignore recoverable Copilot errors for attention
+
+- Clear error attention when an agent finishes its turn normally
+
+- Keep touch alive and stop the settings menu stranding the display
+
+- Record firmware artifact paths POSIX-style
+
+- Let device.py send modes to protocol 6 firmware
+
+- Offer Claude in Character Lab
+
+- Keep internal RAM free for Wi-Fi with large blink patches
+
 ## [v0.4.0]
 
 ### Documentation
