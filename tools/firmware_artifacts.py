@@ -57,7 +57,7 @@ def fingerprint(root):
     paths = sorted(path for path in (root / "firmware/AgentCompanion").rglob("*")
                    if path.is_file() and path.suffix in (".ino", ".h", ".cpp", ".S", ".csv"))
     paths.append(pack)
-    return dict(app=app, assets=assets, files={str(path.relative_to(root)): digest(path) for path in paths})
+    return dict(app=app, assets=assets, files={path.relative_to(root).as_posix(): digest(path) for path in paths})
 
 
 def write_json(path, value):
@@ -75,14 +75,14 @@ def record(root):
         raise ValueError("Firmware inputs changed during compilation. Build again before uploading.")
     if (root / BINARIES[0]).stat().st_size > inputs["app"]["size"]:
         raise ValueError("Compiled application exceeds its partition.")
-    write_json(root / BUNDLE, dict(inputs=inputs, binaries={str(path): digest(root / path) for path in BINARIES}))
+    write_json(root / BUNDLE, dict(inputs=inputs, binaries={path.as_posix(): digest(root / path) for path in BINARIES}))
 
 
 def check(root):
     bundle = json.loads((root / BUNDLE).read_text())
     if bundle["inputs"] != fingerprint(root):
         raise ValueError("Firmware or the default character changed since compilation. Run tools/arduino.sh build first.")
-    if bundle["binaries"] != {str(path): digest(root / path) for path in BINARIES}:
+    if bundle["binaries"] != {path.as_posix(): digest(root / path) for path in BINARIES}:
         raise ValueError("Compiled firmware artifacts changed. Build again before uploading.")
 
 
