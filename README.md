@@ -54,7 +54,7 @@ the device works over USB or your local Wi-Fi.
 - **Six supported agents:** GitHub Copilot CLI, Claude Code, Codex CLI, Grok Build,
   Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
-  ships with Copilot, and you can install OpenClaw or your own pack over USB or Wi-Fi.
+  ships with Copilot, and you can install OpenClaw, Claude or your own pack over USB or Wi-Fi.
 - **Settings page:** a local web page for agents, badges, characters, Wi-Fi, and
   the connection mode.
 - **Natural motion:** eight looking directions, blinks, touch reactions, and a
@@ -473,6 +473,7 @@ The device holds one character at a time. Switch from the settings page's
 ```bash
 npm run character              # List the characters you can install
 npm run character openclaw     # Install OpenClaw
+npm run character claude       # Install Claude
 npm run character copilot      # Switch back to Copilot
 ```
 
@@ -638,4 +639,4 @@ local and are ignored by git.
 ---
 
 This is an independent project, not an official GitHub or Waveshare product.
-GitHub Copilot artwork and product names belong to their respective owners.
+GitHub Copilot and Claude artwork and product names belong to their respective owners.

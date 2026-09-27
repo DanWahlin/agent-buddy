@@ -3,6 +3,8 @@
   const names = ['Idle', 'Surprise', 'Working', 'Complete', 'Needs attention', 'Sleeping'];
   const characterStorageKey = 'agent-companion.character-lab.character';
   const characterCookie = 'agent_companion_character';
+  const characterLabels = {copilot: 'Copilot', openclaw: 'OpenClaw', claude: 'Claude'};
+  const knownCharacter = value => Object.hasOwn(characterLabels, value);
   const session = crypto.randomUUID();
   const canvas = document.getElementById('screen');
   const context = canvas.getContext('2d', {alpha: false});
@@ -21,13 +23,13 @@
   function savedCharacter() {
     try {
       const value = localStorage.getItem(characterStorageKey);
-      if (value === 'copilot' || value === 'openclaw') return value;
+      if (knownCharacter(value)) return value;
     } catch {
       // Fall through to the cookie when browser storage is unavailable.
     }
     const cookie = document.cookie.split('; ').find(value =>
       value.startsWith(`${characterCookie}=`))?.split('=')[1];
-    return cookie === 'copilot' || cookie === 'openclaw' ? cookie : null;
+    return knownCharacter(cookie) ? cookie : null;
   }
   function saveCharacter(value) {
     try {
@@ -79,9 +81,9 @@
       dirty = true;
       due = performance.now();
       document.getElementById('character').setAttribute(
-        'aria-label', `Surprise ${character === 'openclaw' ? 'OpenClaw' : 'Copilot'}`);
+        'aria-label', `Surprise ${characterLabels[character]}`);
       document.getElementById('status').textContent =
-        `${character === 'openclaw' ? 'OpenClaw' : 'Copilot'} selected. Motion state preserved.`;
+        `${characterLabels[character]} selected. Motion state preserved.`;
     });
   });
   document.addEventListener('keydown', event => {
@@ -140,6 +142,8 @@
       document.getElementById('connection').textContent = playing ? 'Live · 30 Hz target' : 'Paused';
       document.getElementById('assets').textContent = character === 'openclaw'
         ? 'All 13 OpenClaw tracks are pre-rendered 3D sprites, including both attention tilts.'
+        : character === 'claude'
+        ? 'All 13 Claude tracks are rendered offline from a box model of the pixel art.'
         : Number(value('availableDirections')) >= 13
         ? 'All 13 native Copilot tracks are available, including both attention tilts. Original artwork is retained.'
         : 'Expression artwork is incomplete. Re-export all 13 tracks before requesting expression modes.';
