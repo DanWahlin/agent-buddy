@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {agentRunsHeadless, readProcess, type ProcessInfo} from '../src/agents/headless.js';
+import {agentRunsHeadless, readProcess, relaunchedArgs, type ProcessInfo} from '../src/agents/headless.js';
 import type {AgentId} from '../src/agents/types.js';
 
 function tree(processes: Record<number, Omit<ProcessInfo, 'tty'> & {tty?: boolean}>) {
@@ -41,6 +41,20 @@ test('one-shot agent runs are headless, interactive sessions are not', () => {
   assert.equal(runs('hermes', ['hermes', 'chat', '-q', 'hi'], true), false);
   assert.equal(runs('hermes', ['hermes', 'chat', '-q', 'hi'], false), true);
   assert.equal(runs('hermes', ['hermes', 'chat']), false);
+});
+
+test('Hermes relaunches through python -c, with its real arguments in the code string', () => {
+  // As ps reports it on macOS: one line split on whitespace.
+  const code = `import sys, runpy; sys.path.insert(0, '/h/hermes-agent'); sys.argv = ['/h/venv/bin/hermes', `
+    + `'-z', 'Say it\\'s done.']; runpy.run_path('/h/venv/bin/hermes', run_name='__main__')`;
+  const split = ['/h/python3', '-I', '-c', ...code.split(/\s+/)];
+  assert.deepEqual(relaunchedArgs(split), ['/h/venv/bin/hermes', '-z', "Say it's done."]);
+  assert.equal(runs('hermes', split), true);
+  // As /proc reports it on Linux: the code string is one argument.
+  const chat = `import sys, runpy; sys.argv = ["/h/venv/bin/hermes", "chat", "-q", "hi"]; runpy.run_path("/h")`;
+  assert.equal(runs('hermes', ['/h/python3', '-I', '-c', chat], true), false);
+  assert.equal(runs('hermes', ['/h/python3', '-I', '-c', chat], false), true);
+  assert.deepEqual(relaunchedArgs(['copilot', '-p', 'hi']), ['copilot', '-p', 'hi']);
 });
 
 test('the agent is found through a wrapping shell, and unknown cases stay interactive', () => {

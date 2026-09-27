@@ -73,6 +73,15 @@ function isProgram(arg: string, programs: string[]): boolean {
   return programs.some(program => program.includes('/') ? arg.includes(`/${program}/`) : name === program);
 }
 
+// Hermes relaunches itself as python3 -c "…; sys.argv = ['…/hermes', '-z', …]; runpy.run_path(…)",
+// so its real arguments are inside the code string.
+export function relaunchedArgs(args: string[]): string[] {
+  const match = /\bsys\.argv\s*=\s*\[(.*?)\];\s*runpy\./s.exec(args.join(' '));
+  if (!match) return args;
+  return [...match[1]!.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)]
+    .map(item => (item[1] ?? item[2]!).replace(/\\(.)/g, '$1'));
+}
+
 // Hooks may run under a shell, so look a few processes up for the agent itself.
 export function agentRunsHeadless(agent: AgentId, pid = process.ppid,
                                   read: (pid: number) => ProcessInfo | undefined = readProcess): boolean {
@@ -81,8 +90,9 @@ export function agentRunsHeadless(agent: AgentId, pid = process.ppid,
   for (let depth = 0; depth < 4 && pid > 1; depth++) {
     const info = read(pid);
     if (!info) return false;
-    const index = info.args.slice(0, 2).findIndex(arg => isProgram(arg, rule.programs));
-    if (index >= 0) return rule.headless(info.args.slice(index + 1), info);
+    const args = relaunchedArgs(info.args);
+    const index = args.slice(0, 2).findIndex(arg => isProgram(arg, rule.programs));
+    if (index >= 0) return rule.headless(args.slice(index + 1), info);
     pid = info.ppid;
   }
   return false;
