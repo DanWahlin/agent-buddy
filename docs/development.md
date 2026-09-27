@@ -35,6 +35,38 @@ upload writes the application, partition table, and default Copilot pack
 together. Firmware verifies the pack's SHA-256 before animation starts. There is
 no OTA slot or flash filesystem.
 
+### 16 MiB is a hard ceiling, even on a 32 MB board
+
+Some boards carry 32 MB of flash rather than 16 MB. **It does not help.** The
+firmware can only *read* the low 16 MiB: the runtime cache addresses flash with
+24 bits, so anything at or above `0x1000000` wraps back to offset 0. The
+character partition already ends just below that line, so it cannot grow.
+
+This was measured on hardware. A payload placed at `0xFF0000`, crossing the line
+64 KB in, flashed and verified cleanly and even mapped successfully, but the
+mapped bytes past the boundary were wrong -- the read at physical `0x1000000`
+returned the bootloader's `0xe9` image magic instead of the payload.
+
+**esptool cannot catch this.** Its stub does its own 4-byte addressing, so a
+write to the upper half succeeds and `Hash of data verified` prints happily.
+Only the running firmware sees the wrap. For a character pack that shows up as a
+SHA-256 failure at boot, not at upload time; for any other new partition, verify
+it by reading it back *on the device*.
+
+The cause is that Arduino's ESP32 core ships precompiled ESP-IDF libraries built
+with `CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y`. Its sdkconfig has
+`SOC_SPI_MEM_SUPPORT_CACHE_32BIT_ADDR_MAP=y`, so the hardware is capable, but
+nothing enables it; `boards.txt` offering `FlashSize=32M` and esptool's
+`--flash-size 32MB` only change the bootloader header. The MMU is not the
+binding constraint -- `SOC_MMU_ENTRY_NUM` is 512 entries of 64 KB, and two
+~9.5 MB packs plus PSRAM and the application measured about 448 of them and
+mapped without complaint. The data was simply wrong.
+
+That is why `tools/firmware_artifacts.py`, `tools/flash_release.py` and
+`characters/copilot/tools/embed_sprites.py` all bound the layout at 16 MiB:
+an oversized partition is rejected on the host rather than discovered on the
+device.
+
 The scripts use the existing Arduino IDE CLI, its configuration, and Waveshare's
 bundled GFX library. Overrides: `ARDUINO_CLI`, `ARDUINO_CONFIG`, `WAVESHARE_DIR`.
 Do not substitute a generic display library: the vendor version includes the

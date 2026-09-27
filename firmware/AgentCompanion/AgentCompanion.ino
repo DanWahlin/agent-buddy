@@ -504,7 +504,29 @@ void clearCharacterMargins() {
                    kDisplaySize - kCharacterFrameX - kCharacterFrameWidth, kDisplaySize, 0);
 }
 
+// An open menu suppresses the frame transfer, so the panel holds whatever the
+// menu last drew. It closes after kSettingsIdleTimeoutMs without input, so a menu
+// left open, or one that cannot be closed because touch stopped responding, can
+// never strand the display.
+uint32_t settingsActivityMs = 0;
+
+// Every close path goes through here so the log always says why the menu went away.
+void closeSettings(const char* reason) {
+  settings.close();
+  clearCharacterMargins();
+  logMessage("SETTINGS closed=%s\n", reason);
+}
+
+void closeIdleSettings() {
+  if (!settings.isOpen()) return;
+  // The Wi-Fi setup page shows the pairing code the user is typing on another device.
+  if (settings.networkPage() && network.setupActive()) settingsActivityMs = millis();
+  if (millis() - settingsActivityMs > kSettingsIdleTimeoutMs) closeSettings("timeout");
+}
+
 void handleTouchGesture(const TouchGesture& gesture, const Frame& frame) {
+  // Any gesture counts as activity, including ones the menu ignores.
+  settingsActivityMs = millis();
   if (gesture.kind == TouchGestureKind::SwipeUp && !settings.isOpen()) {
     settings.open();
     queueAudioCue(AudioCue::Settings);
@@ -513,10 +535,8 @@ void handleTouchGesture(const TouchGesture& gesture, const Frame& frame) {
     return;
   }
   if (gesture.kind == TouchGestureKind::SwipeDown && settings.isOpen()) {
-    settings.close();
     queueAudioCue(AudioCue::Settings);
-    clearCharacterMargins();
-    logMessage("SETTINGS closed=swipe\n");
+    closeSettings("swipe");
     return;
   }
   if (gesture.kind != TouchGestureKind::Tap) return;
@@ -564,20 +584,18 @@ void handleTouchGesture(const TouchGesture& gesture, const Frame& frame) {
       drawSettingsMenu(frame.state.requestedMode);
       break;
     case SettingsAction::Idle:
-      settings.close(); clearCharacterMargins(); queueMode(DeviceCommand::Idle); break;
+      closeSettings("mode"); queueMode(DeviceCommand::Idle); break;
     case SettingsAction::Surprise:
-      settings.close(); clearCharacterMargins(); queueMode(DeviceCommand::Surprise); break;
+      closeSettings("mode"); queueMode(DeviceCommand::Surprise); break;
     case SettingsAction::Working:
-      settings.close(); clearCharacterMargins(); queueMode(DeviceCommand::Working); break;
+      closeSettings("mode"); queueMode(DeviceCommand::Working); break;
     case SettingsAction::Complete:
-      settings.close(); clearCharacterMargins(); queueMode(DeviceCommand::Complete); break;
+      closeSettings("mode"); queueMode(DeviceCommand::Complete); break;
     case SettingsAction::Attention:
-      settings.close(); clearCharacterMargins(); queueMode(DeviceCommand::Attention); break;
+      closeSettings("mode"); queueMode(DeviceCommand::Attention); break;
     case SettingsAction::Close:
-      settings.close();
       queueAudioCue(AudioCue::Settings);
-      clearCharacterMargins();
-      logMessage("SETTINGS closed=button\n");
+      closeSettings("button");
       break;
     case SettingsAction::None: break;
   }
@@ -1096,6 +1114,7 @@ void loop() {
   TouchGesture gesture;
   if (pollTouchGesture(gesture)) handleTouchGesture(gesture, *frame);
   if (touchInputError()) fatal(touchInputError());
+  closeIdleSettings();
   processCommand(commandParser.expire(esp_timer_get_time() / 1000), commandParser, frame);
   for (unsigned read = 0; read < 8 && Serial.available(); ++read) {
     processCommand(commandParser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
