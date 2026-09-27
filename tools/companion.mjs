@@ -198,6 +198,8 @@ const commands = {
     }
     const via = status.transport === 'wifi' ? `Wi-Fi (${status.port})` : `USB (${status.port})`;
     console.log(`Connected over ${via}`);
+    if (status.network?.ssid)
+      console.log(`Wi-Fi network: ${status.network.ssid}${status.network.connected ? '' : ' (not connected)'}`);
     if (status.mode && status.mode !== 'auto') console.log(`Connection mode: ${status.mode}`);
     console.log(`Character: ${status.character ?? 'unknown'}`);
     const drivers = status.drivingAgents?.length

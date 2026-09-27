@@ -106,6 +106,7 @@ export class CompanionService extends EventEmitter {
       connected: this.#transport.connected,
       port: this.#transport.address,
       character: this.#transport.character,
+      network: this.#transport.network,
       mode: this.#transport.mode,
       sessions: this.#coordinator.sessionCount,
       agents: this.agentStatuses(),

@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <cstring>
+#include <mbedtls/base64.h>
 
 namespace {
 constexpr uint32_t kSetupDurationMs = 10 * 60 * 1000;
@@ -64,6 +65,14 @@ void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload*
   if (configured_) connect();
 }
 
+void NetworkManager::encodedSsid(char* output, size_t capacity) const {
+  size_t written = 0;
+  if (mbedtls_base64_encode(reinterpret_cast<unsigned char*>(output), capacity, &written,
+                            reinterpret_cast<const unsigned char*>(ssid_), std::strlen(ssid_)) != 0)
+    written = 0;
+  output[written] = '\0';
+}
+
 void NetworkManager::ensureIdentity() {
   const uint64_t mac = ESP.getEfuseMac();
   snprintf(deviceId_, sizeof(deviceId_), "%08x%08x",
@@ -101,13 +110,15 @@ void NetworkManager::configureRoutes() {
       server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
       return;
     }
-    char response[256];
+    char ssid[48];
+    encodedSsid(ssid, sizeof(ssid));
+    char response[320];
     snprintf(response, sizeof(response),
              "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
-             "\"character\":\"%s\",\"patchRam\":\"adaptive\"}",
+             "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\"}",
              deviceId_, hostname_, connected_ ? "true" : "false",
              static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
-             upload_ ? upload_->installedId() : "none");
+             upload_ ? upload_->installedId() : "none", ssid);
     server.send(200, "application/json", response);
   });
   server.onNotFound([] {

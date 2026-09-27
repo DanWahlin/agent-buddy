@@ -1,4 +1,4 @@
-import type {CharacterState, InstallProgress} from './protocol.js';
+import type {CharacterState, DeviceNetwork, InstallProgress} from './protocol.js';
 import {UsbTransport} from './usb-transport.js';
 import {WifiTransport} from './wifi-transport.js';
 import type {WifiConfig} from './wifi-config.js';
@@ -47,6 +47,11 @@ export class DeviceTransport {
 
   get adaptivePatchRam(): boolean {
     return this.#usb.connected ? this.#usb.adaptivePatchRam : this.#wifi.adaptivePatchRam;
+  }
+
+  // Wi-Fi discovery keeps checking in the background, so it's the live answer when it can reach the device.
+  get network(): DeviceNetwork | null {
+    return this.#wifi.network ?? this.#usb.network;
   }
 
   get installing(): boolean {

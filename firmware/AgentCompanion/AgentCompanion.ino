@@ -897,9 +897,11 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       break;
     case DeviceCommand::Info: {
       const CharacterPack* pack = characterPack();
+      char ssid[48];
+      network.encodedSsid(ssid, sizeof(ssid));
       logMessage("INFO protocol=%u uptime_ms=%llu reset_reason=%u mode=%s requested=%s assets=%u "
                  "max_gap_us=%u dropped_logs=%u audio_ready=%u sound_volume=%u character=%s "
-                 "patch_ram=adaptive patch_internal=%u startup_internal=%u\n",
+                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s\n",
                     kDeviceProtocol, static_cast<unsigned long long>(esp_timer_get_time() / 1000),
                     static_cast<unsigned>(esp_reset_reason()),
                     frame ? modeName(frame->state.mode) : "none",
@@ -907,7 +909,8 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
                     static_cast<unsigned>(pack ? pack->header.totalBytes : 0), worstPresentationGap,
                     droppedLogs.load(std::memory_order_relaxed), static_cast<unsigned>(audioReady()),
                     static_cast<unsigned>(soundVolume()), installedCharacterId(),
-                    patchBuffersInternal, static_cast<unsigned>(startupFreeInternal));
+                    patchBuffersInternal, static_cast<unsigned>(startupFreeInternal),
+                    static_cast<unsigned>(network.connected()), ssid);
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",

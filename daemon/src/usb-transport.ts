@@ -1,5 +1,5 @@
 import {SerialPort} from 'serialport';
-import type {CharacterState, InstallProgress} from './protocol.js';
+import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
 import {
   activePacket,
   iconPacket,
@@ -36,6 +36,7 @@ export class UsbTransport {
   #enabled = true;
   #character: string | null = null;
   #adaptivePatchRam = false;
+  #network: DeviceNetwork | null = null;
   readonly #changed: () => void;
 
   constructor(changed: () => void = () => undefined) {
@@ -49,6 +50,10 @@ export class UsbTransport {
   // Firmware that reports patch_ram=adaptive keeps enough internal RAM free for Wi-Fi with any pack.
   get adaptivePatchRam(): boolean {
     return this.connected && this.#adaptivePatchRam;
+  }
+
+  get network(): DeviceNetwork | null {
+    return this.connected ? this.#network : null;
   }
 
   get connected(): boolean {
@@ -158,6 +163,8 @@ export class UsbTransport {
       }
       this.#protocol = protocol;
       this.#adaptivePatchRam = /\bpatch_ram=adaptive\b/.test(info);
+      this.#network = deviceNetwork(/\bssid_b64=([A-Za-z0-9+/=]*)/.exec(info)?.[1],
+                                    /\bwifi_connected=1\b/.test(info));
       this.#iconSignature = '';
       this.#activeSignature = '';
       this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(info)?.[1] ?? null;
@@ -206,7 +213,11 @@ export class UsbTransport {
           || candidate.startsWith('WIFI_ERROR '));
       if (line.startsWith('WIFI_ERROR '))
         throw new Error(`Device rejected Wi-Fi setup: ${line.slice('WIFI_ERROR '.length)}`);
-      return parseWifiProvisioningResponse(line);
+      const config = parseWifiProvisioningResponse(line);
+      // The device joins the new network in the background; Wi-Fi discovery reports when it has.
+      this.#network = {ssid, connected: false};
+      this.#changed();
+      return config;
     });
     this.#commands = operation.then(() => undefined, () => undefined);
     return operation;

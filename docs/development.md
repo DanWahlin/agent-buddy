@@ -880,6 +880,12 @@ one. Both run at the same frame rate as before and keep at least 43 KB free.
 `INFO patch_ram=adaptive` and `"patchRam":"adaptive"` in `GET /status` advertise
 this, and the daemon refuses packs with patches over Copilot's 7,452 pixels on
 firmware that doesn't.
+
+`INFO wifi_connected` and `ssid_b64`, and `"ssidBase64"` in `GET /status`, report
+the Wi-Fi network the device is set up for. The name is base64 because it can
+contain spaces, quotes, or any other byte. The settings page's Status card and
+`npm run status` show it under the connection. The daemon only relays it and
+never stores it. Older firmware omits these fields, so no network line appears.
 Allocation, panel startup,
 and renderer-stall errors print `FATAL` rather than silently continuing.
 If a panel is unstable at 80 MHz, lower `kSpiFrequency` to 40000000 and rebuild.

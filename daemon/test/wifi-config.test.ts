@@ -3,6 +3,7 @@ import {mkdtemp, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {deviceNetwork} from '../src/protocol.js';
 import {
   broadcastAddresses,
   loadWifiConfig,
@@ -115,4 +116,13 @@ test('parses USB provisioning identity without accepting other serial output', (
     token: '0123456789abcdef0123456789abcdef',
   });
   assert.throws(() => parseWifiProvisioningResponse('WIFI configured'), /invalid Wi-Fi pairing data/);
+});
+
+test('decodes the Wi-Fi network name the device reports', () => {
+  const encode = (value: string) => Buffer.from(value, 'utf8').toString('base64');
+  assert.deepEqual(deviceNetwork(encode('Home Wi-Fi "5G" café'), true), {ssid: 'Home Wi-Fi "5G" café', connected: true});
+  assert.deepEqual(deviceNetwork(encode('Office'), false), {ssid: 'Office', connected: false});
+  // Older firmware doesn't report a name, and an unconfigured device reports an empty one.
+  assert.equal(deviceNetwork(undefined, false), null);
+  assert.equal(deviceNetwork('', false), null);
 });

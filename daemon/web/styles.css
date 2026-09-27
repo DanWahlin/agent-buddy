@@ -86,6 +86,8 @@ main {
 .facts div { background: var(--panel-2); border-radius: 12px; padding: .8rem 1rem; }
 .facts dt { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
 .facts dd { margin: .3rem 0 0; font-size: 1.05rem; font-weight: 600; }
+.facts .fact-detail { display: block; margin-top: .2rem; color: var(--muted); font-size: .85rem; font-weight: 400;
+  overflow-wrap: anywhere; }
 
 .grid {
   list-style: none;

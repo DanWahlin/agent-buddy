@@ -27,6 +27,8 @@ class NetworkManager {
   bool connected() const { return connected_; }
   bool setupActive() const { return setupActive_; }
   const char* ssid() const { return ssid_; }
+  // Writes the network name as base64, since names may hold spaces, quotes, or any other byte.
+  void encodedSsid(char* output, size_t capacity) const;
   const char* address() const { return address_; }
   const char* setupName() const { return setupName_; }
   const char* pairingCode() const { return pairingCode_; }

@@ -1,5 +1,5 @@
 import {request as httpRequest} from 'node:http';
-import type {CharacterState, InstallProgress} from './protocol.js';
+import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
 import {
   activePacket,
   iconPacket,
@@ -27,6 +27,7 @@ export class WifiTransport {
   #commands = Promise.resolve();
   #character: string | null = null;
   #adaptivePatchRam = false;
+  #ssidBase64: string | undefined;
   #installing = false;
   readonly #changed: () => void;
 
@@ -48,6 +49,11 @@ export class WifiTransport {
 
   get adaptivePatchRam(): boolean {
     return this.#connected && this.#adaptivePatchRam;
+  }
+
+  // Reachable over Wi-Fi means the device is on this network right now.
+  get network(): DeviceNetwork | null {
+    return this.#connected ? deviceNetwork(this.#ssidBase64, true) : null;
   }
 
   async start(): Promise<void> {
@@ -127,11 +133,12 @@ export class WifiTransport {
       });
       if (!response.ok) return false;
       const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
-                                               patchRam?: string};
+                                               patchRam?: string; ssidBase64?: string};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
       this.#character = typeof status.character === 'string' ? status.character : null;
       this.#adaptivePatchRam = status.patchRam === 'adaptive';
+      this.#ssidBase64 = typeof status.ssidBase64 === 'string' ? status.ssidBase64 : undefined;
       const needsSync = !this.#connected || endpoint !== this.#endpoint || status.boot !== this.#boot;
       this.#endpoint = endpoint;
       this.#boot = status.boot!;

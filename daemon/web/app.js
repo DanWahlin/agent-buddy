@@ -212,8 +212,16 @@ function renderStatus() {
     : 'Plug in the device, or turn it on if it\'s already on Wi-Fi.';
   const where = status.transport === 'wifi' ? String(status.port).replace(/^https?:\/\//, '').replace(/:80$/, '')
     : String(status.port).replace(/^\/dev\//, '');
-  $('fact-connection').textContent = connected
+  const connection = $('fact-connection');
+  connection.textContent = connected
     ? `${status.transport === 'wifi' ? 'Wi-Fi' : 'USB'} · ${where}` : 'Not connected';
+  // Network names can hold any character, so they only ever go in as text.
+  if (connected && status.network?.ssid) {
+    const network = document.createElement('span');
+    network.className = 'fact-detail';
+    network.textContent = `Network: ${status.network.ssid}${status.network.connected ? '' : ' (not connected)'}`;
+    connection.append(network);
+  }
   $('fact-character').textContent = connected
     ? (status.character === 'none' ? 'None installed' : characterName(status.character)) : '—';
   const driving = status.drivingAgents?.length
