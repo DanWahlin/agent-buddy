@@ -44,7 +44,9 @@ function newestChange(directory) {
 
 // Installs and compiles the daemon only when a fresh clone or a source change needs it.
 async function prepareDaemon() {
-  if (!existsSync(join(daemon, 'node_modules'))) {
+  // npm records the installed tree in node_modules/.package-lock.json; an older one means an update changed dependencies.
+  const installed = join(daemon, 'node_modules', '.package-lock.json');
+  if (!existsSync(installed) || statSync(installed).mtimeMs < statSync(join(daemon, 'package-lock.json')).mtimeMs) {
     console.log('Installing companion dependencies...');
     await run(npm, ['ci', '--no-audit', '--no-fund'], {cwd: daemon, quiet: true});
   }

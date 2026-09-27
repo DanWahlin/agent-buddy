@@ -35,12 +35,14 @@ the device works over USB or your local Wi-Fi.
 - [Quick start](#quick-start)
 - [Step 1: Flash the firmware](#step-1-flash-the-firmware)
 - [Step 2: Install the companion daemon](#step-2-install-the-companion-daemon)
-- [Step 3: Finish setup in the settings page](#step-3-finish-setup-in-the-settings-page)
+- [Step 3: Finish setting up your agents](#step-3-finish-setting-up-your-agents)
+- [Step 4: Try it](#step-4-try-it)
 - [Using the device](#using-the-device)
-- [Agent integrations](#agent-integrations)
+- [Agents](#agents)
 - [Agent badges](#agent-badges)
-- [Wi-Fi](#wi-fi)
 - [Characters](#characters)
+- [Wi-Fi](#wi-fi)
+- [Update](#update)
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
 - [Develop and customize](#develop-and-customize)
@@ -54,7 +56,7 @@ the device works over USB or your local Wi-Fi.
 - **Six supported agents:** GitHub Copilot CLI, Claude Code, Codex CLI, Grok Build,
   Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
-  ships with Copilot, and you can install OpenClaw, Claude or your own pack over USB or Wi-Fi.
+  ships with Copilot, and you can install OpenClaw, Claude, or your own pack over USB or Wi-Fi.
 - **Settings page:** a local web page for agents, badges, characters, Wi-Fi, and
   the connection mode.
 - **Natural motion:** eight looking directions, blinks, touch reactions, and a
@@ -85,26 +87,38 @@ flowchart LR
 | Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262) |
 | Cable | A USB data cable (charge-only cables won't work) |
 | Computer | macOS or Linux. Windows works through [WSL 2](#windows-wsl-2). |
-| Python | [3.10 or newer](https://www.python.org/downloads/), for flashing |
+| Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
 | Node.js and Git | [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git, for the companion daemon |
 | Speaker (optional) | A small two-pin speaker, if your board or enclosure doesn't include one |
 
 ## Quick start
 
 1. [Flash the firmware](#step-1-flash-the-firmware) from the latest release.
-2. [Install the companion daemon](#step-2-install-the-companion-daemon) with `npm run setup`.
-3. [Finish setup in the settings page](#step-3-finish-setup-in-the-settings-page),
-   which opens automatically.
-4. Optional: [put the device on Wi-Fi](#wi-fi) so it can run away from your computer.
+2. With the device still plugged in, [install the companion daemon](#step-2-install-the-companion-daemon)
+   with `npm run setup`.
+3. [Finish setting up your agents](#step-3-finish-setting-up-your-agents) on the
+   settings page, which opens automatically.
+4. [Try it](#step-4-try-it): start an agent and watch the character react.
+5. Optional: [put the device on Wi-Fi](#wi-fi) so it can run away from your computer.
 
 ## Step 1: Flash the firmware
 
 You don't need Arduino tools or the source code for this step. If you'd rather
 build the firmware yourself, see [Build from source](docs/build-from-source.md).
 
-1. From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
+1. Check that you have Python 3.10 or newer:
+
+   ```bash
+   python3 --version      # Windows PowerShell: py -3 --version
+   ```
+
+   The `python3` that comes with macOS is 3.9. If that's what you see, install a
+   newer Python from [python.org](https://www.python.org/downloads/) or with
+   `brew install python`, then open a new terminal and check again.
+
+2. From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
    download the file ending in **`-firmware.zip`** and extract it.
-2. Open a terminal in the extracted folder (it contains `flash.py`) and install
+3. Open a terminal in the extracted folder (it contains `flash.py`) and install
    the flashing tool:
 
    **macOS / Linux**
@@ -121,7 +135,7 @@ build the firmware yourself, see [Build from source](docs/build-from-source.md).
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
-3. Connect the device with the USB data cable, find its port, and flash it:
+4. Connect the device with the USB data cable, find its port, and flash it:
 
    **macOS / Linux**
 
@@ -141,9 +155,8 @@ build the firmware yourself, see [Build from source](docs/build-from-source.md).
    `/dev/cu.usbmodem…`, and Linux ports look like `/dev/ttyACM0`. Type `FLASH`
    when prompted.
 
-The installer verifies every file's checksum, then writes the bootloader,
-partition table, application, and the default Copilot character. When it
-finishes, the device restarts and the character starts looking around.
+When it finishes, the device restarts and the Copilot character starts looking
+around. Leave the cable plugged in for the next step.
 
 > [!WARNING]
 > Flashing replaces the board's existing firmware and partition table. Back up
@@ -154,8 +167,8 @@ finishes, the device restarts and the character starts looking around.
 
 - **The device isn't listed:** make sure the cable carries data, and close any
   serial monitor that's using the port.
-- **"Python 3.10 or newer is required":** the `python3` that comes with macOS is
-  3.9. Install a newer Python, then recreate the environment, for example
+- **"Python 3.10 or newer is required":** the environment was created with an
+  older Python. Recreate it with a newer one, for example
   `python3.13 -m venv --clear .venv`, and install the requirements again.
 - **Linux can't create the environment:** install your distribution's
   `python3-venv` package.
@@ -168,7 +181,8 @@ finishes, the device restarts and the character starts looking around.
 
 ## Step 2: Install the companion daemon
 
-The daemon connects your agents to the device. Clone the repository and run setup:
+The daemon connects your agents to the device and runs in the background. With
+the device plugged in over USB, clone the repository and run setup:
 
 ```bash
 git clone https://github.com/DanWahlin/esp32-agent-companion.git
@@ -176,13 +190,18 @@ cd esp32-agent-companion
 npm run setup
 ```
 
-Setup does the following:
+Setup installs a hook for each agent it finds on your computer, then starts a
+background service (a macOS LaunchAgent or a Linux systemd user service) so the
+daemon starts whenever you sign in. When it's done, it opens the settings page.
 
-- Installs the daemon's dependencies and builds the character packs.
-- Detects the agents on your computer and installs a hook for each one.
-- Installs and starts a background service (a macOS LaunchAgent or a Linux
-  systemd user service), so the daemon starts when you sign in.
-- Prints any remaining one-time steps and opens the settings page.
+Check that the daemon found the device:
+
+```bash
+npm run status
+```
+
+You should see `Connected over USB`. If it says no device is connected, see
+[Troubleshooting](#troubleshooting).
 
 Restart any agent sessions that were already open so they load the new hooks.
 
@@ -236,7 +255,7 @@ The settings page link opens in your Windows browser.
 
 </details>
 
-## Step 3: Finish setup in the settings page
+## Step 3: Finish setting up your agents
 
 Setup opens the settings page for you. To open it again later, run:
 
@@ -244,78 +263,31 @@ Setup opens the settings page for you. To open it again later, run:
 npm run settings
 ```
 
-The page runs only on your computer (`127.0.0.1`) and answers only the private
-link that `npm run settings` opens, so other websites and devices can't reach it.
-The link survives restarts, so you can bookmark it.
+The page runs only on your computer and needs the private link that
+`npm run settings` opens, so other websites and devices can't reach it. The link
+survives restarts, so you can bookmark it.
 
-### Finish setting up your agents
-
-Some agents need a one-time step before their hooks run. When that's the case,
-a **Finish setting up your agents** panel lists exactly what to do. Each step
-disappears on its own once the daemon sees it's done, and the browser tab shows
-how many are left.
+Some agents need a one-time step before their hooks run, such as approving the
+hooks in Codex. When that's the case, a **Finish setting up your agents** panel
+lists exactly what to do. Each step disappears once the daemon sees it's done. If
+there's no panel, you're all set.
 
 <p align="center">
   <img src="images/settings-first-run.png" alt="Settings page with a Finish setting up your agents panel listing steps for Claude Code and Codex, above the Status card" width="720">
 </p>
 
-The **Status** card shows how the device is connected, the installed character,
-the current state and which agent is driving it, and how many agent sessions are
-active. The pill in the top-right corner shows the connection at a glance.
+## Step 4: Try it
 
-### Agents and badges
+Start a new session in one of your agents and ask it to do something that uses a
+tool, such as reading a file. The character should:
 
-The **Agents** card lists every supported agent with its detected version, hook
-status, and whether it's enabled. An agent that's driving the display is
-highlighted.
+1. Switch to **Working** while the agent runs.
+2. Switch to **Needs attention** if the agent asks for your permission.
+3. Celebrate with **Complete** when the turn finishes, then return to **Idle**.
 
-<p align="center">
-  <img src="images/settings-agents.png" alt="Agents card with the badge switch and six agents, each with Disable, Reinstall, and Remove hook buttons" width="720">
-</p>
-
-| Control | What it does |
-| --- | --- |
-| **Show agent badges on the device** | Turns the [agent badges](#agent-badges) on or off |
-| **Disable** / **Enable** | Stops or resumes that agent's control of the device, without touching its config |
-| **Install hook** / **Reinstall** | Writes (or rewrites) the hook into the agent's config |
-| **Remove hook** | Removes only this project's hook from the agent's config |
-
-### Choose a character
-
-The **Characters** card shows each character you can install, with the current
-one marked **Installed**. The list includes every character in `characters/`.
-When a `git pull` adds or updates one, the daemon rebuilds its pack
-before showing the list or installing, so there's nothing extra to run.
-
-<p align="center">
-  <img src="images/settings-characters.png" alt="Characters card showing the installed Copilot character and the OpenClaw character with an Install button" width="720">
-</p>
-
-- Select **Install** to switch characters. A progress bar tracks the transfer,
-  which takes about a minute, and the device restarts when it's done.
-- Select **Add character…** to upload your own `.acpk` pack. Packs you've added
-  have a **Remove** button.
-
-### Wi-Fi and connection
-
-The **Wi-Fi** card puts the device on your network and chooses how the daemon
-reaches it.
-
-<p align="center">
-  <img src="images/settings-wifi.png" alt="Wi-Fi card with network name and password fields, a Connect device button, and the Auto, Wi-Fi only, and USB only connection modes" width="720">
-</p>
-
-1. Plug the device in over USB and set **Connection** to **Auto**.
-2. Enter your 2.4 GHz network name and password, then select **Connect device**.
-   The daemon sends the credentials over USB and pairs with the device automatically.
-3. Optionally, choose **Wi-Fi only** to keep using Wi-Fi while the cable only
-   provides power.
-
-| Mode | Behavior |
-| --- | --- |
-| **Auto** (default) | Uses USB when the cable is connected, otherwise Wi-Fi |
-| **Wi-Fi only** | Always uses Wi-Fi; a connected USB cable only provides power |
-| **USB only** | Only uses USB |
+The settings page's **Status** card shows the current state and which agent is
+driving it. If the character doesn't react, see
+[Troubleshooting](#troubleshooting).
 
 ## Using the device
 
@@ -331,7 +303,8 @@ The character works as soon as it's flashed, even without the daemon.
 | Sleep | Drowsy eyelids and drifting Zs | Two uninterrupted idle minutes; wakes after one minute |
 
 **Swipe up** to open the on-device settings menu. Swipe down or select **Close**
-to return to the character.
+to return to the character. The menu also closes on its own after 30 seconds
+without a touch.
 
 | Control | What it does |
 | --- | --- |
@@ -341,10 +314,10 @@ to return to the character.
 | Character | Shows the installed character |
 | Character state | Previews Idle, Working, Complete, Needs attention, or Surprise |
 
-Sound uses the board's ES8311 codec and two-pin speaker connector. Connect a
-compatible speaker if your board or enclosure doesn't include one.
+Sound plays through the board's two-pin speaker connector. Connect a small speaker
+if your board or enclosure doesn't include one.
 
-## Agent integrations
+## Agents
 
 Setup installs a hook for every agent it detects. Hooks only notify the daemon;
 if the daemon or device isn't running, your agents keep working normally.
@@ -358,12 +331,23 @@ if the daemon or device isn't running, your agents keep working normally.
 | Hermes Agent | `~/.hermes/config.yaml` | Approve each hook the first time Hermes runs it |
 | OpenClaw | A plugin registered with the `openclaw` CLI | Restart the OpenClaw Gateway |
 
-Setup edits only the hook entries it owns, keeps a `.bak` copy of each file it
-changes, and writes through symlinked config files, such as ones managed by a
-dotfiles tool.
+Setup edits only the hook entries it owns and keeps a `.bak` copy of each file it
+changes.
 
-<details>
-<summary><strong>Manage hooks from the command line</strong></summary>
+The settings page's **Agents** card lists every supported agent with its detected
+version and hook status. An agent that's driving the display is highlighted.
+
+<p align="center">
+  <img src="images/settings-agents.png" alt="Agents card with the badge switch and six agents, each with Disable, Reinstall, and Remove hook buttons" width="720">
+</p>
+
+| Control | What it does |
+| --- | --- |
+| **Disable** / **Enable** | Stops or resumes that agent's control of the device, without touching its config |
+| **Install hook** / **Reinstall** | Writes (or rewrites) the hook into the agent's config |
+| **Remove hook** | Removes only this project's hook from the agent's config |
+
+The same actions are available from the command line:
 
 ```bash
 npm run agents                     # List agents, versions, and hook status
@@ -376,22 +360,17 @@ npm run agents uninstall codex     # Remove one hook
 Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 `hermes hooks revoke "<command>"` with the command shown in its config.
 
-</details>
-
 <details>
 <summary><strong>How agent events become device states</strong></summary>
 
 - Active agent or subagent work maps to **Working**.
-- Permission and input prompts map to **Needs attention**, which takes priority
-  over every other session.
+- Permission and input prompts, and errors that end a turn, map to
+  **Needs attention**, which takes priority over every other session.
 - A finished turn that used tools maps to **Complete**.
 - Inactive sessions return to **Idle**.
 
-Sessions from different agents and terminals are tracked separately and combined,
-so one agent finishing doesn't hide another that's still working. Abandoned
-sessions expire automatically, and active sessions are restored if the daemon
-restarts. Grok Build can also run Claude Code's hooks, so the daemon ignores
-those duplicate events while the Grok hook is installed.
+Sessions from different agents and terminals are tracked separately, so one agent
+finishing doesn't hide another that's still working.
 
 </details>
 
@@ -406,71 +385,40 @@ Surprise don't show badges.
   <img src="images/device-badges.png" alt="Two device captures: Copilot working with a Copilot badge on the orbit, and Needs attention with a Claude Code badge beside the question mark" width="640">
 </p>
 
-Badges are on by default. Turn them off with the switch on the settings page or
-with `npm run badges off` (`npm run badges on` brings them back).
+Badges are on by default. Turn them off with the **Show agent badges on the
+device** switch on the settings page's Agents card, or with `npm run badges off`
+(`npm run badges on` brings them back).
 
 <details>
 <summary><strong>Use your own badge icons</strong></summary>
 
-The built-in icons are 24 x 24 pixel art made for this project. Some, like
-OpenClaw's and Grok's, are simplified takes on the agent's own logo.
-
-To replace one, put a PNG named after the agent (for example `copilot.png`) in
-the `icons` folder of the daemon's data directory:
+To replace a built-in icon, put a PNG named after the agent (for example
+`copilot.png`) in the `icons` folder of the daemon's data directory:
 
 - macOS: `~/Library/Application Support/ESP32 Agent Companion/icons/`
 - Linux: `~/.local/state/esp32-agent-companion/icons/`
 
 The daemon converts 8-bit, non-interlaced PNGs to a 24 x 24 mask using alpha or
 brightness. An optional `copilot.json` next to it can set the accent color used
-for the icon and ring: `{ "color": "#RRGGBB" }`. Badges always use a dark fill.
-
-</details>
-
-## Wi-Fi
-
-Wi-Fi lets the companion run from a wall adapter or any USB power source. Your
-computer and the device need to be on the same local network, and the device
-needs a 2.4 GHz network.
-
-**From your computer (recommended).** With the device plugged in over USB, use
-the settings page's [Wi-Fi card](#wi-fi-and-connection), or run:
-
-```bash
-npm run wifi "Your 2.4 GHz network"
-```
-
-The command asks for the password without showing it or saving it in your shell
-history. The daemon sends the credentials over USB and stores only the device's
-pairing token; it never saves your network name or password on the computer.
-
-**From the device.** Swipe up, tap the Wi-Fi status, then select **Setup Wi-Fi**.
-Join the temporary `Agent-Companion-XXXX` network with the eight-digit password
-on screen, open <http://192.168.4.1>, and enter your network. Then reconnect your
-computer to that network and pair it with the same code:
-
-```bash
-npm run pair 12345678
-```
-
-The setup network and code expire after ten minutes.
-
-<details>
-<summary><strong>Network requirements and security</strong></summary>
-
-- Guest networks, client isolation, VPN policies, and firewalls that block local
-  HTTP or UDP discovery can prevent Wi-Fi operation. USB always works.
-- Wi-Fi credentials are stored only on the device.
-- Requests from the daemon to the device are authenticated with the pairing
-  token and stay on your local network.
-- Bluetooth isn't supported.
+for the icon and ring: `{ "color": "#RRGGBB" }`.
 
 </details>
 
 ## Characters
 
-The device holds one character at a time. Switch from the settings page's
-[Characters card](#choose-a-character), or run:
+The device holds one character at a time. The settings page's **Characters** card
+shows each character you can install, with the current one marked **Installed**.
+
+<p align="center">
+  <img src="images/settings-characters.png" alt="Characters card showing the installed Copilot character and the OpenClaw character with an Install button" width="720">
+</p>
+
+- Select **Install** to switch characters. A progress bar tracks the transfer,
+  which takes about a minute, and the device restarts when it's done.
+- Select **Add character…** to upload your own `.acpk` pack. Packs you've added
+  have a **Remove** button.
+
+Or switch from the command line:
 
 ```bash
 npm run character              # List the characters you can install
@@ -480,35 +428,88 @@ npm run character copilot      # Switch back to Copilot
 ```
 
 You can also pass the path to any `.acpk` pack, such as one from a release's
-**`-characters.zip`**. The daemon remembers your choice.
+**`-characters.zip`**. The daemon remembers your choice. If an install is
+interrupted, the device shows **No character installed** until the daemon
+reinstalls your character, which it does as soon as the device reconnects.
 
-<details>
-<summary><strong>Why interrupted installs are safe</strong></summary>
+## Wi-Fi
 
-The firmware erases the old pack's header first and writes the new header only
-after the whole pack's SHA-256 checks out. It verifies the pack again at every
-boot. If an install is interrupted, the device shows **No character installed**,
-and the daemon reinstalls your last character as soon as it reconnects.
+Wi-Fi lets the companion run from a wall adapter or any USB power source. Your
+computer and the device need to be on the same local network, and the device
+needs a 2.4 GHz network.
 
-</details>
+**From the settings page (recommended).** Use the **Wi-Fi** card:
 
-<details>
-<summary><strong>Create your own character pack</strong></summary>
+<p align="center">
+  <img src="images/settings-wifi.png" alt="Wi-Fi card with network name and password fields, a Connect device button, and the Auto, Wi-Fi only, and USB only connection modes" width="720">
+</p>
 
-Packs must match the firmware's animation model: 13 tracks, 24 poses, and 5 blink
-levels at 412 x 352. They use one of two layouts, Copilot-style base frames with
-blink patches or OpenClaw-style full frames. Each character lives in
-`characters/<id>/` with a `character.json`. See [characters/README.md](characters/README.md)
-and `tools/character_pack.py` for the format. To check a pack:
+1. Plug the device in over USB and set **Connection** to **Auto**.
+2. Enter your 2.4 GHz network name and password, then select **Connect device**.
+   The daemon sends the credentials over USB and pairs with the device automatically.
+3. Unplug the device from your computer and power it from any USB source. It
+   keeps working over Wi-Fi.
+
+**From the command line.** With the device plugged in over USB, run:
 
 ```bash
-python3 tools/character_pack.py validate path/to/pack.acpk
+npm run wifi "Your 2.4 GHz network"
 ```
 
-To draw a new character with AI image generation, from reference art through
-blink synthesis to a finished pack, see [docs/character-art-notes.md](docs/character-art-notes.md).
+The command asks for the password without showing it or saving it in your shell
+history.
+
+**From the device.** Swipe up, tap the Wi-Fi status, then select **Setup Wi-Fi**.
+Join the temporary `Agent-Companion-XXXX` network with the eight-digit password
+on screen, open <http://192.168.4.1>, and enter your network. Then reconnect your
+computer to your usual network and pair it with the same code:
+
+```bash
+npm run pair 12345678
+```
+
+The setup network and code expire after ten minutes.
+
+**Connection modes.** Choose how the daemon reaches the device on the Wi-Fi card or
+with `npm run connection auto|wifi|usb`:
+
+| Mode | Behavior |
+| --- | --- |
+| **Auto** (default) | Uses USB when the cable is connected, otherwise Wi-Fi |
+| **Wi-Fi only** | Always uses Wi-Fi; a connected USB cable only provides power |
+| **USB only** | Only uses USB |
+
+<details>
+<summary><strong>Network requirements and security</strong></summary>
+
+- Guest networks, client isolation, VPN policies, and firewalls that block local
+  HTTP or UDP discovery can prevent Wi-Fi operation. USB always works.
+- Your network name and password are stored only on the device. The computer
+  keeps only a pairing token.
+- Requests from the daemon to the device are authenticated with the pairing
+  token and stay on your local network.
+- Bluetooth isn't supported.
 
 </details>
+
+## Update
+
+**Companion daemon.** From the repository folder, run:
+
+```bash
+git pull
+npm run setup
+```
+
+Setup installs any new dependencies, rebuilds the daemon, restarts the background
+service, and installs hooks for any agents you've added. New or updated
+characters show up on the settings page on their own.
+
+**Firmware.** Reflash only when a release's notes mention firmware changes. Follow
+[Step 1](#step-1-flash-the-firmware) with the new release's **`-firmware.zip`**.
+Flashing keeps the device's Wi-Fi settings but puts the Copilot character back, so
+reinstall your character afterward from the settings page or with
+`npm run character <name>`.
 
 ## Command reference
 
@@ -516,7 +517,7 @@ Run these from the repository folder.
 
 | Command | What it does |
 | --- | --- |
-| `npm run setup` | Installs the daemon, agent hooks, and background service. Add `-- --no-open` to skip opening the browser. |
+| `npm run setup` | Installs or updates the daemon, agent hooks, and background service. Add `-- --no-open` to skip opening the browser. |
 | `npm run settings` | Opens the settings page |
 | `npm run status` | Shows the connection, character, state, and any pending agent steps |
 | `npm run agents` | Lists agents with their versions and hook status |
@@ -529,6 +530,20 @@ Run these from the repository folder.
 | `npm run connection auto\|wifi\|usb` | Sets how the daemon reaches the device |
 
 ## Troubleshooting
+
+<details>
+<summary><strong>"No device is connected"</strong></summary>
+
+1. Make sure the cable carries data and is plugged in. Close any serial monitor or
+   `flash.py` run that's still using the port.
+2. If the connection mode is **Wi-Fi only**, USB is ignored. Run
+   `npm run connection auto`.
+3. On Linux, add your user to the `dialout` group
+   ([see Step 2](#step-2-install-the-companion-daemon)). In WSL, attach the device
+   with `usbipd` ([see Windows](#windows-wsl-2)).
+4. For Wi-Fi, check the items under **Wi-Fi won't connect** below.
+
+</details>
 
 <details>
 <summary><strong>The device doesn't react to an agent</strong></summary>
@@ -612,6 +627,24 @@ reaction.
 <p align="center">
   <img src="images/character-lab.webp" alt="Character Lab showing the native Copilot character preview and state controls" width="900">
 </p>
+
+<details>
+<summary><strong>Create your own character pack</strong></summary>
+
+Packs must match the firmware's animation model: 13 tracks, 24 poses, and 5 blink
+levels at 412 x 352. They use one of two layouts, Copilot-style base frames with
+blink patches or OpenClaw-style full frames. Each character lives in
+`characters/<id>/` with a `character.json`. See [characters/README.md](characters/README.md)
+and `tools/character_pack.py` for the format. To check a pack:
+
+```bash
+python3 tools/character_pack.py validate path/to/pack.acpk
+```
+
+To draw a new character with AI image generation, from reference art through
+blink synthesis to a finished pack, see [docs/character-art-notes.md](docs/character-art-notes.md).
+
+</details>
 
 <details>
 <summary><strong>Regenerate the OpenClaw sprites</strong></summary>

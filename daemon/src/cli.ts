@@ -15,7 +15,8 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'status') {
-    console.log(JSON.stringify(await requestDaemon({type: 'status'}), null, 2));
+    // The first status after startup probes each agent's version, which can take a second or two.
+    console.log(JSON.stringify(await requestDaemon({type: 'status'}, 5000), null, 2));
     return;
   }
   if (command === 'send' && characterStates.includes(argument as never)) {
@@ -72,7 +73,7 @@ async function main(): Promise<void> {
   }
   if (command === 'connection') {
     if (!argument) {
-      const status = await requestDaemon({type: 'status'}) as {mode?: string};
+      const status = await requestDaemon({type: 'status'}, 5000) as {mode?: string};
       console.log(status.mode ?? 'auto');
       return;
     }

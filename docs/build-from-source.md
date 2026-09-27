@@ -1,6 +1,6 @@
 # Build from source
 
-Prebuilt [release bundles](../README.md#install) are the simplest installation path.
+Prebuilt [release bundles](../README.md#step-1-flash-the-firmware) are the simplest installation path.
 The source-build scripts support macOS and Linux; Windows users can use a release
 bundle or a suitable Linux/WSL development environment.
 
@@ -36,7 +36,7 @@ bash tools/arduino.sh build
 ```
 
 The resulting ZIP files are in `build/release/`. Extract the firmware ZIP and
-follow the [installation steps](../README.md#install). Alternatively, from the same
+follow the [flashing steps](../README.md#step-1-flash-the-firmware). Alternatively, from the same
 configured shell:
 
 ```bash
