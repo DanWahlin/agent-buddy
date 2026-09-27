@@ -20,6 +20,7 @@
         <fieldset class="character-picker"><legend>Character</legend>
           <label><input type="radio" name="character" value="copilot" checked><span>Copilot</span></label>
           <label><input type="radio" name="character" value="openclaw"><span>OpenClaw</span></label>
+          <label><input type="radio" name="character" value="claude"><span>Claude</span></label>
         </fieldset>
         <div class="stage"><button id="character" class="device" type="button" aria-label="Surprise Copilot">
           <canvas id="screen" width="466" height="466" aria-label="Actual native character framebuffer"></canvas>
@@ -51,12 +52,13 @@
         </section>
         <section class="notes"><h3>Presence without distraction</h3>
           <p>Working and Needs attention stay active until a new signal arrives. A surprise never answers a waiting question.</p>
-          <p>Copilot and OpenClaw use the same native motion state, discrete RGB565 sprite playback, blink levels, and effects. OpenClaw uses character-specific pacing tuned for its larger gestures and walk cycle.</p>
+          <p>Every character uses the same native motion state, discrete RGB565 sprite playback, blink levels, and effects. OpenClaw uses character-specific pacing tuned for its larger gestures and walk cycle.</p>
           <p>The touch reaction briefly recoils, then makes a small spring rebound and settles in about 0.8 seconds once centered. Use ¼× to inspect the motion.</p>
           <p>Working eases from normal to focused eyes, occasionally looks slowly left or right, then refocuses. The balls now follow a 400 × 400 circular path with more space around the head. The binary streams remain; the three bottom dots are removed for a cleaner look.</p>
           <p>Needs attention alternates the larger eye and curious head tilt, pausing on each side and easing through center. The question badge stays visible while waiting.</p>
           <p>After two uninterrupted idle minutes, the character centers, closes its eyes, and sleeps for one minute while Zs drift upward. It then wakes and repeats the cycle after another two idle minutes.</p>
           <p>OpenClaw’s sprites are rendered offline from a beveled 3D model derived from the official SVG. The ESP32 never performs live 3D rendering.</p>
+          <p>Claude’s sprites are rendered offline from a box model of its pixel art, so every pose is exact by construction.</p>
           <p>One C++ motion engine, two persistent framebuffers. Effects touch only black background pixels; the sprite artwork stays intact.</p>
           <p id="assets">Checking exported artwork…</p>
         </section>
