@@ -502,6 +502,9 @@ and `tools/character_pack.py` for the format. To check a pack:
 python3 tools/character_pack.py validate path/to/pack.acpk
 ```
 
+To draw a new character with AI image generation, from reference art through
+blink synthesis to a finished pack, see [docs/character-art-notes.md](docs/character-art-notes.md).
+
 </details>
 
 ## Command reference
@@ -629,6 +632,7 @@ local and are ignored by git.
 
 - [Build from source](docs/build-from-source.md)
 - [Development, architecture, hardware, and serial protocol](docs/development.md)
+- [Creating a new character's art](docs/character-art-notes.md)
 - [Tagging and publishing releases](docs/releases.md)
 
 ---
