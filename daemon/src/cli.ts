@@ -6,6 +6,7 @@ import {characterRequestValue} from './character-pack.js';
 import {isConnectionMode} from './connection-mode.js';
 import {pairWifi} from './wifi-config.js';
 import {defaultAgentContext, normalizeAgentHook, shouldIgnoreGrokClaudeHook, type AgentId} from './agents/index.js';
+import {agentRunsHeadless} from './agents/headless.js';
 import {isAgentId} from './agents/types.js';
 
 async function main(): Promise<void> {
@@ -30,7 +31,9 @@ async function main(): Promise<void> {
       const input = await readStdin(4 * 1024 * 1024);
       const payload = input.trim() ? parseHookPayload(input) : {};
       if (parsed.agent === 'claude' && shouldIgnoreGrokClaudeHook(process.env, payload, defaultAgentContext().home)) return;
-      const hooks = normalizeAgentHook(parsed.agent, parsed.nativeEvent, payload);
+      let headless: boolean | undefined;
+      const hooks = normalizeAgentHook(parsed.agent, parsed.nativeEvent, payload)
+        .filter(hook => hook.event !== 'notification' || !(headless ??= agentRunsHeadless(parsed.agent)));
       for (const hook of hooks) await requestDaemon({type: 'hook', agent: parsed.agent, event: hook.event, payload: hook.payload}, 300);
     } catch {
       // Hooks are notifications only; a missing device or daemon must never block Copilot.

@@ -365,7 +365,9 @@ Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 
 - Active agent or subagent work maps to **Working**.
 - Permission and input prompts, and errors that end a turn, map to
-  **Needs attention**, which takes priority over every other session.
+  **Needs attention**, which takes priority over every other session. Prompts
+  from one-shot runs (`copilot -p`, `claude -p`, `codex exec`) are ignored,
+  because no one can answer them.
 - A finished turn that used tools maps to **Complete**.
 - Inactive sessions return to **Idle**.
 
