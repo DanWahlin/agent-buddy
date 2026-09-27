@@ -1,0 +1,10 @@
+{
+  "id": "claude",
+  "name": "Claude",
+  "layout": "base-patch",
+  "frames": "frames.bin",
+  "metadata": "frames.json",
+  "motionSpeed": 1.0,
+  "walk": null,
+  "validator": "tools/validate_frames.py"
+}

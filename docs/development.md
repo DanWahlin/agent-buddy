@@ -137,8 +137,8 @@ name, layout, animation model, base/patch bounds, motion speed, walk cycle, and
 SHA-256), the frame table, and the unchanged compressed RGB565 frames. The
 format is documented at the top of that script. Two layouts are supported:
 
-- **Base/patch** (Copilot, 9,540,870 bytes): one base image per reachable pose
-  plus four blink patches around the eyes.
+- **Base/patch** (Copilot, 9,540,870 bytes; Claude, 1,818,488 bytes): one base
+  image per reachable pose plus four blink patches around the eyes.
 - **Full frame** (OpenClaw, 10,000,700 bytes): one complete image per pose and
   blink level, with a 12 FPS walk cycle on the Working track.
 
