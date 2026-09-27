@@ -7,6 +7,7 @@ import test from 'node:test';
 import {parseDocument} from 'yaml';
 import {claudeAdapter} from '../src/agents/claude.js';
 import {codexAdapter} from '../src/agents/codex.js';
+import {copilotAdapter} from '../src/agents/copilot.js';
 import {grokAdapter} from '../src/agents/grok.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
 import {openclawAdapter} from '../src/agents/openclaw.js';
@@ -216,6 +217,9 @@ test('normalizers map attention, work, completion, and idle events per agent', (
     .map(hook => hook.event), ['notification']);
   assert.deepEqual(openclawAdapter.normalize('agent_end', {sessionId: 's', success: true}, 100)
     .map(hook => hook.event), ['agentStop']);
+  assert.deepEqual(copilotAdapter.normalize('errorOccurred', {sessionId: 's', recoverable: true}, 100), []);
+  assert.deepEqual(copilotAdapter.normalize('errorOccurred', {sessionId: 's', recoverable: false}, 100)
+    .map(hook => hook.event), ['errorOccurred']);
 });
 
 test('coordinator keeps multi-agent sessions isolated and reports display drivers', () => {

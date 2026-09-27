@@ -23,7 +23,10 @@ export const copilotAdapter: AgentAdapter = {
     await removeFile(copilotHookPath(ctx.home));
   },
   normalize(nativeEvent, payload, receiptTime) {
-    return normalized('copilot', canonicalEvent(nativeEvent, payload), payload, receiptTime);
+    const event = canonicalEvent(nativeEvent, payload);
+    // Copilot retries recoverable model-call errors itself, so they don't need the user.
+    if (event === 'errorOccurred' && payload.recoverable === true) return [];
+    return normalized('copilot', event, payload, receiptTime);
   },
 };
 
