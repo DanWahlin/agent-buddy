@@ -29,3 +29,5 @@ python3 tools/character_pack.py build
 ```
 
 The daemon installs packs from `build/characters/<id>.acpk`; don't change that output path or the `.acpk` format.
+The running daemon also runs this build when a character's top-level files change, before it lists or installs
+characters, so a new folder shows up on the settings page without a restart.

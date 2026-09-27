@@ -283,7 +283,9 @@ highlighted.
 ### Choose a character
 
 The **Characters** card shows each character you can install, with the current
-one marked **Installed**.
+one marked **Installed**. The list includes every character in `characters/`.
+When a `git pull` adds or updates one, the daemon rebuilds its pack
+before showing the list or installing, so there's nothing extra to run.
 
 <p align="center">
   <img src="images/settings-characters.png" alt="Characters card showing the installed Copilot character and the OpenClaw character with an Install button" width="720">

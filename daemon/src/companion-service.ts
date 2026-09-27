@@ -21,6 +21,7 @@ import {
   saveCharacterPreference,
   type CharacterEntry,
 } from './character-pack.js';
+import {CharacterPackBuilder} from './character-build.js';
 import {saveConnectionMode, type ConnectionMode} from './connection-mode.js';
 import type {DeviceTransport} from './device-transport.js';
 import {
@@ -74,20 +75,27 @@ export class CompanionService extends EventEmitter {
   readonly #agentContext: AgentContext;
   readonly #lastAgentEvents = new Map<AgentId, number>();
   readonly #badgeIcons: AgentBadgeIconDefinition[];
+  readonly #characterBuilder: Pick<CharacterPackBuilder, 'refresh'>;
   #display: DisplaySettings;
 
   constructor(transport: DeviceTransport, coordinator: StateCoordinator, agentContext = defaultAgentContext(),
-              badgeIcons: AgentBadgeIconDefinition[] = []) {
+              badgeIcons: AgentBadgeIconDefinition[] = [],
+              characterBuilder: Pick<CharacterPackBuilder, 'refresh'> = new CharacterPackBuilder()) {
     super();
     this.#transport = transport;
     this.#coordinator = coordinator;
     this.#agentContext = agentContext;
     this.#badgeIcons = badgeIcons;
+    this.#characterBuilder = characterBuilder;
     this.#display = loadDisplaySettingsSync();
   }
 
   async refreshWifiPairing(): Promise<void> {
     this.#wifiPaired = (await loadWifiConfig().catch(() => null)) !== null;
+  }
+
+  refreshCharacterPacks(): Promise<void> {
+    return this.#characterBuilder.refresh();
   }
 
   status(): CompanionStatus {
@@ -149,6 +157,7 @@ export class CompanionService extends EventEmitter {
 
   async characters(): Promise<Array<CharacterEntry & {installed: boolean}>> {
     const installed = this.#transport.character;
+    await this.#characterBuilder.refresh();
     return (await listCharacters()).map(entry => ({...entry, installed: entry.id === installed}));
   }
 
@@ -190,6 +199,7 @@ export class CompanionService extends EventEmitter {
     this.#installBusy = true;
     let pack: Awaited<ReturnType<typeof readCharacterPack>>;
     try {
+      await this.#characterBuilder.refresh();
       pack = await readCharacterPack(character);
     } catch (error) {
       this.#installBusy = false;

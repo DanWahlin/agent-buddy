@@ -66,7 +66,8 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'list-characters') {
-    console.log(JSON.stringify(await requestDaemon({type: 'listCharacters'}, 2000)));
+    // Listing can wait on a character pack rebuild after an update.
+    console.log(JSON.stringify(await requestDaemon({type: 'listCharacters'}, 30_000)));
     return;
   }
   if (command === 'connection') {

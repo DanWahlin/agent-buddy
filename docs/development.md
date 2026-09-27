@@ -135,7 +135,10 @@ is unchanged.
 self-describing pack in `build/characters/`: a 256-byte header (id, display
 name, layout, animation model, base/patch bounds, motion speed, walk cycle, and
 SHA-256), the frame table, and the unchanged compressed RGB565 frames. The
-format is documented at the top of that script. Two layouts are supported:
+format is documented at the top of that script. The daemon reruns this build
+when a character's top-level files or a built pack change, before it lists or
+installs characters (`daemon/src/character-build.ts`). A failed build is logged,
+and the daemon keeps using the packs that are already built. Two layouts are supported:
 
 - **Base/patch** (Copilot, 9,540,870 bytes; Claude, 1,818,488 bytes): one base
   image per reachable pose plus four blink patches around the eyes.

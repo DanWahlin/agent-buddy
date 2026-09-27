@@ -37,6 +37,8 @@ export async function runDaemon(): Promise<void> {
     },
   });
   service = new CompanionService(transport, coordinator, agentContext, badgeIcons);
+  // Picks up characters added or changed since the last run before anyone opens the settings page.
+  void service.refreshCharacterPacks();
   await service.refreshWifiPairing();
   transport.setState(coordinator.state);
   service.syncBadges();
