@@ -16,6 +16,8 @@ MEMORY_FIELDS = (
     "render_stack_free", "display_stack_free",
 )
 CHARACTER_MODES = ("idle", "surprise", "working", "complete", "attention")
+# Newest firmware command protocol this tool understands; every earlier one stays compatible.
+DEVICE_PROTOCOL = 6
 
 def parse_character_status(line):
     if not line.startswith("CHARACTER "):
@@ -41,7 +43,7 @@ def request_character_status(port, timeout=10):
             return status
         if any(marker in line for marker in ("FATAL", "Guru Meditation", "abort()")):
             raise RuntimeError(f"Character query failed: {line}")
-    raise TimeoutError("No character status received; check firmware protocol 6 and boot completion.")
+    raise TimeoutError(f"No character status received; check firmware protocol {DEVICE_PROTOCOL} and boot completion.")
 
 
 def request_mode(port, mode):
@@ -54,7 +56,7 @@ def request_mode(port, mode):
         line = port.readline().decode("utf-8", errors="replace").strip()
         if line.startswith("INFO protocol="):
             match = re.match(r"INFO protocol=(\d+)(?: |$)", line)
-            if not match or int(match.group(1)) not in (1, 2, 3, 4, 5):
+            if not match or not 1 <= int(match.group(1)) <= DEVICE_PROTOCOL:
                 raise RuntimeError(f"Unsupported device command protocol: {line}")
             print(line, flush=True)
             break

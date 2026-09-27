@@ -1,7 +1,8 @@
+import json
 from pathlib import Path
 import tempfile
 import unittest
-from tools.firmware_artifacts import BINARIES, check, layout, record, snapshot
+from tools.firmware_artifacts import BINARIES, BUNDLE, check, layout, record, snapshot
 
 
 class FirmwareBundleTests(unittest.TestCase):
@@ -26,6 +27,15 @@ class FirmwareBundleTests(unittest.TestCase):
         record(self.root)
         check(self.root)
         self.assertEqual(layout(self.root)[1]["offset"], 0x210000)
+
+    def test_records_portable_paths(self):
+        # A bundle recorded under WSL or CI must still pass check on Windows, and vice versa.
+        snapshot(self.root)
+        record(self.root)
+        bundle = json.loads((self.root / BUNDLE).read_text())
+        self.assertIn("firmware/AgentCompanion/AgentCompanion.ino", bundle["inputs"]["files"])
+        for key in [*bundle["inputs"]["files"], *bundle["binaries"]]:
+            self.assertNotIn("\\", key)
 
     def test_source_changed_during_build(self):
         snapshot(self.root)

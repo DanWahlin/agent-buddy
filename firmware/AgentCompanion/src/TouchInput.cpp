@@ -15,6 +15,13 @@ TouchGestureTracker tracker;
 portMUX_TYPE touchLock = portMUX_INITIALIZER_UNLOCKED;
 volatile bool pending = false;
 bool initialized = false;
+// Reading the controller is what releases its interrupt line, and that read only
+// happens when an edge has set `pending`. If an edge is missed, or arrives while
+// the flag is already set, the line can stay asserted with no further edge to
+// wake us and touch would stop for good with no error reported. Sweeping the
+// controller occasionally clears any latched state and also recovers the missed
+// touch itself.
+uint32_t lastTouchReadMs = 0;
 
 void IRAM_ATTR interrupt() {
   portENTER_CRITICAL_ISR(&touchLock);
@@ -62,10 +69,16 @@ bool pollTouchGesture(TouchGesture& gesture) {
   const bool ready = pending;
   pending = false;
   portEXIT_CRITICAL(&touchLock);
-  if (!ready && !tracker.active()) return false;
+  const uint32_t now = esp_timer_get_time() / 1000;
+  const bool sweep = now - lastTouchReadMs >= kTouchSweepMs;
+  if (!ready && !tracker.active() && !sweep) return false;
+  lastTouchReadMs = now;
   int16_t x[2] = {}, y[2] = {};
   const uint8_t count = controller.getPoint(x, y, 2);
-  return tracker.sample(count != 0, x[0], y[0], esp_timer_get_time() / 1000, gesture);
+  // An idle sweep that finds nothing must not reach the tracker, or the sweep
+  // itself could be read as the end of a gesture that never began.
+  if (!ready && !tracker.active() && !count) return false;
+  return tracker.sample(count != 0, x[0], y[0], now, gesture);
 #else
   (void)gesture;
   error = "Physical touch input requires the ESP32 device.";

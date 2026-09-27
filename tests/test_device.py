@@ -154,7 +154,7 @@ class ModeCommandTests(unittest.TestCase):
         self.assertEqual(port.written, [b"i", b"!working\n"])
 
     def test_accepts_backward_compatible_protocols(self):
-        for protocol in (1, 2, 3, 4, 5):
+        for protocol in (1, 2, 3, 4, 5, 6):
             with self.subTest(protocol=protocol):
                 port = ControlPort([
                     f"INFO protocol={protocol}\n".encode(),
@@ -164,7 +164,7 @@ class ModeCommandTests(unittest.TestCase):
                 self.assertEqual(port.written, [b"i", b"!surprise\n"])
 
     def test_rejects_unsupported_protocol_before_mode(self):
-        port = ControlPort([b"INFO protocol=6\n"])
+        port = ControlPort([b"INFO protocol=7\n"])
         with self.assertRaises(RuntimeError):
             request_mode(port, "surprise")
         self.assertEqual(port.written, [b"i"])
