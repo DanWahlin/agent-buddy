@@ -49,7 +49,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/sprite-compression
-          key: sprites-${{ runner.os }}-${{ hashFiles('requirements-art.txt', 'tools/sprite_*.py', 'characters/copilot/tools/export_sprite_firmware.py', 'characters/copilot/sprites/animation.json', 'characters/copilot/expressions/animation.json') }}
+          key: sprites-${{ runner.os }}-${{ hashFiles('requirements-art.txt', 'tools/sprite_*.py', 'characters/copilot/tools/export_sprite_firmware.py', 'characters/copilot/sprites/animation.json', 'characters/copilot/expressions/animation.json', 'characters/claude/tools/export_frames.py', 'characters/claude/sprites/animation.json') }}
           restore-keys: sprites-${{ runner.os }}-
       - name: Install build dependencies
         run: |
@@ -59,8 +59,10 @@ jobs:
       - name: Reproduce and verify generated assets
         run: |
           python characters/copilot/tools/export_sprite_firmware.py
+          python characters/claude/tools/export_frames.py
           python tools/embed_audio.py
           git diff --exit-code -- characters/copilot/frames.bin characters/copilot/frames.json
+          git diff --exit-code -- characters/claude/frames.bin characters/claude/frames.json
           git diff --exit-code -- firmware/AgentCompanion/generated/audio_assets.h firmware/AgentCompanion/src/audio_data.cpp
       - name: Test native renderer and release tools
         run: |

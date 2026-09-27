@@ -1,0 +1,667 @@
+{
+  "title": "Claude down track",
+  "provider": "procedural box model (characters/claude/tools/render_claude_pose.py)",
+  "width": 240,
+  "height": 224,
+  "count": 24,
+  "registration": "exact by construction; fixed scale about a fixed pivot",
+  "blinkLevels": [
+    1,
+    0.75,
+    0.5,
+    0.25,
+    0
+  ],
+  "blinkProcessing": "Eyes re-rendered at each openness, lower lid fixed. No eyelid fill, paint mask or bloom compensation is needed: the eyes are flat black on flat terracotta, so there is no glow to cover.",
+  "frames": [
+    {
+      "file": "down-00.png",
+      "yaw": 0.0,
+      "pitch": 0.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          90,
+          79,
+          108
+        ],
+        [
+          161,
+          90,
+          178,
+          108
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-00-blink-1.png",
+        "down-00-blink-2.png",
+        "down-00-blink-3.png",
+        "down-00-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-01.png",
+      "yaw": 0.0,
+      "pitch": 2.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          92,
+          79,
+          110
+        ],
+        [
+          161,
+          92,
+          178,
+          110
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-01-blink-1.png",
+        "down-01-blink-2.png",
+        "down-01-blink-3.png",
+        "down-01-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-02.png",
+      "yaw": 0.0,
+      "pitch": 4.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          94,
+          79,
+          112
+        ],
+        [
+          161,
+          94,
+          178,
+          112
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-02-blink-1.png",
+        "down-02-blink-2.png",
+        "down-02-blink-3.png",
+        "down-02-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-03.png",
+      "yaw": 0.0,
+      "pitch": 6.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          96,
+          79,
+          113
+        ],
+        [
+          161,
+          96,
+          178,
+          113
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-03-blink-1.png",
+        "down-03-blink-2.png",
+        "down-03-blink-3.png",
+        "down-03-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-04.png",
+      "yaw": 0.0,
+      "pitch": 8.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          98,
+          79,
+          115
+        ],
+        [
+          161,
+          98,
+          178,
+          115
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-04-blink-1.png",
+        "down-04-blink-2.png",
+        "down-04-blink-3.png",
+        "down-04-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-05.png",
+      "yaw": 0.0,
+      "pitch": 10.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          100,
+          79,
+          117
+        ],
+        [
+          161,
+          100,
+          178,
+          117
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-05-blink-1.png",
+        "down-05-blink-2.png",
+        "down-05-blink-3.png",
+        "down-05-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-06.png",
+      "yaw": 0.0,
+      "pitch": 12.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          101,
+          79,
+          118
+        ],
+        [
+          161,
+          101,
+          178,
+          118
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-06-blink-1.png",
+        "down-06-blink-2.png",
+        "down-06-blink-3.png",
+        "down-06-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-07.png",
+      "yaw": 0.0,
+      "pitch": 14.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          103,
+          79,
+          120
+        ],
+        [
+          161,
+          103,
+          178,
+          120
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-07-blink-1.png",
+        "down-07-blink-2.png",
+        "down-07-blink-3.png",
+        "down-07-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-08.png",
+      "yaw": 0.0,
+      "pitch": 16.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          105,
+          79,
+          122
+        ],
+        [
+          161,
+          105,
+          178,
+          122
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-08-blink-1.png",
+        "down-08-blink-2.png",
+        "down-08-blink-3.png",
+        "down-08-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-09.png",
+      "yaw": 0.0,
+      "pitch": 18.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          107,
+          79,
+          123
+        ],
+        [
+          161,
+          107,
+          178,
+          123
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-09-blink-1.png",
+        "down-09-blink-2.png",
+        "down-09-blink-3.png",
+        "down-09-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-10.png",
+      "yaw": 0.0,
+      "pitch": 20.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          109,
+          79,
+          125
+        ],
+        [
+          161,
+          109,
+          178,
+          125
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-10-blink-1.png",
+        "down-10-blink-2.png",
+        "down-10-blink-3.png",
+        "down-10-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-11.png",
+      "yaw": 0.0,
+      "pitch": 22.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          111,
+          79,
+          126
+        ],
+        [
+          161,
+          111,
+          178,
+          126
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-11-blink-1.png",
+        "down-11-blink-2.png",
+        "down-11-blink-3.png",
+        "down-11-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-12.png",
+      "yaw": 0.0,
+      "pitch": 24.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          113,
+          79,
+          128
+        ],
+        [
+          161,
+          113,
+          178,
+          128
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-12-blink-1.png",
+        "down-12-blink-2.png",
+        "down-12-blink-3.png",
+        "down-12-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-13.png",
+      "yaw": 0.0,
+      "pitch": 26.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          114,
+          79,
+          129
+        ],
+        [
+          161,
+          114,
+          178,
+          129
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-13-blink-1.png",
+        "down-13-blink-2.png",
+        "down-13-blink-3.png",
+        "down-13-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-14.png",
+      "yaw": 0.0,
+      "pitch": 28.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          116,
+          79,
+          131
+        ],
+        [
+          161,
+          116,
+          178,
+          131
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-14-blink-1.png",
+        "down-14-blink-2.png",
+        "down-14-blink-3.png",
+        "down-14-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-15.png",
+      "yaw": 0.0,
+      "pitch": 30.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          118,
+          79,
+          132
+        ],
+        [
+          161,
+          118,
+          178,
+          132
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-15-blink-1.png",
+        "down-15-blink-2.png",
+        "down-15-blink-3.png",
+        "down-15-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-16.png",
+      "yaw": 0.0,
+      "pitch": 32.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          120,
+          79,
+          134
+        ],
+        [
+          161,
+          120,
+          178,
+          134
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-16-blink-1.png",
+        "down-16-blink-2.png",
+        "down-16-blink-3.png",
+        "down-16-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-17.png",
+      "yaw": 0.0,
+      "pitch": 34.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          121,
+          79,
+          135
+        ],
+        [
+          161,
+          121,
+          178,
+          135
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-17-blink-1.png",
+        "down-17-blink-2.png",
+        "down-17-blink-3.png",
+        "down-17-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-18.png",
+      "yaw": 0.0,
+      "pitch": 36.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          123,
+          79,
+          136
+        ],
+        [
+          161,
+          123,
+          178,
+          136
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-18-blink-1.png",
+        "down-18-blink-2.png",
+        "down-18-blink-3.png",
+        "down-18-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-19.png",
+      "yaw": 0.0,
+      "pitch": 38.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          125,
+          79,
+          138
+        ],
+        [
+          161,
+          125,
+          178,
+          138
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-19-blink-1.png",
+        "down-19-blink-2.png",
+        "down-19-blink-3.png",
+        "down-19-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-20.png",
+      "yaw": 0.0,
+      "pitch": 40.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          127,
+          79,
+          139
+        ],
+        [
+          161,
+          127,
+          178,
+          139
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-20-blink-1.png",
+        "down-20-blink-2.png",
+        "down-20-blink-3.png",
+        "down-20-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-21.png",
+      "yaw": 0.0,
+      "pitch": 42.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          128,
+          79,
+          140
+        ],
+        [
+          161,
+          128,
+          178,
+          140
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-21-blink-1.png",
+        "down-21-blink-2.png",
+        "down-21-blink-3.png",
+        "down-21-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-22.png",
+      "yaw": 0.0,
+      "pitch": 44.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          130,
+          79,
+          141
+        ],
+        [
+          161,
+          130,
+          178,
+          141
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-22-blink-1.png",
+        "down-22-blink-2.png",
+        "down-22-blink-3.png",
+        "down-22-blink-4.png"
+      ]
+    },
+    {
+      "file": "down-23.png",
+      "yaw": 0.0,
+      "pitch": 46.0,
+      "roll": 0.0,
+      "eyes": [
+        [
+          62,
+          131,
+          79,
+          142
+        ],
+        [
+          161,
+          131,
+          178,
+          142
+        ]
+      ],
+      "blinkMaskState": "rendered",
+      "blinks": [
+        "down-23-blink-1.png",
+        "down-23-blink-2.png",
+        "down-23-blink-3.png",
+        "down-23-blink-4.png"
+      ]
+    }
+  ],
+  "playback": "Discrete frames only. Reverse reuses the identical frames in reverse order."
+}
