@@ -2,6 +2,18 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.5.1]
+
+### Other changes
+
+- Ignore permission prompts from one-shot agent runs
+
+- Recognize one-shot Grok and Hermes runs
+
+- Recognize Hermes one-shot runs through its python relaunch
+
+- Show the device's Wi-Fi network on the settings page
+
 ## [v0.5.0]
 
 ### Build and maintenance
