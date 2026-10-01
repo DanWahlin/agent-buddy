@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "sessionStart"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "userPromptSubmitted"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "preToolUse"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "postToolUse"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "postToolUseFailure"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "subagentStart": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "subagentStart"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "subagentStop": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "subagentStop"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "agentStop"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "notification": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "notification"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "errorOccurred": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "errorOccurred"
+        ],
+        "timeoutSec": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": [
+          "C:UsersDarrenRobinsonAppDataLocalTempac-capture.cjs",
+          "sessionEnd"
+        ],
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

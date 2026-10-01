@@ -1,0 +1,21 @@
+{
+  "name": "agent-companion-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "extension",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "build": "npm run build -w @agent-companion/pack-format -w @agent-companion/renderer -w @agent-companion/companion-core -w @agent-companion/agent-state -w @agent-companion/packer -w agent-companion -w @agent-companion/desktop --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.7.0"
+  }
+}

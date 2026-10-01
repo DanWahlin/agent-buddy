@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # The point of the matrix is the parts Windows cannot reach: the Unix
+    # socket branch of the bridge, recovery from a socket file left behind by
+    # a crashed window, and the POSIX mode on the state file. All three skip
+    # themselves on Windows, so they had never run anywhere until this.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck the extension
+        run: npx tsc -p extension/tsconfig.json
+
+      - name: Test
+        run: npm test
+
+      # Say out loud what was skipped, so a test that quietly stops running
+      # somewhere is visible rather than hiding inside a green tick.
+      - name: Report skips
+        if: always()
+        shell: bash
+        run: npm test 2>&1 | grep -E "^﹣|^# SKIP" || echo "nothing skipped on ${{ matrix.os }}"
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package the extension
+        working-directory: extension
+        run: npx vsce package --no-dependencies --allow-missing-repository
+
+      # A .vsix any machine can install, so the extension can be tried on a Mac
+      # or a Linux box without a toolchain there. CI cannot look at Marvin; a
+      # person still has to.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-companion-vsix
+          path: extension/*.vsix
+          if-no-files-found: error

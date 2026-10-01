@@ -1,0 +1,10 @@
+# Normalise to LF in the repository. CI runs on Linux and macOS as well as
+# Windows, and without this every checkout there shows the whole tree as
+# modified.
+* text=auto eol=lf
+
+# Never touch these.
+*.webp binary
+*.png binary
+*.svg text eol=lf
+*.vsix binary

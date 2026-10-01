@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the page may do. Tauri denies core plugin commands unless a capability grants them, and with no capability at all the page could not listen for events - so the shell's replies were emitted into nothing and the window sat empty. Only events are granted: the commands this app defines itself are its own, and the pack files come through the asset protocol's scope rather than through a command.",
+  "windows": ["main"],
+  "permissions": ["core:event:default"]
+}

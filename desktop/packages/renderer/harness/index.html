@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Companion renderer harness</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #14161a;
+    --panel: #1c2027;
+    --line: #2b313a;
+    --text: #e6e9ee;
+    --muted: #9aa3b0;
+    --accent: #3ad3e0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+  .stage {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+    justify-items: center;
+  }
+  canvas { display: block; border-radius: 8px; max-width: 100%; }
+  .panel {
+    width: min(620px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    display: grid;
+    gap: 14px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .label { color: var(--muted); min-width: 92px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  button {
+    font: inherit;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: #232833;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #0d1013; font-weight: 600; }
+  label.toggle { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-variant-numeric: tabular-nums; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  #error { color: #ff8a8a; white-space: pre-wrap; }
+  #error:empty { display: none; }
+</style>
+</head>
+<body>
+  <h1>Agent Companion renderer harness</h1>
+
+  <div class="stage">
+    <canvas id="screen" width="480" height="448" aria-label="Character preview"></canvas>
+  </div>
+
+  <div class="panel">
+    <p id="error" role="alert"></p>
+
+    <div class="row">
+      <span class="label">State</span>
+      <span id="states"></span>
+    </div>
+
+    <div class="row">
+      <span class="label">Look</span>
+      <span id="looks"></span>
+    </div>
+
+    <div class="row">
+      <span class="label">Options</span>
+      <button id="sleep" type="button" aria-pressed="false">Sleep</button>
+      <button id="blink" type="button">Blink now</button>
+      <button id="pause" type="button" aria-pressed="false">Pause</button>
+      <label class="toggle"><input id="crossfade" type="checkbox" checked> Cross-fade</label>
+      <label class="toggle"><input id="scale" type="checkbox" checked> Fill stage</label>
+    </div>
+
+    <dl>
+      <dt>Pack</dt><dd id="meta">loading…</dd>
+      <dt>Agent</dt><dd id="agent">no bridge</dd>
+      <dt>Pose</dt><dd id="pose">—</dd>
+      <dt>Eyes</dt><dd id="eyes">—</dd>
+      <dt>Frame rate</dt><dd id="fps">—</dd>
+    </dl>
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "@agent-companion/pack-format": "/pack-format/index.js"
+  }
+}
+</script>
+<script type="module" src="./harness.js"></script>
+</body>
+</html>
