@@ -102,7 +102,7 @@ fn show_current_pack(app: &Arc<App>, window: &WebviewWindow) {
 
     println!("[packs] showing {}", pack.id);
 
-    // The tray follows the character. An icon that stays Marvin while Copilot
+    // The tray follows the character. An icon that stays Copilot while Claude
     // is on screen says the wrong thing, which is worse than saying nothing.
     if let Some((rgba, width, height)) = face::cut(std::path::Path::new(&pack.folder), 32) {
         if let Some(tray) = app.tray.lock().unwrap().as_ref() {

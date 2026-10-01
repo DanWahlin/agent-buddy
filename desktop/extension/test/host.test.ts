@@ -49,23 +49,23 @@ beforeEach(() => {
 });
 
 test('finds the pack bundled with the extension', async () => {
-  addPack('/ext/packs/marvin', 'marvin');
+  addPack('/ext/packs/arthur', 'arthur');
   const { packs, problems } = await discoverPacks(EXTENSION);
 
   assert.equal(packs.length, 1);
-  assert.equal(packs[0].pack.id, 'marvin');
+  assert.equal(packs[0].pack.id, 'arthur');
   assert.equal(packs[0].origin, 'bundled');
-  assert.equal(packs[0].folder.path, '/ext/packs/marvin');
+  assert.equal(packs[0].folder.path, '/ext/packs/arthur');
   assert.deepEqual(problems, []);
 });
 
 test('accepts a configured path that is itself a pack folder', async () => {
-  addPack('/ext/packs/marvin', 'marvin');
+  addPack('/ext/packs/arthur', 'arthur');
   addPack('/home/me/zaphod', 'zaphod');
   configuration.set('agentCompanion.packPaths', ['/home/me/zaphod']);
 
   const { packs } = await discoverPacks(EXTENSION);
-  assert.deepEqual(packs.map(p => p.pack.id).sort(), ['marvin', 'zaphod']);
+  assert.deepEqual(packs.map(p => p.pack.id).sort(), ['arthur', 'zaphod']);
   assert.equal(packs.find(p => p.pack.id === 'zaphod')?.origin, 'configured');
 });
 
@@ -79,9 +79,9 @@ test('accepts a configured path that is a folder of packs', async () => {
 });
 
 test('a configured pack shadows a bundled one with the same id', async () => {
-  addPack('/ext/packs/marvin', 'marvin');
-  addPack('/home/me/marvin', 'marvin');
-  configuration.set('agentCompanion.packPaths', ['/home/me/marvin']);
+  addPack('/ext/packs/arthur', 'arthur');
+  addPack('/home/me/arthur', 'arthur');
+  configuration.set('agentCompanion.packPaths', ['/home/me/arthur']);
 
   const { packs } = await discoverPacks(EXTENSION);
   assert.equal(packs.length, 1);
@@ -89,7 +89,7 @@ test('a configured pack shadows a bundled one with the same id', async () => {
 });
 
 test('reports a path that holds nothing usable, without failing the rest', async () => {
-  addPack('/ext/packs/marvin', 'marvin');
+  addPack('/ext/packs/arthur', 'arthur');
   files.set('/home/me/notes/readme.txt', 'hello');
   configuration.set('agentCompanion.packPaths', ['/home/me/notes', '/home/me/missing']);
 
@@ -115,12 +115,12 @@ test('rejects unparseable JSON with the reason', async () => {
 });
 
 test('de-duplicates and ignores blank configured paths', async () => {
-  addPack('/ext/packs/marvin', 'marvin');
+  addPack('/ext/packs/arthur', 'arthur');
   addPack('/home/me/zaphod', 'zaphod');
   configuration.set('agentCompanion.packPaths', ['/home/me/zaphod', '  ', '/home/me/zaphod']);
 
   const { packs, problems } = await discoverPacks(EXTENSION);
-  assert.deepEqual(packs.map(p => p.pack.id).sort(), ['marvin', 'zaphod']);
+  assert.deepEqual(packs.map(p => p.pack.id).sort(), ['arthur', 'zaphod']);
   assert.deepEqual(problems, [], 'the repeated path should not be reported twice');
 });
 
@@ -144,20 +144,20 @@ test('a Windows drive letter is read as a path, not a URI scheme', async () => {
 
 test('choosePack honours the setting, and falls back rather than showing nothing', () => {
   const packs = [
-    { pack: { id: 'marvin' }, folder: Uri.file('/a'), origin: 'bundled' },
+    { pack: { id: 'arthur' }, folder: Uri.file('/a'), origin: 'bundled' },
     { pack: { id: 'zaphod' }, folder: Uri.file('/b'), origin: 'configured' },
   ] as never;
 
   assert.equal(choosePack(packs, 'zaphod')?.pack.id, 'zaphod');
-  assert.equal(choosePack(packs, 'nobody')?.pack.id, 'marvin', 'falls back to the first');
-  assert.equal(choosePack(packs, undefined)?.pack.id, 'marvin');
-  assert.equal(choosePack([], 'marvin'), null);
+  assert.equal(choosePack(packs, 'nobody')?.pack.id, 'arthur', 'falls back to the first');
+  assert.equal(choosePack(packs, undefined)?.pack.id, 'arthur');
+  assert.equal(choosePack([], 'arthur'), null);
 });
 
 // --- the view ---------------------------------------------------------------
 
 async function resolvedView() {
-  addPack('/ext/packs/marvin', 'marvin');
+  addPack('/ext/packs/arthur', 'arthur');
   const output = { info() {}, warn() {}, error() {} } as never;
   const provider = new CompanionViewProvider(EXTENSION, output);
   const webview = fakeWebview();
@@ -212,7 +212,7 @@ test('sends the manifest with every image already resolved', async () => {
     pack: { id: string }; images: Record<string, string>;
   };
   assert.ok(show, 'a show message should follow ready');
-  assert.equal(show.pack.id, 'marvin');
+  assert.equal(show.pack.id, 'arthur');
 
   // Every image the pack names, and nothing else.
   assert.deepEqual(Object.keys(show.images).sort(), [
@@ -220,7 +220,7 @@ test('sends the manifest with every image already resolved', async () => {
     'surprise.webp', 'working.webp',
   ]);
   for (const url of Object.values(show.images)) {
-    assert.match(url, /^https:\/\/file\+\.vscode-resource\.vscode-cdn\.net\/ext\/packs\/marvin\//);
+    assert.match(url, /^https:\/\/file\+\.vscode-resource\.vscode-cdn\.net\/ext\/packs\/arthur\//);
   }
 });
 
@@ -321,7 +321,7 @@ test('the manifest contributes exactly the views the code registers', async () =
 
 /** Activate with the stub's emitters live, and hand back the view. */
 async function activated() {
-  addPack('/ext/packs/marvin', 'marvin');
+  addPack('/ext/packs/arthur', 'arthur');
   const stub = await import('./vscode-stub.js');
   const { activate } = await import('../src/host/extension.js');
 

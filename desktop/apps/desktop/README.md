@@ -64,7 +64,7 @@ that pack has since gone the shipped one shows rather than an empty window.
 
 Copilot, Claude and OpenClaw ship with the app, and Copilot is the one shown
 before anyone chooses - it is also the character the tray and app icons are cut
-from. Marvin is the author's own character and is not distributed.
+from.
 **Open Characters
 Folder** in the tray opens a folder of your own that is always looked in; drop
 a pack directory in there and it appears in the menu next start. An environment

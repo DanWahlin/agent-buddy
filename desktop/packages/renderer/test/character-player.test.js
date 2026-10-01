@@ -6,7 +6,7 @@ import {
   CharacterPlayer, IDLE_BEFORE_SLEEP_SECONDS, PackRenderer, SLEEP_SECONDS,
 } from '../dist/index.js';
 
-const PACK_DIR = join(import.meta.dirname, '..', '..', '..', 'packs', 'marvin');
+const PACK_DIR = join(import.meta.dirname, '..', '..', '..', 'packs', 'copilot');
 const pack = JSON.parse(readFileSync(join(PACK_DIR, 'pack.json'), 'utf8'));
 
 /** Deterministic, and cycles so track choices are not all the same. */

@@ -25,9 +25,9 @@ const production = process.argv.includes('--production');
 /**
  * Packs that ship inside the .vsix: the three Agent Companion characters.
  *
- * Deliberately a list rather than everything in packs/. Marvin is the author's
- * own character rather than one of the product's, so he stays in packs/ and
- * loads through `agentCompanion.packPaths` like anybody's own character would.
+ * Deliberately a list rather than everything in packs/. A character of your
+ * own that you drop in packs/ while working on it should not ship by accident;
+ * it loads through `agentCompanion.packPaths` like anybody's own character.
  * Nothing in the extension is specific to any of the three that ship.
  *
  * All three wear a name that belongs to someone - GitHub's, Anthropic's and the

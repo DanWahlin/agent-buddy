@@ -13,12 +13,14 @@ import { loadPack, renderFrame } from '../dist/inspect.js';
 // temporary directories afterwards.
 sharp.cache(false);
 
+// Copilot's rig, from the Character Lab at the root of this repository. Point
+// AGENT_COMPANION_RIG at a character folder laid out the same way to build
+// your own instead.
 const RIG_ROOT = process.env.AGENT_COMPANION_RIG
-  ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '',
-    'OneDrive', 'GitHub', 'esp32-agent-companion');
-const GAZE = join(RIG_ROOT, 'web', 'generated-sprites-jarvis');
-const EXPRESSIONS = join(RIG_ROOT, 'web', 'generated-expressions-jarvis');
-const ANCHOR = join(RIG_ROOT, 'assets', 'generated-sprites-jarvis', 'approved-center.png');
+  ?? join(import.meta.dirname, '..', '..', '..', '..', 'characters', 'copilot');
+const GAZE = join(RIG_ROOT, 'sprites');
+const EXPRESSIONS = join(RIG_ROOT, 'expressions');
+const ANCHOR = join(RIG_ROOT, 'source', 'generated-sprites', 'approved-center.png');
 
 /**
  * The full build needs a rendered rig, which only exists on a machine that has
@@ -48,16 +50,16 @@ function scratch(prefix) {
 }
 
 /** Built once; the read-only tests all share it. */
-let marvin = null;
+let built = null;
 
 before(async () => {
   if (!haveRig) return;
   const outDir = scratch('agent-pack-');
   const result = await buildPack({
     rig: readRig([GAZE, EXPRESSIONS]),
-    outDir, id: 'marvin', name: 'Marvin', anchor: ANCHOR,
+    outDir, id: 'copilot', name: 'Copilot', anchor: ANCHOR,
   });
-  marvin = { outDir, result, pack: loadPack(outDir) };
+  built = { outDir, result, pack: loadPack(outDir) };
 });
 
 after(() => {
@@ -97,8 +99,8 @@ test('readRig refuses a track defined in two directories', withRig, () => {
   assert.throws(() => readRig([GAZE, GAZE]), /appears in more than one rig directory/);
 });
 
-test('building Marvin produces a valid, small pack', withRig, () => {
-  const { result, outDir } = marvin;
+test('building Copilot produces a valid, small pack', withRig, () => {
+  const { result, outDir } = built;
   assert.deepEqual(validatePack(result.pack, probeIn(outDir)), []);
   assert.equal(Object.keys(result.pack.tracks).length, 13);
   assert.equal(result.pack.steps, 12);
@@ -109,14 +111,13 @@ test('building Marvin produces a valid, small pack', withRig, () => {
   assert.ok(result.bytes < 1024 * 1024,
     'pack is ' + (result.bytes / 1024).toFixed(0) + ' KB, expected under 1 MB');
 
-  // Upstream, only `right` and the five expression tracks sit on the centre
-  // pose; the other seven gaze tracks drift and must be realigned.
-  assert.deepEqual([...result.realigned].sort(),
-    ['down', 'down_left', 'down_right', 'left', 'up', 'up_left', 'up_right']);
+  // Copilot's tracks already agree at frame 0, so none should be moved. A rig
+  // that drifts is realigned instead; pack-synthetic.test.js covers that.
+  assert.deepEqual([...result.realigned], []);
 });
 
 test('every track renders the same centre pose, within encoder noise', withRig, async () => {
-  const { outDir, pack } = marvin;
+  const { outDir, pack } = built;
   const names = Object.keys(pack.tracks);
   const raw = async (track, step) => sharp(await renderFrame(outDir, pack, track, step, 0))
     .ensureAlpha().raw().toBuffer();
@@ -138,7 +139,7 @@ test('every track renders the same centre pose, within encoder noise', withRig, 
 });
 
 test('the centre pose blinks on every track, including realigned ones', withRig, async () => {
-  const { outDir, pack, result } = marvin;
+  const { outDir, pack, result } = built;
 
   // Realigning frame 0 onto a bare anchor image once dropped its blink art,
   // which silently stopped the centre pose blinking - and sleep is defined as
@@ -158,23 +159,23 @@ test('the centre pose blinks on every track, including realigned ones', withRig,
 });
 
 test('blink patches stay smaller than the frames they patch', withRig, () => {
-  const { width, height } = marvin.pack.frame;
+  const { width, height } = built.pack.frame;
 
   // A single rect spanning the whole turn covers the eyes' travel and ends up
   // bigger than the frames it was meant to shrink, so patches are per-step.
-  for (const [name, track] of Object.entries(marvin.pack.tracks)) {
+  for (const [name, track] of Object.entries(built.pack.tracks)) {
     if (!track.patch) continue;
     const [w, h] = track.patch.size;
     assert.ok(w * h < (width * height) / 4,
       name + ' patch is ' + w + 'x' + h + ', more than a quarter of the frame');
-    assert.equal(track.patch.cells.length, marvin.pack.steps);
+    assert.equal(track.patch.cells.length, built.pack.steps);
   }
 });
 
 test('occluded poses carry no blink cell', withRig, () => {
   // `down`, `down_left` and `down_right` hide the eyes at steep angles, and the
   // manifests record no eye box there. Those steps must render as themselves.
-  const down = marvin.pack.tracks.down;
+  const down = built.pack.tracks.down;
   assert.ok(down.patch, 'down should still blink where the eyes are visible');
   assert.ok(down.patch.cells.some(cell => cell === null),
     'down should have at least one occluded step');
@@ -190,7 +191,7 @@ test('tracks that never blink carry no blink strip', withRig, async () => {
   for (const name of ['surprise', 'complete']) {
     for (const frame of rig.tracks.get(name).frames) frame.blinks = [];
   }
-  const result = await buildPack({ rig, outDir, id: 'marvin', name: 'Marvin', anchor: ANCHOR });
+  const result = await buildPack({ rig, outDir, id: 'copilot', name: 'Copilot', anchor: ANCHOR });
 
   assert.ok(result.neverBlink.includes('surprise'));
   assert.ok(result.neverBlink.includes('complete'));

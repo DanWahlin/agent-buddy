@@ -1,7 +1,7 @@
 //! Cutting a tray icon out of whichever character is showing.
 //!
-//! The icon was the one built into the binary, so it stayed Marvin whatever was
-//! on screen. A tray icon that does not match the character is worse than a
+//! The icon was the one built into the binary, so it stayed the same character
+//! whatever was on screen. A tray icon that does not match the character is worse than a
 //! generic one: it says the wrong thing rather than nothing.
 //!
 //! Frame 0 of a gaze track is the centre pose every track returns to - the

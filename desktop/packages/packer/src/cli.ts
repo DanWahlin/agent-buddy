@@ -2,7 +2,7 @@
 /**
  * `agent-pack` - turn a rendered character rig into an Agent Companion pack.
  *
- *   agent-pack build <rig-dir...> --out <dir> --id marvin --name Marvin
+ *   agent-pack build <rig-dir...> --out <dir> --id copilot --name Copilot
  *   agent-pack validate <pack-dir>
  */
 

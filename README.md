@@ -23,6 +23,10 @@ badge for the agent involved.
 Everything runs locally. There's no cloud service, account, or subscription, and
 the device works over USB or your local Wi-Fi.
 
+No device? The [Desktop Agent Companion](#desktop-agent-companion) puts the same
+characters in VS Code or in a transparent window on your desktop, driven by the
+same agent hooks.
+
 <p align="center">
   <img src="preview/agent-companion-demo.gif" alt="The Copilot character cycling through Idle, Surprise, Working, Needs attention, and Complete states" width="360">
 </p>
@@ -45,6 +49,7 @@ the device works over USB or your local Wi-Fi.
 - [Update](#update)
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
+- [Desktop Agent Companion](#desktop-agent-companion)
 - [Develop and customize](#develop-and-customize)
 
 ## Features
@@ -616,6 +621,147 @@ The page needs its private link. Run `npm run settings` to open it with the link
 
 </details>
 
+## Desktop Agent Companion
+
+The same characters, animated and reacting to what your agent is actually doing,
+with no device. You can show them in VS Code or in a window of their own beside
+whatever else you use. The code lives in [desktop/](desktop/).
+
+VS Code's built-in chat pet can't be extended: it's a workbench widget, with no
+contribution point and no setting for custom art. The Desktop Agent Companion
+shows **any** character from a portable pack, driven by real agent lifecycle
+hooks. The hooks come from the agent rather than the editor, so the same
+character works for Claude Code or Copilot CLI in a terminal, where there's no
+editor to put it in.
+
+### Two hosts, one companion
+
+Both hosts show the same characters, react to the same hooks, and can run at the
+same time, alongside the ESP32 device and its daemon.
+
+| | VS Code extension | Desktop app |
+| --- | --- | --- |
+| Where it sits | a view in the sidebar, panel or explorer | a transparent window on the desktop |
+| Built with | TypeScript, packaged as a `.vsix` | Tauri, a Rust shell around the same page |
+| Follows your gaze from | the caret's place in the visible range | the pointer, anywhere on screen |
+| Good for | working in the editor | an agent in a terminal, or a second screen |
+
+Copilot, Claude and OpenClaw ship with both. Copilot shows first, and the tray
+and app icons are cut from it. The extension works on Windows, macOS and Linux.
+The desktop app has been tried only on Windows so far.
+
+Both reuse this repository's own code: the daemon's state coordinator and
+protocol, and the device's sprite motion engine. Each is vendored unmodified
+under `desktop/packages/*/src/vendor/`. The effects (orbiting dots, confetti, the
+attention ring, sleeping Zs) are ported from the firmware with their timings
+unchanged.
+
+### Run the VS Code extension
+
+Needs Node.js 20.10 or newer.
+
+```bash
+cd desktop
+npm install
+npm run build
+npm run package --workspace agent-companion
+code --install-extension extension/agent-companion-0.1.0.vsix
+```
+
+Or open `desktop/` in VS Code and press **F5**. Open the Agent Companion view
+from the activity bar, and drag it into the secondary sidebar if you want it
+beside Chat.
+- **Agent Companion: Install Agent Hooks** connects it to a real agent.
+- **Simulate State** drives the expressions by hand, which is useful for checking
+  a pack.
+
+The `.vsix` is about 1.4 MB, nearly all of it the three characters.
+
+### Run the desktop app
+
+Needs Rust 1.88 or newer, and `node` on PATH, which the hooks need anyway.
+
+```bash
+cd desktop
+npm install
+npm run build --workspace @agent-companion/desktop
+cd apps/desktop/src-tauri && cargo run
+```
+
+The app is a frameless, transparent, always-on-top window with no taskbar button.
+- **Moving it:** drag the character. Where you put it is remembered, and only
+  restored if enough of the window would land on a monitor that still exists.
+- **The tray:** **Character**, **Open Characters Folder**, **Bring Back to
+  Centre** and **Quit**.
+- **Clicks:** they pass through everywhere except over the character itself.
+
+### Connect it to your agent
+
+**Agent Companion: Install Agent Hooks** connects Claude Code, Copilot CLI or
+both.
+- It names the files it will touch before writing, and keeps any hooks already
+  there.
+- **Remove Agent Hooks** takes only its own back out.
+- Restart a running agent session afterwards to pick up the hooks.
+
+| State | When |
+| --- | --- |
+| `working` | tools are running, or a subagent is |
+| `complete` | the turn finished, as a four-second pulse |
+| `attention` | a permission prompt or notification is waiting on you |
+| `idle` | nothing in flight |
+
+**The hooks can't stall a session.** They're asynchronous with a short timeout.
+The shim prints nothing, always exits 0, and gives up within about a second when
+no window is listening. This matters because Copilot CLI's `preToolUse` is
+fail-closed: a hook that fails denies the tool call. So the shim lives at a fixed
+location (`%LOCALAPPDATA%\AgentCompanion\hook.js`, or the equivalent on your
+platform) rather than inside whichever host installed it. As a result:
+- Updating or uninstalling the extension leaves the hooks working.
+- Two hosts share one shim.
+- Installing renames the shim into place atomically.
+- Upgrading replaces an older install's entry wherever it pointed.
+- Uninstalling removes the shim only once nothing names it.
+
+**Its endpoint is separate from the daemon's.** It's a named pipe on Windows and
+a Unix socket elsewhere, so the device and the desktop companion can run at once.
+
+**Each window follows its own project.** The first window to bind the endpoint
+leads, and the others follow; close the leader and a follower takes over.
+- Every hook is filed under the project it came from, so a window idle on one
+  repository doesn't animate because an agent is busy in another.
+- An agent with no project is shown by every window, so it's never invisible.
+- **Agent Companion: Show Connection Status** reports a window's role and the
+  projects it's reacting to.
+
+### How it behaves
+
+- **It follows what you're doing.** In the editor, the caret's place in the
+  visible range steers the gaze, debounced and with a dead zone in the middle
+  third, so it doesn't twitch on every keystroke. On the desktop, the pointer
+  does the job. Turn it off with `agentCompanion.followCaret`.
+- **Hover and poke.** Mousing onto the character takes over the gaze. Clicking
+  is a poke that triggers `surprise` and wears off on its own; a real agent event
+  wins immediately.
+- **It dozes**, using the device's cycle: after two idle minutes it sleeps for a
+  minute, then repeats. Any agent state, look or poke wakes it. Turn it off with
+  `agentCompanion.autoSleep`.
+- **It sits on your theme.** Packs are cut out, so the character sits on the
+  editor's own background in light or dark themes.
+
+### Your own character
+
+A pack is a folder of WebP strips and a `pack.json`, built from the same rig the
+Character Lab produces for the device.
+[desktop/docs/character-packs.md](desktop/docs/character-packs.md) covers making
+the art, building the pack with `agent-pack`, checking it, and loading it. You
+load your pack with `agentCompanion.packPaths` in VS Code or the Characters
+folder in the desktop app, so it never needs to be committed here. The format
+itself is in [desktop/docs/pack-format.md](desktop/docs/pack-format.md).
+
+Architecture, packer internals, effects and tests are in
+[desktop/README.md](desktop/README.md).
+
 ## Develop and customize
 
 **Character Lab** previews every character state in your browser using the same
@@ -681,3 +827,6 @@ local and are ignored by git.
 
 This is an independent project, not an official GitHub or Waveshare product.
 GitHub Copilot and Claude artwork and product names belong to their respective owners.
+
+The Desktop Agent Companion in [desktop/](desktop/) is by Darren Robinson, a
+derivative of this project made with Dan Wahlin's approval.

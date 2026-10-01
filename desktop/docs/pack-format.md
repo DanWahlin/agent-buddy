@@ -8,7 +8,7 @@ touching extension code.
 ## Layout
 
 ```
-marvin/
+copilot/
   pack.json
   right.webp              base strip:  12 frames of 120x112, side by side
   right.blink.webp        blink strip: 12 columns x 4 rows of the eye rectangle
@@ -35,8 +35,9 @@ passes through. A track that disagrees there shows a seam on every idle glance.
 
 Storing all five blink levels as whole frames makes the four closing levels
 about 74% of the pack, to change a few hundred eye pixels. Storing only the eye
-rectangle brings that to roughly 16%. Marvin's thirteen tracks come to **306 KB**
-packed this way; the same art stored flat on the ESP32 is 27.4 MB.
+rectangle brings that to roughly 16%. Copilot's thirteen tracks come to about
+**600 KB** packed this way, where flat storage of the same art runs to tens of
+megabytes.
 
 The rectangle is **per step**, not per track. The eyes travel as the head turns,
 so one rect spanning a whole track covers that travel and ends up larger than
@@ -60,9 +61,9 @@ if (n > 0 && track.patch?.cells[step]) {
 ```jsonc
 {
   "format": 1,
-  "id": "marvin",
-  "name": "Marvin",
-  "author": "darrenjrobinson",
+  "id": "my-agent",
+  "name": "My Agent",
+  "author": "your-name",
   "license": "CC-BY-4.0",
   "description": "one line, shown when picking a pack",
 
@@ -117,7 +118,7 @@ image exists and that:
 - `states` and `sleep` only name tracks the pack actually contains
 
 ```
-npx agent-pack validate packs/marvin
+npx agent-pack validate packs/copilot
 ```
 
 ## Frame 0, in a lossy pack
@@ -126,6 +127,6 @@ Packs are lossy WebP, so the same source pixels encode slightly differently in
 each track's strip and the centre pose is never byte-identical across tracks.
 That is fine, and the test asserts a calibrated bound rather than equality:
 the frame-0 difference must be comfortably inside a single motion step, which is
-the largest change the eye already accepts as smooth. On Marvin it measures
-about 10% of a step - quantisation noise. Before realignment the geometric drift
+the largest change the eye already accepts as smooth. On a rig that needed
+realigning it measured about 10% of a step - quantisation noise. Before realignment the geometric drift
 was roughly twice a step, which is a visible jump.

@@ -74,47 +74,47 @@ const bundled = (folder: string) => [{ folder, origin: 'bundled' as const }];
 beforeEach(() => files.clear());
 
 test('a root that is itself a pack folder is used as one', async () => {
-  addPack('/app/packs/marvin', 'marvin');
-  const { packs, problems } = await discoverPacks(filesystem, bundled('/app/packs/marvin'));
+  addPack('/app/packs/arthur', 'arthur');
+  const { packs, problems } = await discoverPacks(filesystem, bundled('/app/packs/arthur'));
 
   assert.equal(packs.length, 1);
-  assert.equal(packs[0].pack.id, 'marvin');
-  assert.equal(packs[0].folder, '/app/packs/marvin');
+  assert.equal(packs[0].pack.id, 'arthur');
+  assert.equal(packs[0].folder, '/app/packs/arthur');
   assert.equal(packs[0].origin, 'bundled');
   assert.deepEqual(problems, []);
 });
 
 test('a root that is a folder of packs yields each of them', async () => {
-  addPack('/app/packs/marvin', 'marvin');
+  addPack('/app/packs/arthur', 'arthur');
   addPack('/app/packs/zaphod', 'zaphod');
 
   const { packs } = await discoverPacks(filesystem, bundled('/app/packs'));
-  assert.deepEqual(packs.map(found => found.pack.id).sort(), ['marvin', 'zaphod']);
+  assert.deepEqual(packs.map(found => found.pack.id).sort(), ['arthur', 'zaphod']);
 });
 
 test('a later root shadows an earlier pack with the same id', async () => {
-  addPack('/app/packs/marvin', 'marvin');
-  addPack('/home/me/marvin', 'marvin');
+  addPack('/app/packs/arthur', 'arthur');
+  addPack('/home/me/arthur', 'arthur');
 
   const { packs } = await discoverPacks(filesystem, [
     { folder: '/app/packs', origin: 'bundled' },
-    { folder: '/home/me/marvin', origin: 'configured' },
+    { folder: '/home/me/arthur', origin: 'configured' },
   ]);
 
   assert.equal(packs.length, 1);
   assert.equal(packs[0].origin, 'configured');
-  assert.equal(packs[0].folder, '/home/me/marvin');
+  assert.equal(packs[0].folder, '/home/me/arthur');
 });
 
 test('an unreadable root is reported, and the other roots still load', async () => {
-  addPack('/app/packs/marvin', 'marvin');
+  addPack('/app/packs/arthur', 'arthur');
 
   const { packs, problems } = await discoverPacks(filesystem, [
     { folder: '/app/packs', origin: 'bundled' },
     { folder: '/nowhere', origin: 'configured' },
   ]);
 
-  assert.deepEqual(packs.map(found => found.pack.id), ['marvin']);
+  assert.deepEqual(packs.map(found => found.pack.id), ['arthur']);
   assert.equal(problems.length, 1);
   assert.equal(problems[0].folder, '/nowhere');
   assert.match(problems[0].reason, /could not be read/);
@@ -148,12 +148,12 @@ test('a structurally invalid manifest is reported with the first error', async (
 });
 
 test('choosePack honours the id asked for, and falls back rather than showing nothing', async () => {
-  addPack('/app/packs/marvin', 'marvin');
+  addPack('/app/packs/arthur', 'arthur');
   addPack('/app/packs/zaphod', 'zaphod');
   const { packs } = await discoverPacks(filesystem, bundled('/app/packs'));
 
   assert.equal(choosePack(packs, 'zaphod')?.pack.id, 'zaphod');
   assert.equal(choosePack(packs, 'nobody')?.pack.id, packs[0].pack.id);
   assert.equal(choosePack(packs, undefined)?.pack.id, packs[0].pack.id);
-  assert.equal(choosePack([], 'marvin'), null);
+  assert.equal(choosePack([], 'arthur'), null);
 });

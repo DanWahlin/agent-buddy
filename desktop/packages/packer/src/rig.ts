@@ -7,7 +7,7 @@
  * than guessing from filenames.
  *
  * How the thirteen tracks are divided up varies by rig and none of it matters
- * here: Marvin renders gaze and expressions in two passes and so writes two
+ * here: Copilot renders gaze and expressions in two passes and so writes two
  * manifests in two directories, OpenClaw puts all thirteen under `directions`
  * in one, and Claude puts all thirteen in one manifest split between
  * `directions` and `expressions`. Every shape merges into the same 13-track

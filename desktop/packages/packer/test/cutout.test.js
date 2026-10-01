@@ -41,7 +41,7 @@ test('the backdrop is removed and the character kept', () => {
 });
 
 test('a dark interior is kept, which a brightness threshold would eat', () => {
-  // Marvin's darkest interior pixel is (14,19,19) against a (0,0,0) backdrop,
+  // One real rig's darkest interior pixel is (14,19,19) against a (0,0,0) backdrop,
   // so this is the case that decides the whole approach.
   const s = scene([
     '........',

@@ -6,7 +6,7 @@
  * character ends up in a visible box, and in a light theme that box is stark.
  *
  * A brightness threshold alone cannot do this. The upstream art notes warn that
- * dark matte materials fragment under one - and measured on Marvin the backdrop
+ * dark matte materials fragment under one - and measured on one dark rig the backdrop
  * is exactly (0,0,0) while the darkest pixel inside the head is (14,19,19), so
  * a global threshold either keeps backdrop or eats the character. Instead the
  * backdrop is found by flooding inwards from the edges: only dark pixels

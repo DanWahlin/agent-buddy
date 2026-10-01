@@ -11,7 +11,7 @@ import { applyCutout } from '../dist/cutout.js';
 
 sharp.cache(false);
 
-const dir = process.argv[2] ?? join(import.meta.dirname, '..', '..', '..', 'packs', 'marvin');
+const dir = process.argv[2] ?? join(import.meta.dirname, '..', '..', '..', 'packs', 'copilot');
 const out = process.argv[3] ?? join(import.meta.dirname, '..', 'cutout-preview.png');
 const pack = JSON.parse(readFileSync(join(dir, 'pack.json'), 'utf8'));
 const { width: fw, height: fh } = pack.frame;

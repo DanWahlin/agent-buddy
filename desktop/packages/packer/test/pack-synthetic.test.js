@@ -13,8 +13,8 @@ import { BLINK_LEVELS, FRAME, POSES, createRig } from './rig-fixture.mjs';
 /**
  * The whole packing pipeline, against a rig built on the spot.
  *
- * `pack.test.js` covers what is specific to the real Marvin rig and skips
- * without it. This covers that the packer works at all, so it runs everywhere -
+ * `pack.test.js` covers what is specific to the real Copilot rig in
+ * characters/copilot and skips without it. This covers that the packer works at all, so it runs everywhere -
  * including on the platforms where nobody has a rendered rig.
  */
 

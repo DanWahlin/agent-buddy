@@ -4,9 +4,9 @@
 //! not written again here: a one-shot Node script reports what it found and
 //! this decides what to do with it.
 //!
-//! Only Marvin ships with the app. The other packs in the repository carry
-//! artwork belonging to other people - GitHub's, in Copilot's case - so they
-//! are something to point at rather than something to distribute.
+//! Copilot, Claude and OpenClaw ship with the app. Anyone else's character is
+//! something to point at rather than something to distribute, so it loads from
+//! the user's own folder instead.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -141,9 +141,9 @@ pub fn remember(window: &tauri::WebviewWindow, id: &str) {
 
 /// A folder of the user's own, always looked in.
 ///
-/// Only Marvin ships, for licensing reasons, so without somewhere obvious to
-/// put another the Character menu lists exactly one thing and looks broken. An
-/// environment variable is not somewhere obvious. This is.
+/// Only three characters ship, so without somewhere obvious to put your own
+/// there is no way to see it in the Character menu. An environment variable is
+/// not somewhere obvious. This is.
 pub fn user_folder(window: &tauri::WebviewWindow) -> Option<PathBuf> {
     use tauri::Manager;
     let folder = window.app_handle().path().app_data_dir().ok()?.join("packs");
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn a_pack_that_has_gone_falls_back_rather_than_showing_nothing() {
         let packs = [pack("copilot"), pack("openclaw")];
-        assert_eq!(choose(&packs, Some("marvin")).unwrap().id, "copilot");
+        assert_eq!(choose(&packs, Some("arthur")).unwrap().id, "copilot");
     }
 
     /// The shipped default wins over a pack that merely sorts earlier.

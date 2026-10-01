@@ -1,10 +1,31 @@
-name: CI
+name: Desktop Agent Companion
 
 on:
   push:
-    branches: [main]
+    branches: [main, desktop-companion]
+    paths:
+      - 'desktop/**'
+      # The real-rig packer tests build Copilot from here.
+      - 'characters/copilot/**'
+      # What desktop/ vendors, so a change upstream of a copy is noticed.
+      - 'daemon/src/**'
+      - 'web/sprite-motion.js'
+      - '.github/workflows/desktop.yml'
   pull_request:
+    paths:
+      - 'desktop/**'
+      - 'characters/copilot/**'
+      - 'daemon/src/**'
+      - 'web/sprite-motion.js'
+      - '.github/workflows/desktop.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: desktop
 
 jobs:
   test:
@@ -26,6 +47,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: desktop/package-lock.json
 
       - run: npm ci
 
@@ -54,18 +76,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: desktop/package-lock.json
       - run: npm ci
       - run: npm run build
 
       - name: Package the extension
-        working-directory: extension
+        working-directory: desktop/extension
         run: npx vsce package --no-dependencies --allow-missing-repository
 
       # A .vsix any machine can install, so the extension can be tried on a Mac
-      # or a Linux box without a toolchain there. CI cannot look at Marvin; a
-      # person still has to.
+      # or a Linux box without a toolchain there. CI cannot look at the
+      # characters; a person still has to.
       - uses: actions/upload-artifact@v4
         with:
           name: agent-companion-vsix
-          path: extension/*.vsix
+          path: desktop/extension/*.vsix
           if-no-files-found: error

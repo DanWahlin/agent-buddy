@@ -1,28 +1,12 @@
-# Agent Companion
+# Desktop Agent Companion - developer notes
 
-Your agent's own avatar, animated, reacting to what the agent is actually
-doing - in VS Code, or in a window of its own beside whatever else you use.
+What it is, how to install and run it, and how to connect it to an agent are in
+the [root README](../README.md#desktop-agent-companion). Making your own
+character is in [docs/character-packs.md](docs/character-packs.md). This file is
+about how it works: the pieces, the packer, the renderer, the hooks, and the tests.
 
-VS Code's built-in chat pet is not extensible: it is a workbench widget, with
-no contribution point and no setting for custom art. This is the thing it
-doesn't have - **any** character from a portable pack, driven by real agent
-lifecycle hooks. And because the hooks come from the agent rather than the
-editor, the same character works for Claude Code or Copilot CLI in a terminal,
-where there is no editor to put it in.
-
-## Two hosts, one companion
-
-Both show the same characters, react to the same hooks, and can run at once.
-
-| | VS Code extension | Desktop app |
-| --- | --- | --- |
-| Where it sits | a view in the sidebar, panel or explorer | a transparent window on the desktop |
-| Built with | TypeScript, packaged as a `.vsix` | Tauri - a Rust shell around the same page |
-| Follows your gaze from | the caret's place in the visible range | the pointer, anywhere on screen |
-| Good for | working in the editor | an agent in a terminal, or a second screen |
-
-What differs between them is the window. Everything that decides what the
-character should be doing is shared, and so is the page that draws it.
+Everything below is relative to `desktop/`, which is a self-contained npm
+workspace with its own lockfile.
 
 ## Status
 
@@ -69,20 +53,19 @@ A directory of WebP strips plus a `pack.json`, described in
 directions and five expressions - each a run of poses with four blink levels
 stored as eye-sized patches rather than whole frames.
 
-Four live in `packs/`, each thirteen tracks at twelve steps and 120x112:
+Three live in `packs/`, each thirteen tracks at twelve steps and 120x112:
 
 | Pack | Size | Source | |
 | --- | --- | --- | --- |
 | `copilot` | 656 KB | AI-generated rig | ships, and is what shows first |
 | `claude` | 404 KB | box model, rendered procedurally | ships |
 | `openclaw` | 548 KB | Three.js model, rendered offline | ships |
-| `marvin` | 556 KB | AI-generated rig | the author's own, not distributed |
 
 **Copilot, Claude and OpenClaw are the Agent Companion characters.** Those three
 are bundled into the `.vsix` and into the desktop app, Copilot is the one shown
-before anybody picks, and every icon is cut from its centre pose. Marvin is the
-author's own character and is not distributed; point `agentCompanion.packPaths`
-at this `packs/` folder to use him anyway.
+before anybody picks, and every icon is cut from its centre pose. Anyone else's
+character loads from outside the repository, through `agentCompanion.packPaths`
+or the desktop app's Characters folder.
 
 All three that ship wear a name that is not ours - GitHub's, Anthropic's and the
 OpenClaw project's - which each `pack.json` records. Whether they may be
@@ -90,32 +73,34 @@ published under those names is a trademark question rather than a build one, and
 `BUNDLED_PACKS` in [extension/esbuild.mjs](extension/esbuild.mjs) is the single
 place to change to stop shipping one.
 
-`claude` is the smallest of the four and much the cleanest input: flat
+`claude` is the smallest of the three and much the cleanest input: flat
 terracotta over flat black, built from axis-aligned boxes and rendered rather
 than generated, so all thirteen tracks already share frame 0 byte for byte and
 nothing needed realigning.
 
 ## Building a pack
 
+[docs/character-packs.md](docs/character-packs.md) is the walkthrough. In short:
+
 ```
 npm install
 npm run build
 
-npx agent-pack build <gaze-dir> <expression-dir> \
-  --out packs/marvin --id marvin --name Marvin \
-  --anchor <approved-center.png>
+npx agent-pack build ../characters/copilot/sprites ../characters/copilot/expressions \
+  --out packs/copilot --id copilot --name Copilot \
+  --anchor ../characters/copilot/source/generated-sprites/approved-center.png
 
-npx agent-pack validate packs/marvin
+npx agent-pack validate packs/copilot
 
 # a rig keeping all thirteen tracks in one place needs no second directory,
 # and one that already agrees at frame 0 needs no anchor
-npx agent-pack build <rig-dir> --out packs/claude --id claude --name Claude
+npx agent-pack build ../characters/claude/sprites --out packs/claude --id claude --name Claude
 ```
 
 The input is a rendered rig: the `animation.json` an ESP32 Agent Companion art
 pipeline emits, which already carries per-frame eye boxes and blink filenames.
 How it divides the thirteen tracks up varies by rig and the packer does not
-mind - two directories with a manifest each, as Marvin renders gaze and
+mind - two directories with a manifest each, as Copilot renders gaze and
 expressions in separate passes, or one directory and one manifest, whether that
 lists all thirteen together like OpenClaw or splits them between `directions`
 and `expressions` like Claude. A directory of loose PNGs named
@@ -129,8 +114,9 @@ and `expressions` like Claude. A directory of loose PNGs named
 **Realigns frame 0.** Step 0 is the shared centre pose every track returns to
 before switching. If tracks disagree there, the seam shows on every idle glance.
 The packer forces frame 0 to the anchor - blink art included - and reports which
-tracks needed it. On Marvin that is seven of thirteen; on a rig that is already
-clean it stays silent.
+tracks needed it. On a rig whose gaze tracks drift that can be seven of
+thirteen; on one that is already clean, like Copilot's or Claude's, it stays
+silent.
 
 **Packs blinks as per-step patches.** Whole-frame blink levels are ~74% of a
 pack. Patched, ~16%. The rect has to be per-step, because the eyes travel as the
@@ -165,49 +151,20 @@ they are equally blank, and the pack still validates. A renderer that captured
 before its canvas was ready produces exactly this, and it cost a whole track
 before the check existed.
 
-## Running the extension
+## Running it
 
-Press **F5** (the launch config is in `.vscode/launch.json`), or install the
-packaged build:
+Install and run steps for both hosts are in the
+[root README](../README.md#desktop-agent-companion). Two notes for working on it:
 
-```
-npm run build --workspace agent-companion
-code --install-extension extension/agent-companion-0.1.0.vsix
-```
-
-Open the Agent Companion view from the activity bar, and drag it into the
-secondary sidebar if you want it beside Chat. **Agent Companion: Install Agent
-Hooks** connects it to a real agent; **Simulate State** drives the expressions by
-hand, which stays useful for checking a pack.
-
-The `.vsix` is 1.44 MB, of which 1.41 MB is the three characters. WebP does not
-compress again inside a zip, so a pack costs very nearly what it weighs - which
-is the argument for the patch-packed blinks, and for the list of what ships
-being a list.
-
-## Running the desktop app
-
-Needs Rust 1.88 or newer, and `node` on PATH - which the hooks require anyway.
-
-```
-npm run build --workspace @agent-companion/desktop
-cd apps/desktop/src-tauri && cargo run
-```
-
-A frameless, transparent, always-on-top window with no taskbar button. Drag the
-character to move it; the tray has **Character**, **Open Characters Folder**,
-**Bring Back to Centre** and **Quit**. Where you put it is remembered, and only
-restored if enough of the window would land on a monitor that still exists.
-
-[apps/desktop/README.md](apps/desktop/README.md) covers the rest, including why
-a pet has to do its own hit-testing: Tauri's click-through is all or nothing, so
-while clicks are passing through the page cannot see the pointer at all. The
-shell reads the cursor instead and hands the window the mouse only over the
-character - which a desktop companion needs anyway, since a webview cannot see
-a pointer that is not over it.
-
-That question was settled in [apps/click-through-prototype](apps/click-through-prototype/README.md)
-before anything was built on the answer.
+- **F5** in this folder launches the extension in a development host (the launch
+  config is in `.vscode/launch.json`).
+- [apps/desktop/README.md](apps/desktop/README.md) covers the desktop shell,
+  including why a pet has to do its own hit-testing: Tauri's click-through is
+  all or nothing, so while clicks are passing through the page cannot see the
+  pointer at all. The shell reads the cursor instead and hands the window the
+  mouse only over the character. That question was settled in
+  [apps/click-through-prototype](apps/click-through-prototype/README.md) before
+  anything was built on the answer.
 
 ## Watching the renderer on its own
 
@@ -235,7 +192,9 @@ All three show the pack that ships first unless `AGENT_COMPANION_PACK` names a
 directory, which is how a newly built character gets looked at before it goes
 anywhere.
 
-## Reacting to a real agent
+## The hooks, in detail
+
+The user-facing summary is in the root README. This is the reasoning behind it.
 
 **Agent Companion: Install Agent Hooks** wires up Claude Code, Copilot CLI, or
 both. It names the files it will touch before writing, keeps any hooks already
@@ -333,7 +292,7 @@ background in any theme. `--background <hex>` opts into an opaque card instead.
 Source rigs are rendered opaque on a solid backdrop, which suits a device with
 its own screen and not a panel inside an editor - a baked-in dark card is
 invisible in a dark theme and stark in a light one. A brightness threshold
-cannot separate them: on Marvin the backdrop is exactly `(0,0,0)` and the
+cannot separate them: on one dark rig the backdrop is exactly `(0,0,0)` and the
 darkest pixel inside the head is `(14,19,19)`, so any threshold either keeps
 backdrop or eats the character, which is the fragmentation the upstream art
 notes warn about. Instead the backdrop is found by flooding inwards from the
@@ -427,8 +386,10 @@ the firmware, so `CharacterPlayer` adds that layer:
 npm test
 ```
 
-Tests that need a rendered rig skip themselves when there isn't one; point
-`AGENT_COMPANION_RIG` at yours. The Rust in `apps/desktop/src-tauri` and
+The real-rig packer tests build Copilot from `../characters/copilot`, so they
+run wherever this repository is checked out; point `AGENT_COMPANION_RIG` at a
+character folder laid out the same way to build your own instead. They take a
+few minutes, because they pack the full-size rig. The Rust in `apps/desktop/src-tauri` and
 `apps/click-through-prototype/src-tauri` has its own, run with `cargo test`; CI
 does not build them, so they are not part of `npm test`.
 
@@ -445,7 +406,7 @@ The ones worth knowing about:
   step.
 - **the centre pose blinks on every track**, which catches a real bug: realigning
   onto a bare anchor image dropped its blink art, and since sleep is the centre
-  pose held closed, Marvin slept with his eyes open.
+  pose held closed, the character slept with its eyes open.
 - **blink patches stay under a quarter of the frame**, which catches the
   per-track-rect regression.
 - **a window is not disturbed by an agent in another project**, which is a bug
@@ -468,24 +429,22 @@ exist for that.
 
 ## Credits and licensing
 
-Marvin's rig was produced with the art pipeline in
-[DanWahlin/esp32-agent-companion](https://github.com/DanWahlin/esp32-agent-companion),
-whose `docs/character-art-notes.md` is the source for most of what the packer
-knows about blink synthesis and frame-0 alignment.
+[../docs/character-art-notes.md](../docs/character-art-notes.md) is the source
+for most of what the packer knows about blink synthesis and frame-0 alignment.
 
 **Dan Wahlin has approved this derivative work.** Two directories vendor his
 code unmodified, each recording its provenance beside it:
 [`packages/agent-state/src/vendor`](packages/agent-state/src/vendor/README.md),
-holding the protocol, coordinator and state store, and
+holding the protocol, coordinator and state store from
+[`../daemon/src`](../daemon/src), and
 [`packages/renderer/src/vendor`](packages/renderer/src/vendor/README.md),
-holding the sprite motion engine.
+holding the sprite motion engine from
+[`../web/sprite-motion.js`](../web/sprite-motion.js).
 
-That repository still carries no LICENSE file, so the approval is the only
-thing settling reuse. Before publishing anywhere, it is worth asking him to add
-one, or recording the grant somewhere more durable than a line in this file.
+The repository carries no LICENSE file, so that approval is what settles reuse.
 
 No pack in this repository copies anyone's artwork: every frame is rendered, by
-the pipeline above or by a tool in this repository. Names are a separate matter.
+the Character Lab or by a tool in this repository. Names are a separate matter.
 `copilot` renders a character of GitHub's, `claude` one of Anthropic's and
 `openclaw` one of the OpenClaw project's, and all three of those ship - see the
 pack table above, which is also where to start if that should change.

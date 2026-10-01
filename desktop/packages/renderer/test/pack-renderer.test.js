@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { blinkDraw } from '@agent-companion/pack-format';
 import { PackRenderer } from '../dist/index.js';
 
-const PACK_DIR = join(import.meta.dirname, '..', '..', '..', 'packs', 'marvin');
+const PACK_DIR = join(import.meta.dirname, '..', '..', '..', 'packs', 'copilot');
 const pack = JSON.parse(readFileSync(join(PACK_DIR, 'pack.json'), 'utf8'));
 
 /**

@@ -6,9 +6,9 @@
  *
  * 1. Frame 0 is the hinge. The motion engine walks back to index 0 before
  *    switching tracks, so every track's frame 0 must be the same image or the
- *    seam shows on every idle glance. Marvin's five expression tracks are
- *    already byte-identical to `approved-center.png`; the seven non-`right`
- *    gaze tracks drift. We overwrite frame 0 with the anchor rather than
+ *    seam shows on every idle glance. Some rigs already agree there; in others
+ *    the expression tracks match `approved-center.png` but the seven
+ *    non-`right` gaze tracks drift. We overwrite frame 0 with the anchor rather than
  *    regenerating anything - the delta then lands inside the 0 to 1 step, where
  *    real motion masks it.
  * 2. Blink levels are stored as eye patches, not whole frames. Flat storage

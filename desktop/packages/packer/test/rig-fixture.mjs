@@ -12,7 +12,7 @@
  * - one track is "expression-preserved": its blink images are byte-identical
  *   to their base, so it should get no blink strip.
  *
- * It writes Marvin's layout by default - gaze and expressions in two
+ * It writes Copilot's layout by default - gaze and expressions in two
  * directories with a manifest each - and Claude's with `combined: true`: one
  * directory whose one manifest splits the thirteen between `directions` and
  * `expressions`.
@@ -84,7 +84,7 @@ export async function createRig(root, {
   /**
    * Write all thirteen tracks into one directory, whose single manifest splits
    * them between `directions` and `expressions` - the shape Claude's rig
-   * arrives in, rather than Marvin's two directories with two manifests.
+   * arrives in, rather than Copilot's two directories with two manifests.
    */
   combined = false,
 } = {}) {
