@@ -5,8 +5,8 @@
  * compiled to WebAssembly (`desktop/engine`), fed the same `.acpk` pack and the
  * same badge packets the device gets. This page only does what the device's
  * screen does around it: steps the engine each frame, shows the result, and
- * passes on what the agent is doing. It adds one thing the device has no need
- * of, a backdrop, because a desktop is not black.
+ * passes on what the agent is doing. Around the screen it draws the device
+ * itself, case and buttons, unless Settings asks for the character on its own.
  */
 
 // Emscripten's loader, CommonJS, bundled by esbuild.
@@ -56,15 +56,15 @@ type HostMessage =
 const MODES: Record<string, number> = { idle: 0, surprise: 1, working: 2, complete: 3, attention: 4 };
 const ROLE_LETTER = { working: 'w', attention: 'a', complete: 'c' } as const;
 
-/** The glow orb's rim in each device mode (5 is sleep), from the device's own effect colours. */
-const RIM: Record<number, [number, number, number]> = {
-  0: [143, 155, 255],
-  1: [174, 217, 251],
-  2: [80, 215, 239],
-  3: [247, 206, 118],
-  4: [255, 192, 86],
-  5: [174, 190, 255],
-};
+/**
+ * The window shows a small copy of the device: its round 466 px screen inside
+ * a matte black case, with the two buttons on its right edge. Everything is
+ * laid out in device pixels; the case and buttons need this much room.
+ */
+const SCREEN = 466;
+const CASE_RADIUS = 269;
+const BUTTON_REACH = 7;
+const UNITS = 2 * (CASE_RADIUS + BUTTON_REACH + 4);
 
 const tauri = window.__TAURI__;
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
@@ -75,13 +75,12 @@ let engine: Engine | null = null;
 let frameCanvas: HTMLCanvasElement | null = null;
 let frameContext: CanvasRenderingContext2D | null = null;
 let frameImage: ImageData | null = null;
-let backdrop = 'orb';
+let backdrop = 'device';
 let wantedMode = 0;
 let iconsKey = '';
 let activeKey = '';
 let loaded = false;
 let pendingDaemon: DaemonSnapshot | null = null;
-let rim: [number, number, number] = RIM[0];
 let last = performance.now();
 
 function say(text: string): void {
@@ -174,39 +173,48 @@ function resize(): void {
   reportRegion();
 }
 
-function drawBackdrop(size: number, mode: number): void {
+/** The device: case, buttons, bezel lip and the black screen the frame is drawn on. */
+function drawDevice(size: number): void {
+  const unit = size / UNITS;
   const centre = size / 2;
-  const radius = size / 2;
-  if (backdrop === 'device') {
-    // The device's own screen: black glass in a thin bezel.
+  const at = (value: number) => value * unit;
+
+  // The two buttons on the right edge, behind the case so it overlaps them.
+  context.fillStyle = '#16171a';
+  for (const degrees of [-24, 24]) {
+    const angle = degrees * Math.PI / 180;
+    context.save();
+    context.translate(centre + at(CASE_RADIUS - 2) * Math.cos(angle), centre + at(CASE_RADIUS - 2) * Math.sin(angle));
+    context.rotate(angle);
     context.beginPath();
-    context.arc(centre, centre, radius - 1, 0, Math.PI * 2);
-    context.fillStyle = '#000';
+    context.roundRect(0, -at(17), at(BUTTON_REACH + 2), at(34), at(3));
     context.fill();
-    context.lineWidth = Math.max(1, size / 160);
-    context.strokeStyle = 'rgba(90, 96, 110, .9)';
-    context.stroke();
-    return;
+    context.restore();
   }
-  if (backdrop !== 'orb') return;
-  // A soft dark glow the size of the display, so the effects read on any
-  // desktop, with a rim tinted by what the character is doing.
-  const target = RIM[mode] ?? RIM[0];
-  rim = rim.map((value, i) => value + (target[i] - value) * .08) as [number, number, number];
-  const body = context.createRadialGradient(centre, centre, 0, centre, centre, radius);
-  body.addColorStop(0, 'rgba(10, 12, 20, .9)');
-  body.addColorStop(.72, 'rgba(10, 12, 20, .84)');
-  body.addColorStop(.9, 'rgba(10, 12, 20, .5)');
-  body.addColorStop(1, 'rgba(10, 12, 20, 0)');
-  context.fillStyle = body;
-  context.fillRect(0, 0, size, size);
-  const [r, g, b] = rim.map(Math.round);
-  const glow = context.createRadialGradient(centre, centre, radius * .78, centre, centre, radius);
-  glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0)`);
-  glow.addColorStop(.6, `rgba(${r}, ${g}, ${b}, .28)`);
-  glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-  context.fillStyle = glow;
-  context.fillRect(0, 0, size, size);
+
+  // The case: matte black, a touch lighter towards the top left.
+  const shell = context.createLinearGradient(centre - at(CASE_RADIUS), centre - at(CASE_RADIUS),
+    centre + at(CASE_RADIUS), centre + at(CASE_RADIUS));
+  shell.addColorStop(0, '#2a2b2f');
+  shell.addColorStop(.45, '#151619');
+  shell.addColorStop(1, '#0b0b0d');
+  context.beginPath();
+  context.arc(centre, centre, at(CASE_RADIUS), 0, Math.PI * 2);
+  context.fillStyle = shell;
+  context.fill();
+  context.lineWidth = Math.max(1, at(1.5));
+  context.strokeStyle = 'rgba(255, 255, 255, .10)';
+  context.stroke();
+
+  // The bezel's inner lip, then the screen.
+  context.beginPath();
+  context.arc(centre, centre, at(SCREEN / 2 + 6), 0, Math.PI * 2);
+  context.fillStyle = '#050506';
+  context.fill();
+  context.beginPath();
+  context.arc(centre, centre, at(SCREEN / 2), 0, Math.PI * 2);
+  context.fillStyle = '#000';
+  context.fill();
 }
 
 function draw(now: number): void {
@@ -236,12 +244,14 @@ function draw(now: number): void {
   frameContext.putImageData(frameImage, 0, 0);
 
   const size = canvas.width;
-  const scale = size / e._ac_display();
+  const scale = size / UNITS;
+  const screenLeft = (size - SCREEN * scale) / 2;
   context.clearRect(0, 0, size, size);
-  drawBackdrop(size, e._ac_state_mode());
+  if (backdrop === 'device') drawDevice(size);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(frameCanvas, e._ac_frame_x() * scale, 0, width * scale, height * scale);
+  context.drawImage(frameCanvas, screenLeft + e._ac_frame_x() * scale, screenLeft,
+    width * scale, height * scale);
 }
 
 // --- the shell -----------------------------------------------------------------
@@ -254,7 +264,7 @@ function draw(now: number): void {
 function reportRegion(): void {
   const box = canvas.getBoundingClientRect();
   if (box.width < 1) return;
-  const unit = box.width / 466;
+  const unit = box.width / UNITS;
   void tauri.core.invoke('set_region', {
     region: { cx: box.left + box.width / 2, cy: box.top + box.height / 2, rx: 160 * unit, ry: 135 * unit },
   });

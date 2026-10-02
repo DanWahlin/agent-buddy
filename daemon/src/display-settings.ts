@@ -3,8 +3,8 @@ import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {displaySettingsPath} from './paths.js';
 
-// What sits behind the desktop character, so its effects stay readable on a light desktop.
-export const desktopBackdrops = ['none', 'orb', 'device'] as const;
+// How the desktop character is framed: as the device itself, or on its own.
+export const desktopBackdrops = ['device', 'none'] as const;
 export type DesktopBackdrop = typeof desktopBackdrops[number];
 
 export interface DisplaySettings {
@@ -17,7 +17,7 @@ export interface DisplaySettings {
 export const defaultDisplaySettings: DisplaySettings = {
   showAgentBadges: true,
   showDesktopCompanion: true,
-  desktopBackdrop: 'orb',
+  desktopBackdrop: 'device',
 };
 
 export function isDesktopBackdrop(value: unknown): value is DesktopBackdrop {

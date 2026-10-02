@@ -170,7 +170,7 @@ pub fn parse(status: &Value) -> Option<Snapshot> {
         backdrop: desktop
             .and_then(|it| it.get("backdrop"))
             .and_then(Value::as_str)
-            .unwrap_or("orb")
+            .unwrap_or("device")
             .to_string(),
         badges: active,
         icons,
@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(snapshot.character.as_deref(), Some("copilot"));
         assert!(snapshot.visible);
         assert!(!snapshot.connected);
-        assert_eq!(snapshot.backdrop, "orb");
+        assert_eq!(snapshot.backdrop, "device");
         assert_eq!(parse(&json!({ "state": "idle", "character": "none" })).unwrap().character, None);
         assert!(parse(&json!({ "state": "dancing" })).is_none());
         assert!(parse(&json!([])).is_none());

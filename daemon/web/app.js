@@ -238,7 +238,7 @@ function renderStatus() {
   for (const button of document.querySelectorAll('#modes button')) {
     button.setAttribute('aria-checked', String(button.dataset.mode === status.mode));
   }
-  const desktop = status.desktop ?? {visible: true, backdrop: 'orb'};
+  const desktop = status.desktop ?? {visible: true, backdrop: 'device'};
   const desktopToggle = $('desktop-toggle');
   if (desktopToggle && !desktopPending) desktopToggle.checked = desktop.visible !== false;
   for (const button of document.querySelectorAll('#backdrops button')) {
@@ -456,8 +456,7 @@ for (const button of document.querySelectorAll('#modes button')) {
 }
 
 const backdropHints = {
-  orb: 'A soft dark glow behind the character, tinted by what it is doing, so the effects stay readable on a light desktop.',
-  device: 'A round dark screen, the same size and shape as the device display.',
+  device: 'The character on a small copy of the device, screen, bezel and buttons, so it looks and reads exactly as it does on your desk.',
   none: 'Just the character and its effects, straight on the desktop.',
 };
 
@@ -487,7 +486,7 @@ $('desktop-toggle')?.addEventListener('change', event => {
 
 for (const button of document.querySelectorAll('#backdrops button')) {
   button.addEventListener('click', () => {
-    void updateDesktop({backdrop: button.dataset.backdrop}, `Backdrop set to ${button.textContent}.`);
+    void updateDesktop({backdrop: button.dataset.backdrop}, `Desktop look set to ${button.textContent}.`);
   });
 }
 

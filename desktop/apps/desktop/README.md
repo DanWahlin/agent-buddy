@@ -18,7 +18,7 @@ build` from the repository root). Node is only needed to build.
 
 The page runs the firmware's own animation engine, compiled to WebAssembly, on
 the `.acpk` pack the shell serves it. The shell follows the ESP32 daemon over
-its socket (`src-tauri/src/daemon.rs`) and passes the state, badges and backdrop
+its socket (`src-tauri/src/daemon.rs`) and passes the state, badges and look
 to the page. It loads the character the daemon names, and shows or hides the
 window as Settings says.
 

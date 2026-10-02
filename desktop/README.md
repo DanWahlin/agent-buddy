@@ -10,7 +10,7 @@ flowchart LR
   hooks[Agent hooks] --> daemon[Companion service<br/>daemon/]
   daemon -- USB / Wi-Fi --> device[ESP32 device<br/>firmware]
   daemon -- status over daemon.sock --> shell[Desktop shell<br/>apps/desktop/src-tauri]
-  shell -- state, badges, backdrop --> page[Page<br/>apps/desktop/src/webview]
+  shell -- state, badges, look --> page[Page<br/>apps/desktop/src/webview]
   shell -- .acpk pack --> page
   page --> engine[Firmware engine as WebAssembly<br/>engine/]
 ```
@@ -29,7 +29,7 @@ There is one of everything:
 - **One source of truth.** The Rust shell polls the daemon's `status` every
   400 ms. That gives it the state, the agent badges (already filtered by the
   badge setting and cut to four, as the device gets them), the character and its
-  pack file, and the desktop settings. The desktop has no hooks, no state
+  pack file, and the desktop settings (shown or hidden, and the look). The desktop has no hooks, no state
   coordinator and no settings of its own.
 
 ## Building
@@ -60,10 +60,15 @@ matches, for Copilot, Claude and OpenClaw. Any change to the firmware's
 animation code reaches the desktop at the next build, and CI fails if the two
 ever disagree.
 
-## Transparency
+## The look
 
-The device draws on black, and a desktop is not black. With the **Glow orb** or
-**None** backdrop, the engine keys the frame (`writeRgba` in `engine.cpp`):
+By default, the window is a small copy of the device: the round screen in a
+matte black case, with the two buttons on its right edge. The page draws the
+case in the canvas around the engine's frame, and the frame is the device's own
+pixels on its own black screen, so it reads exactly as the device does.
+
+With the **None** look, the character sits straight on the desktop, so the
+engine keys the frame (`writeRgba` in `engine.cpp`):
 
 - Black that connects to the edge of the round display is background. Black
   that the art encloses (inside a face) is kept. This is a flood fill from the
@@ -73,17 +78,6 @@ The device draws on black, and a desktop is not black. With the **Glow orb** or
   back as alpha, because the device blends effects against black. A fading
   digit is then a fading digit, not a dark smudge.
 - The badge disc's dark fill stays opaque, as it is on the device.
-
-With the **Device screen** backdrop, the frame is not keyed. The page draws the
-device's exact pixels on a round black screen.
-
-## The glow orb
-
-A dark radial glow the size of the device display, so the orbiting dots, the 0s
-and 1s, the "?" ring and the Zs stay readable on a light desktop. Its rim is
-tinted with the device's own effect colour for the current mode: cyan while
-working, amber when it needs you, gold on complete, lavender asleep. So the
-state reads at a glance, even from across the room.
 
 ## Credits and licensing
 

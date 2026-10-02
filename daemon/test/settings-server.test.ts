@@ -31,7 +31,7 @@ class FakeService extends EventEmitter {
             mode: 'auto', sessions: 0, wifiPaired: false, installing: null, lastInstall: null,
             drivingAgents: [], agents: this.agentStatuses(),
             badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot CLI', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
-            desktop: {visible: true, backdrop: 'orb', character: 'copilot', pack: null}} as never;
+            desktop: {visible: true, backdrop: 'device', character: 'copilot', pack: null}} as never;
   }
   agentStatuses() {
     return [{id: 'copilot', name: 'GitHub Copilot CLI', detected: true, installed: true,
