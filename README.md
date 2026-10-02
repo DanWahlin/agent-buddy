@@ -95,16 +95,50 @@ flowchart LR
 | Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
 | Node.js and Git | [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git, for the companion daemon |
 | Speaker (optional) | A small two-pin speaker, if your board or enclosure doesn't include one |
+| Desktop app (optional) | [Rust](https://rustup.rs/) 1.88 or newer and [Emscripten](https://emscripten.org/) (`brew install emscripten` on macOS) |
 
 ## Quick start
 
-1. [Flash the firmware](#step-1-flash-the-firmware) from the latest release.
-2. With the device still plugged in, [install the companion daemon](#step-2-install-the-companion-daemon)
-   with `npm run setup`.
-3. [Finish setting up your agents](#step-3-finish-setting-up-your-agents) on the
-   settings page, which opens automatically.
-4. [Try it](#step-4-try-it): start an agent and watch the character react.
-5. Optional: [put the device on Wi-Fi](#wi-fi) so it can run away from your computer.
+Three parts. Each links to its full step below.
+
+**1. Put the firmware on the device** ([details](#step-1-flash-the-firmware)).
+Download the **`-firmware.zip`** from
+[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
+extract it, connect the device over USB, and run this in the extracted folder:
+
+```bash
+python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python flash.py --list-ports                 # find your device's port
+.venv/bin/python flash.py --port /dev/cu.usbmodem2101  # use that port; type FLASH
+```
+
+This needs Python 3.10 or newer. Windows commands are in [Step 1](#step-1-flash-the-firmware).
+
+**2. Start the companion service and open Settings**
+([details](#step-2-install-the-companion-daemon)). With the device still plugged in:
+
+```bash
+git clone https://github.com/DanWahlin/esp32-agent-companion.git
+cd esp32-agent-companion
+npm run setup      # installs agent hooks, starts the service, opens Settings
+npm run status     # should say: Connected over USB
+npm run settings   # opens the Settings page again at any time
+```
+
+Restart any agent sessions that were already open, then start one and watch the
+character react ([Step 4](#step-4-try-it)).
+
+**3. Optional: put the character on your desktop too**
+([details](#desktop-agent-companion)). From the same folder, after step 2:
+
+```bash
+cd desktop
+npm install && npm run build
+cd apps/desktop/src-tauri && cargo run --release
+```
+
+It follows the companion service, so it shows what the device shows. Turn it off,
+or hide the device around it, under **Desktop companion** in Settings.
 
 ## Step 1: Flash the firmware
 
@@ -652,17 +686,18 @@ no hooks of its own. The settings page controls both:
 
 ### Run the desktop app
 
-You need the companion service (see [Quick start](#quick-start)), Rust 1.88 or
-newer, and [Emscripten](https://emscripten.org) (`brew install emscripten` on
-macOS) to compile the firmware's engine.
+You need the companion service ([step 2](#step-2-install-the-companion-daemon),
+which also builds the character packs), Rust 1.88 or newer, and
+[Emscripten](https://emscripten.org) (`brew install emscripten` on macOS) to
+compile the firmware's engine.
 
 ```bash
-python3 tools/character_pack.py build   # the .acpk packs, if you haven't built them
 cd desktop
-npm install
-npm run build
+npm install && npm run build
 cd apps/desktop/src-tauri && cargo run --release
 ```
+
+The app keeps running until you choose **Quit** from its tray icon.
 
 The window has no frame and is always on top.
 - **Clicks** go through to whatever is behind it, except on the character.
