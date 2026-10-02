@@ -864,6 +864,10 @@ bool decodeWifiValue(const char* encoded, size_t encodedLength, char* output,
   return !required || decodedLength > 0;
 }
 
+void reportWifiScanLine(const char* line) {
+  logMessage("%s\n", line);
+}
+
 void configureWifi(const char* payload) {
   const char* separator = std::strchr(payload, ':');
   if (!separator || std::strchr(separator + 1, ':')) {
@@ -929,6 +933,9 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       break;
     case DeviceCommand::ConfigureWifi:
       configureWifi(parser.wifiPayload());
+      break;
+    case DeviceCommand::ScanWifi:
+      if (!network.startScan(reportWifiScanLine)) logMessage("WIFI_SCAN_ERROR scan unavailable\n");
       break;
     case DeviceCommand::DefineAgentIcon: {
       char response[96];

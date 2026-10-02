@@ -33,7 +33,7 @@ import {
   type AgentBadgeStatusIcon,
 } from './agent-badges.js';
 import {loadDisplaySettingsSync, saveDisplaySettings, type DisplaySettings} from './display-settings.js';
-import type {DaemonStatus, HookEvent, HookPayload, InstallProgress} from './protocol.js';
+import type {DaemonStatus, HookEvent, HookPayload, InstallProgress, WifiNetwork} from './protocol.js';
 import type {StateCoordinator} from './state-coordinator.js';
 import {loadWifiConfig, saveWifiConfig, validateWifiCredentials} from './wifi-config.js';
 
@@ -171,6 +171,10 @@ export class CompanionService extends EventEmitter {
     this.#wifiPaired = true;
     this.emit('change');
     return config.deviceId;
+  }
+
+  scanWifi(): Promise<WifiNetwork[]> {
+    return this.#transport.scanWifi();
   }
 
   async setConnection(mode: ConnectionMode): Promise<void> {

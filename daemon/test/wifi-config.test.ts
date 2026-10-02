@@ -3,7 +3,7 @@ import {mkdtemp, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {deviceNetwork} from '../src/protocol.js';
+import {deviceNetwork, parseWifiNetworkLine, uniqueWifiNetworks} from '../src/protocol.js';
 import {
   broadcastAddresses,
   loadWifiConfig,
@@ -125,4 +125,19 @@ test('decodes the Wi-Fi network name the device reports', () => {
   // Older firmware doesn't report a name, and an unconfigured device reports an empty one.
   assert.equal(deviceNetwork(undefined, false), null);
   assert.equal(deviceNetwork('', false), null);
+});
+
+test('parses and merges the networks a device scan reports', () => {
+  const encode = (value: string) => Buffer.from(value, 'utf8').toString('base64');
+  assert.deepEqual(parseWifiNetworkLine(`WIFI_NETWORK rssi=-52 secure=1 ssid_b64=${encode('Home "Mesh"')}`),
+                   {ssid: 'Home "Mesh"', rssi: -52, secure: true});
+  assert.deepEqual(parseWifiNetworkLine(`WIFI_NETWORK rssi=-80 secure=0 ssid_b64=${encode('Cafe')}`),
+                   {ssid: 'Cafe', rssi: -80, secure: false});
+  assert.equal(parseWifiNetworkLine('WIFI_NETWORK rssi=-52 secure=1 ssid_b64='), null);
+  assert.equal(parseWifiNetworkLine('WIFI_SCAN_END count=0'), null);
+  assert.deepEqual(uniqueWifiNetworks([
+    {ssid: 'Cafe', rssi: -80, secure: false},
+    {ssid: 'Home', rssi: -70, secure: true},
+    {ssid: 'Home', rssi: -45, secure: true},
+  ]), [{ssid: 'Home', rssi: -45, secure: true}, {ssid: 'Cafe', rssi: -80, secure: false}]);
 });

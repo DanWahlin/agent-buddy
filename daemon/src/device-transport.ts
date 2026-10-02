@@ -1,4 +1,4 @@
-import type {CharacterState, DeviceNetwork, InstallProgress} from './protocol.js';
+import type {CharacterState, DeviceNetwork, InstallProgress, WifiNetwork} from './protocol.js';
 import {UsbTransport} from './usb-transport.js';
 import {WifiTransport} from './wifi-transport.js';
 import type {WifiConfig} from './wifi-config.js';
@@ -98,6 +98,10 @@ export class DeviceTransport {
 
   configureWifi(ssid: string, password: string): Promise<WifiConfig> {
     return this.#usb.configureWifi(ssid, password);
+  }
+
+  scanWifi(): Promise<WifiNetwork[]> {
+    return this.#usb.scanWifi();
   }
 
   // USB is preferred; the device restarts after every attempt and reconnects automatically.

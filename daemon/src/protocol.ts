@@ -82,3 +82,27 @@ export function deviceNetwork(ssidBase64: string | undefined, connected: boolean
 }
 
 export type InstallProgress = (sent: number, total: number) => void;
+
+// A network the device can see. The ESP32 radio is 2.4 GHz only, so 5 GHz networks never appear.
+export interface WifiNetwork {
+  ssid: string;
+  rssi: number;
+  secure: boolean;
+}
+
+export function parseWifiNetworkLine(line: string): WifiNetwork | null {
+  const match = /^WIFI_NETWORK rssi=(-?\d+) secure=([01]) ssid_b64=([A-Za-z0-9+/=]+)$/.exec(line);
+  if (!match) return null;
+  const ssid = Buffer.from(match[3]!, 'base64').toString('utf8');
+  return ssid ? {ssid, rssi: Number(match[1]), secure: match[2] === '1'} : null;
+}
+
+// Mesh systems and repeaters broadcast one name many times; keep the strongest signal for each.
+export function uniqueWifiNetworks(networks: readonly WifiNetwork[]): WifiNetwork[] {
+  const best = new Map<string, WifiNetwork>();
+  for (const network of networks) {
+    const previous = best.get(network.ssid);
+    if (!previous || network.rssi > previous.rssi) best.set(network.ssid, network);
+  }
+  return [...best.values()].sort((a, b) => b.rssi - a.rssi || a.ssid.localeCompare(b.ssid));
+}

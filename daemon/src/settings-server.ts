@@ -28,7 +28,7 @@ const securityHeaders = {
 
 export interface SettingsServerOptions {
   service: Pick<CompanionService, 'status' | 'installBusy' | 'characters' | 'installCharacter' | 'addCharacter'
-    | 'removeCharacter' | 'configureWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
+    | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'on' | 'off'>;
   port: number;
   token: string;
@@ -140,6 +140,9 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         await service.removeCharacter(id);
         return json(response, 200, {ok: true});
       }
+    }
+    if (method === 'GET' && segments.length === 2 && segments[0] === 'wifi' && segments[1] === 'networks') {
+      return json(response, 200, await service.scanWifi());
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'wifi') {
       const body = await readJson(request) as {ssid?: unknown; password?: unknown};
