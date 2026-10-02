@@ -1,18 +1,18 @@
 {
-  "name": "agent-companion-workspace",
+  "name": "agent-companion-desktop-workspace",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20.10.0"
   },
   "workspaces": [
-    "packages/*",
-    "extension",
     "apps/desktop"
   ],
   "scripts": {
-    "build": "npm run build -w @agent-companion/pack-format -w @agent-companion/renderer -w @agent-companion/companion-core -w @agent-companion/agent-state -w @agent-companion/packer -w agent-companion -w @agent-companion/desktop --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "build:engine": "node engine/build.mjs",
+    "build": "npm run build:engine && npm run build -w @agent-companion/desktop",
+    "typecheck": "tsc -p apps/desktop/tsconfig.json",
+    "test": "npm run typecheck && node --test engine/test/*.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

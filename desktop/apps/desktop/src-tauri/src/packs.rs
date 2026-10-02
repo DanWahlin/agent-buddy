@@ -1,102 +1,33 @@
-//! Which characters are available, and which one is showing.
+//! Which character to show, as the `.acpk` pack the device itself installs.
 //!
-//! The rules for what counts as a pack live in `companion-core`, so they are
-//! not written again here: a one-shot Node script reports what it found and
-//! this decides what to do with it.
-//!
-//! Copilot, Claude and OpenClaw ship with the app. Anyone else's character is
-//! something to point at rather than something to distribute, so it loads from
-//! the user's own folder instead.
+//! The desktop draws with the firmware's engine, so it reads the firmware's
+//! packs. When the ESP32 daemon is running it says which character and which
+//! file, so the desktop and the device always agree; without it the app falls
+//! back to the packs built in this repository (`build/characters`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::{Deserialize, Serialize};
+/// The character shown when nothing says otherwise.
+pub const DEFAULT: &str = "copilot";
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Pack {
-    pub id: String,
-    pub name: String,
-    pub folder: String,
-    pub origin: String,
+/// The URL scheme the page fetches the pack from.
+pub const SCHEME: &str = "pack";
+
+/// A character id as the daemon and the firmware accept one.
+pub fn is_valid_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    matches!(chars.next(), Some('a'..='z'))
+        && id.len() <= 16
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct Found {
-    packs: Vec<Pack>,
-    #[serde(default)]
-    problems: Vec<Problem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Problem {
-    folder: String,
-    reason: String,
-}
-
-/// Extra places to look, from the environment.
-///
-/// A file dialog would be better and is not written yet; this at least means
-/// trying another character does not require rebuilding anything.
-pub fn extra_folders() -> Vec<String> {
-    std::env::var("AGENT_COMPANION_PACKS")
-        .unwrap_or_default()
-        .split(|c| c == ';' || c == ',')
-        .map(|part| part.trim().to_string())
-        .filter(|part| !part.is_empty())
-        .collect()
-}
-
-/// Ask the script what is out there. An empty answer is not fatal - the app is
-/// still worth having with whatever shipped in it.
-pub fn discover(script: &Path, bundled: &Path, extra: &[PathBuf]) -> Vec<Pack> {
-    let mut command = Command::new("node");
-    command.arg(script).arg(bundled);
-    for folder in extra {
-        command.arg(folder);
-    }
-    for folder in extra_folders() {
-        command.arg(folder);
-    }
-
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(error) => {
-            eprintln!("[packs] could not run the pack search: {error}");
-            return Vec::new();
-        }
-    };
-
-    let found: Found = serde_json::from_slice(&output.stdout).unwrap_or_default();
-    for problem in &found.problems {
-        println!("[packs] {}: {}", problem.folder, problem.reason);
-    }
-    println!(
-        "[packs] {}",
-        if found.packs.is_empty() {
-            "none found".to_string()
-        } else {
-            found
-                .packs
-                .iter()
-                .map(|pack| pack.id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        }
-    );
-    found.packs
-}
-
-/// Where the pack search script and the bundled packs are.
-///
-/// In development the binary lives deep inside `target/`, so the app is found
-/// by walking up rather than guessed. A packaged build will resource these
-/// properly; this is enough to run.
-pub fn locate(relative: &str) -> Option<PathBuf> {
+/// The repository's built packs, found by walking up from where the app runs.
+pub fn built_in_directory() -> Option<PathBuf> {
     let mut here = std::env::current_dir().ok()?;
     loop {
-        let candidate = here.join("apps").join("desktop").join(relative);
-        if candidate.exists() {
+        let candidate = here.join("build").join("characters");
+        if candidate.is_dir() {
             return Some(candidate);
         }
         if !here.pop() {
@@ -105,30 +36,61 @@ pub fn locate(relative: &str) -> Option<PathBuf> {
     }
 }
 
-/// The character shown before anyone picks one, and the one the app icon wears.
-/// Kept in step with `DEFAULT_PACK` in `esbuild.mjs`, which bundles it.
-const DEFAULT_PACK: &str = "copilot";
-
-/// Which pack to show: the one chosen last, else the one that shipped.
-pub fn choose<'a>(packs: &'a [Pack], wanted: Option<&str>) -> Option<&'a Pack> {
-    if let Some(id) = wanted {
-        if let Some(found) = packs.iter().find(|pack| pack.id == id) {
-            return Some(found);
-        }
-    }
-    // A remembered pack that has since gone should not leave an empty window.
-    packs.iter().find(|pack| pack.id == DEFAULT_PACK).or_else(|| packs.first())
+/// The ids of the packs in a directory, the default first.
+pub fn list(directory: &Path) -> Vec<String> {
+    let mut ids: Vec<String> = std::fs::read_dir(directory)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+                .filter_map(|name| name.strip_suffix(".acpk").map(str::to_string))
+                .filter(|id| is_valid_id(id))
+                .collect()
+        })
+        .unwrap_or_default();
+    ids.sort_by(|a, b| (a != DEFAULT, a).cmp(&(b != DEFAULT, b)));
+    ids
 }
 
+/// Where a pack lives, if it does.
+pub fn path_for(directory: &Path, id: &str) -> Option<PathBuf> {
+    if !is_valid_id(id) {
+        return None;
+    }
+    let path = directory.join(format!("{id}.acpk"));
+    path.is_file().then_some(path)
+}
 
-/// The character last chosen, so it is still there next time.
-///
-/// Its own small file rather than a field alongside the window position: the
-/// position is written on every step of a drag, and a read-modify-write on each
-/// of those to preserve one string is more moving parts than two files.
+/// Which pack to show without the daemon: the one chosen last, else the default.
+pub fn choose<'a>(ids: &'a [String], wanted: Option<&str>) -> Option<&'a String> {
+    wanted
+        .and_then(|id| ids.iter().find(|candidate| candidate.as_str() == id))
+        .or_else(|| ids.iter().find(|candidate| candidate.as_str() == DEFAULT))
+        .or_else(|| ids.first())
+}
+
+/// Where the page fetches a pack from.
+pub fn pack_url(id: &str) -> String {
+    // Windows serves custom schemes over http; everywhere else uses the scheme.
+    if cfg!(windows) {
+        format!("http://{SCHEME}.localhost/{id}.acpk")
+    } else {
+        format!("{SCHEME}://localhost/{id}.acpk")
+    }
+}
+
+/// The id a request asks for, from its path.
+pub fn requested_id(path: &str) -> Option<&str> {
+    let id = path.trim_start_matches('/').strip_suffix(".acpk")?;
+    is_valid_id(id).then_some(id)
+}
+
+/// The character last chosen from the tray, for when there is no daemon.
 pub fn remembered(window: &tauri::WebviewWindow) -> Option<String> {
     let path = choice_file(window)?;
-    std::fs::read_to_string(path).ok().map(|id| id.trim().to_string()).filter(|id| !id.is_empty())
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|id| id.trim().to_string())
+        .filter(|id| is_valid_id(id))
 }
 
 pub fn remember(window: &tauri::WebviewWindow, id: &str) {
@@ -139,135 +101,72 @@ pub fn remember(window: &tauri::WebviewWindow, id: &str) {
     let _ = std::fs::write(path, id);
 }
 
-/// A folder of the user's own, always looked in.
-///
-/// Only three characters ship, so without somewhere obvious to put your own
-/// there is no way to see it in the Character menu. An environment variable is
-/// not somewhere obvious. This is.
-pub fn user_folder(window: &tauri::WebviewWindow) -> Option<PathBuf> {
-    use tauri::Manager;
-    let folder = window.app_handle().path().app_data_dir().ok()?.join("packs");
-    // Made on the way past, so the menu item that opens it always has something
-    // to open, and so it is discoverable before anyone has a pack to put in it.
-    let _ = std::fs::create_dir_all(&folder);
-    Some(folder)
-}
-
-/// Show a folder to the person, in whatever their system uses for the job.
-pub fn reveal(folder: &Path) {
-    let opener = if cfg!(target_os = "windows") {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    // explorer returns a non-zero code even when it worked, so the result is
-    // deliberately not checked.
-    let _ = Command::new(opener).arg(folder).spawn();
-}
 fn choice_file(window: &tauri::WebviewWindow) -> Option<PathBuf> {
     use tauri::Manager;
     Some(window.app_handle().path().app_data_dir().ok()?.join("character"))
 }
-/// The URL space packs are served in.
-///
-/// A protocol of our own rather than Tauri's asset one, which URL-encodes the
-/// whole file path - leaving no separator for the renderer to resolve image
-/// names against, so every pack outside the app tried to load its art from the
-/// root. Here a pack is a folder in a URL, relative resolution works the way
-/// the renderer already expects, and nothing needs a scope opening for it.
-pub const SCHEME: &str = "pack";
 
-/// Where a pack's manifest lives, as the page should ask for it.
-pub fn manifest_url(id: &str) -> String {
-    // Windows serves custom schemes over http; everywhere else uses the scheme.
-    if cfg!(windows) {
-        format!("http://{SCHEME}.localhost/{id}/pack.json")
+/// Open a URL or folder in whatever the system uses for the job.
+pub fn open(target: &str) {
+    let mut command = if cfg!(target_os = "windows") {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "start", ""]);
+        command
+    } else if cfg!(target_os = "macos") {
+        Command::new("open")
     } else {
-        format!("{SCHEME}://localhost/{id}/pack.json")
-    }
+        Command::new("xdg-open")
+    };
+    let _ = command.arg(target).spawn();
 }
 
-/// Resolve a request path to a file inside a known pack, or nothing.
-///
-/// Only the packs found at startup can be reached, and only within them: the
-/// pack id must match one exactly, and the rest must stay inside its folder
-/// once resolved, so no amount of dot-dot reaches anything else.
-pub fn resolve(packs: &[Pack], path: &str) -> Option<PathBuf> {
-    let trimmed = path.trim_start_matches('/');
-    let (id, rest) = trimmed.split_once('/')?;
-    // A backslash would be a separator on Windows and a filename elsewhere;
-    // refusing it outright keeps one meaning on every platform.
-    if rest.is_empty() || rest.contains('\\') {
-        return None;
-    }
-
-    let pack = packs.iter().find(|pack| pack.id == id)?;
-    let folder = PathBuf::from(&pack.folder);
-    let wanted = folder.join(rest);
-
-    // Compare what the filesystem makes of both, so a traversal that survived
-    // the textual check does not survive this one.
-    let root = folder.canonicalize().ok()?;
-    let target = wanted.canonicalize().ok()?;
-    target.starts_with(&root).then_some(target)
-}
-
-/// What to call a file, so the page treats it as it should.
-pub fn content_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|it| it.to_str()) {
-        Some("json") => "application/json",
-        Some("webp") => "image/webp",
-        Some("png") => "image/png",
-        _ => "application/octet-stream",
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn pack(id: &str) -> Pack {
-        Pack {
-            id: id.to_string(),
-            name: id.to_string(),
-            folder: format!("/packs/{id}"),
-            origin: "configured".to_string(),
-        }
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|id| id.to_string()).collect()
     }
 
     #[test]
-    fn the_chosen_one_wins() {
-        let packs = [pack("copilot"), pack("claude")];
-        assert_eq!(choose(&packs, Some("claude")).unwrap().id, "claude");
-    }
-
-    /// Pointing at a folder and then moving it should not leave a blank window.
-    #[test]
-    fn a_pack_that_has_gone_falls_back_rather_than_showing_nothing() {
-        let packs = [pack("copilot"), pack("openclaw")];
-        assert_eq!(choose(&packs, Some("arthur")).unwrap().id, "copilot");
-    }
-
-    /// The shipped default wins over a pack that merely sorts earlier.
-    #[test]
-    fn with_nothing_remembered_the_shipped_one_shows() {
-        let packs = [pack("claude"), pack("copilot")];
-        assert_eq!(choose(&packs, None).unwrap().id, "copilot");
+    fn ids_follow_the_firmware_rules() {
+        assert!(is_valid_id("copilot"));
+        assert!(is_valid_id("my-agent2"));
+        assert!(!is_valid_id(""));
+        assert!(!is_valid_id("2fast"));
+        assert!(!is_valid_id("Copilot"));
+        assert!(!is_valid_id("../etc"));
+        assert!(!is_valid_id("a-name-far-too-long"));
     }
 
     #[test]
-    fn without_even_that_the_first_one_will_do() {
-        let packs = [pack("openclaw")];
-        assert_eq!(choose(&packs, None).unwrap().id, "openclaw");
+    fn the_chosen_one_wins_then_the_default_then_anything() {
+        let all = ids(&["copilot", "claude", "openclaw"]);
+        assert_eq!(choose(&all, Some("claude")).unwrap(), "claude");
+        assert_eq!(choose(&all, Some("gone")).unwrap(), "copilot");
+        assert_eq!(choose(&all, None).unwrap(), "copilot");
+        assert_eq!(choose(&ids(&["openclaw"]), None).unwrap(), "openclaw");
         assert!(choose(&[], None).is_none());
     }
 
     #[test]
-    fn extra_folders_are_split_on_either_separator() {
-        // Windows paths contain colons, so the separator is not a colon.
-        unsafe { std::env::set_var("AGENT_COMPANION_PACKS", r"C:\packs; D:\more ,") };
-        assert_eq!(extra_folders(), vec![r"C:\packs".to_string(), r"D:\more".to_string()]);
-        unsafe { std::env::remove_var("AGENT_COMPANION_PACKS") };
+    fn only_a_plain_pack_name_can_be_requested() {
+        assert_eq!(requested_id("/copilot.acpk"), Some("copilot"));
+        assert_eq!(requested_id("/../copilot.acpk"), None);
+        assert_eq!(requested_id("/copilot/pack.json"), None);
+        assert_eq!(requested_id("/copilot"), None);
+    }
+
+    #[test]
+    fn the_built_packs_are_listed_default_first() {
+        let directory = std::env::temp_dir().join(format!("ac-packs-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in ["openclaw.acpk", "copilot.acpk", "claude.acpk", "notes.txt", "Bad.acpk"] {
+            std::fs::write(directory.join(name), b"x").unwrap();
+        }
+        assert_eq!(list(&directory), ids(&["copilot", "claude", "openclaw"]));
+        assert!(path_for(&directory, "claude").is_some());
+        assert!(path_for(&directory, "nobody").is_none());
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }

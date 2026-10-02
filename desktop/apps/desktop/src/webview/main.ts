@@ -1,114 +1,287 @@
 /**
- * The page inside the window.
+ * The page inside the window: the device's own engine, drawn on the desktop.
  *
- * The same `startView` the extension uses. The only differences are how a
- * message travels - Tauri's events rather than a webview's - and that this
- * host serves its own files, so the page fetches the pack instead of being
- * handed one.
- *
- * It also reports where it drew the character, which is what lets the shell
- * decide when to take the mouse. Nothing else needs that, because nothing else
- * has to pretend not to be a window.
+ * Every pixel of the character and its effects comes from the firmware's code,
+ * compiled to WebAssembly (`desktop/engine`), fed the same `.acpk` pack and the
+ * same badge packets the device gets. This page only does what the device's
+ * screen does around it: steps the engine each frame, shows the result, and
+ * passes on what the agent is doing. It adds one thing the device has no need
+ * of, a backdrop, because a desktop is not black.
  */
 
-import { startView, type HostMessage, type ViewMessage } from '@agent-companion/companion-core';
+// Emscripten's loader, CommonJS, bundled by esbuild.
+import createEngine from '../../../../engine/dist/engine.js';
 
 interface TauriApi {
-  core: {
-    invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
-  };
+  core: { invoke(command: string, args?: Record<string, unknown>): Promise<unknown> };
   event: { listen(name: string, handler: (event: { payload: unknown }) => void): Promise<unknown> };
 }
 declare global {
   interface Window { __TAURI__: TauriApi }
 }
 
+interface Engine {
+  HEAPU8: Uint8Array;
+  _malloc(bytes: number): number;
+  _free(pointer: number): void;
+  UTF8ToString(pointer: number): string;
+  stringToNewUTF8(text: string): number;
+  _ac_load(pointer: number, bytes: number, seed: number): number;
+  _ac_error(): number;
+  _ac_width(): number;
+  _ac_height(): number;
+  _ac_display(): number;
+  _ac_frame_x(): number;
+  _ac_mode(mode: number, touch: number): number;
+  _ac_playing(playing: number): void;
+  _ac_badge_icon(packet: number): number;
+  _ac_badge_active(packet: number): number;
+  _ac_frame(seconds: number, key: number): number;
+  _ac_state_mode(): number;
+}
+
+interface DaemonSnapshot {
+  state: string;
+  backdrop: string;
+  badges: Array<{ id: string; role: 'working' | 'attention' | 'complete' }>;
+  icons: Array<{ id: string; color: string; mask: string }>;
+}
+
+type HostMessage =
+  | { type: 'state'; state: string }
+  | { type: 'daemon'; daemon: DaemonSnapshot | null }
+  | { type: 'error'; message: string };
+
+/** The device's CharacterMode values. */
+const MODES: Record<string, number> = { idle: 0, surprise: 1, working: 2, complete: 3, attention: 4 };
+const ROLE_LETTER = { working: 'w', attention: 'a', complete: 'c' } as const;
+
+/** The glow orb's rim in each device mode (5 is sleep), from the device's own effect colours. */
+const RIM: Record<number, [number, number, number]> = {
+  0: [143, 155, 255],
+  1: [174, 217, 251],
+  2: [80, 215, 239],
+  3: [247, 206, 118],
+  4: [255, 192, 86],
+  5: [174, 190, 255],
+};
+
 const tauri = window.__TAURI__;
 const canvas = document.getElementById('stage') as HTMLCanvasElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
+const context = canvas.getContext('2d')!;
 
-/**
- * Anything that arrived before the view was ready to take it.
- *
- * The shell answers `ready` the instant it sees it, so the reply can land
- * before `startView` has handed over its handler. Holding those few messages is
- * cheaper than making the shell wait, or having it retry.
- */
-const waiting: HostMessage[] = [];
-let deliver: ((incoming: HostMessage) => void) | null = null;
+let engine: Engine | null = null;
+let frameCanvas: HTMLCanvasElement | null = null;
+let frameContext: CanvasRenderingContext2D | null = null;
+let frameImage: ImageData | null = null;
+let backdrop = 'orb';
+let wantedMode = 0;
+let iconsKey = '';
+let activeKey = '';
+let loaded = false;
+let pendingDaemon: DaemonSnapshot | null = null;
+let rim: [number, number, number] = RIM[0];
+let last = performance.now();
 
-function hand(incoming: HostMessage): void {
-  if (deliver) deliver(incoming);
-  else waiting.push(incoming);
+function say(text: string): void {
+  message.textContent = text;
+  message.classList.add('visible');
+  canvas.classList.add('hidden');
 }
 
-/**
- * Which character to show, and what the agent is doing.
- *
- * Both listeners go on before the page says a word, because `listen` is
- * asynchronous and the first answer comes back immediately. Registering them
- * after `startView` meant the pack arrived while nobody was listening, and the
- * window sat empty.
- *
- * The pack is one ordinary URL, wherever it actually lives, because the shell
- * serves every pack itself. The renderer resolves image names against it just
- * as it would over http, which is the whole reason for not handing over a file
- * path instead.
- */
-async function main(): Promise<void> {
-  await Promise.all([
-    tauri.event.listen('to-view', event => hand(event.payload as HostMessage)),
-    tauri.event.listen('to-view-pack', event => {
-      const { url } = event.payload as { url?: string };
-      if (url) hand({ type: 'load', url });
-    }),
-  ]);
-
-  startView({
-    post: (outgoing: ViewMessage) => void tauri.core.invoke('from_view', { message: outgoing }),
-    receive: handler => {
-      deliver = handler;
-      for (const held of waiting.splice(0)) handler(held);
-    },
-  }, { canvas, message });
+function call(name: keyof Engine, text: string): number {
+  const e = engine!;
+  const pointer = e.stringToNewUTF8(text);
+  try {
+    return (e[name] as (pointer: number) => number)(pointer);
+  } finally {
+    e._free(pointer);
+  }
 }
 
-void main();
+/** Load a pack and keep the agent's mode and badges, as a device keeps them across an install. */
+async function loadPack(url: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Could not load the character (' + response.status + ').');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const e = engine!;
+  const pointer = e._malloc(bytes.length);
+  e.HEAPU8.set(bytes, pointer);
+  const ok = e._ac_load(pointer, bytes.length, (Math.random() * 0xffffffff) >>> 0);
+  e._free(pointer);
+  if (!ok) throw new Error(e.UTF8ToString(e._ac_error()) || 'The character pack is invalid.');
+  iconsKey = '';
+  activeKey = '';
+  loaded = true;
+  if (wantedMode !== 0) e._ac_mode(wantedMode, 0);
+  applyBadges(pendingDaemon);
+  message.classList.remove('visible');
+  canvas.classList.remove('hidden');
+  resize();
+  sendTrayIcon();
+}
+
+function setState(state: string): void {
+  const mode = MODES[state];
+  if (mode === undefined) return;
+  wantedMode = mode;
+  if (engine && loaded) engine._ac_mode(mode, 0);
+}
+
+/** The device gets badges as two packets; so does the engine, built the same way. */
+function applyBadges(daemon: DaemonSnapshot | null): void {
+  if (!engine || !loaded) return;
+  const icons = daemon?.icons ?? [];
+  const key = JSON.stringify(icons);
+  if (key !== iconsKey) {
+    for (const icon of icons) call('_ac_badge_icon', `${icon.id}:${icon.color.replace('#', '')}:${icon.mask}`);
+    iconsKey = key;
+  }
+  const active = (daemon?.badges ?? []).map(badge => `${badge.id}=${ROLE_LETTER[badge.role]}`).join(',');
+  if (active !== activeKey) {
+    call('_ac_badge_active', active);
+    activeKey = active;
+  }
+}
+
+function receive(incoming: HostMessage): void {
+  switch (incoming.type) {
+    case 'state':
+      setState(incoming.state);
+      break;
+    case 'daemon':
+      pendingDaemon = incoming.daemon;
+      backdrop = incoming.daemon?.backdrop ?? backdrop;
+      applyBadges(incoming.daemon);
+      break;
+    case 'error':
+      say(incoming.message);
+      break;
+  }
+}
+
+// --- drawing -----------------------------------------------------------------
+
+/** The window is square, and holds the device's round display. */
+function resize(): void {
+  const size = Math.max(1, Math.min(document.body.clientWidth, document.body.clientHeight));
+  const ratio = window.devicePixelRatio || 1;
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  canvas.width = Math.round(size * ratio);
+  canvas.height = Math.round(size * ratio);
+  reportRegion();
+}
+
+function drawBackdrop(size: number, mode: number): void {
+  const centre = size / 2;
+  const radius = size / 2;
+  if (backdrop === 'device') {
+    // The device's own screen: black glass in a thin bezel.
+    context.beginPath();
+    context.arc(centre, centre, radius - 1, 0, Math.PI * 2);
+    context.fillStyle = '#000';
+    context.fill();
+    context.lineWidth = Math.max(1, size / 160);
+    context.strokeStyle = 'rgba(90, 96, 110, .9)';
+    context.stroke();
+    return;
+  }
+  if (backdrop !== 'orb') return;
+  // A soft dark glow the size of the display, so the effects read on any
+  // desktop, with a rim tinted by what the character is doing.
+  const target = RIM[mode] ?? RIM[0];
+  rim = rim.map((value, i) => value + (target[i] - value) * .08) as [number, number, number];
+  const body = context.createRadialGradient(centre, centre, 0, centre, centre, radius);
+  body.addColorStop(0, 'rgba(10, 12, 20, .9)');
+  body.addColorStop(.72, 'rgba(10, 12, 20, .84)');
+  body.addColorStop(.9, 'rgba(10, 12, 20, .5)');
+  body.addColorStop(1, 'rgba(10, 12, 20, 0)');
+  context.fillStyle = body;
+  context.fillRect(0, 0, size, size);
+  const [r, g, b] = rim.map(Math.round);
+  const glow = context.createRadialGradient(centre, centre, radius * .78, centre, centre, radius);
+  glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0)`);
+  glow.addColorStop(.6, `rgba(${r}, ${g}, ${b}, .28)`);
+  glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+  context.fillStyle = glow;
+  context.fillRect(0, 0, size, size);
+}
+
+function draw(now: number): void {
+  requestAnimationFrame(draw);
+  const seconds = Math.min(.25, (now - last) / 1000);
+  last = now;
+  if (!engine || !loaded) return;
+
+  const e = engine;
+  const width = e._ac_width();
+  const height = e._ac_height();
+  // The device's own pixels on its own screen; anything else needs a cut-out.
+  const pixels = e._ac_frame(seconds, backdrop === 'device' ? 0 : 1);
+  if (!pixels) {
+    say(e.UTF8ToString(e._ac_error()) || 'The engine stopped.');
+    loaded = false;
+    return;
+  }
+  if (!frameCanvas || !frameContext || !frameImage) {
+    frameCanvas = document.createElement('canvas');
+    frameCanvas.width = width;
+    frameCanvas.height = height;
+    frameContext = frameCanvas.getContext('2d')!;
+    frameImage = frameContext.createImageData(width, height);
+  }
+  frameImage.data.set(e.HEAPU8.subarray(pixels, pixels + width * height * 4));
+  frameContext.putImageData(frameImage, 0, 0);
+
+  const size = canvas.width;
+  const scale = size / e._ac_display();
+  context.clearRect(0, 0, size, size);
+  drawBackdrop(size, e._ac_state_mode());
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(frameCanvas, e._ac_frame_x() * scale, 0, width * scale, height * scale);
+}
+
+// --- the shell -----------------------------------------------------------------
 
 /**
- * Tell the shell where the character is, in CSS pixels within the window.
- *
- * An ellipse inscribed in the canvas, which is the character's own frame. The
- * shell hit-tests against it to decide whether the window should take the
- * mouse; get it wrong and either the pet cannot be poked, or it swallows every
- * click on the desktop behind it.
+ * Tell the shell where the character is, in CSS pixels within the window: the
+ * ellipse the device keeps its effects off, which is the character's head. The
+ * shell takes the mouse only inside it, so every other click passes through.
  */
 function reportRegion(): void {
   const box = canvas.getBoundingClientRect();
-  if (box.width < 1 || box.height < 1) return;
+  if (box.width < 1) return;
+  const unit = box.width / 466;
   void tauri.core.invoke('set_region', {
-    region: {
-      cx: box.left + box.width / 2,
-      cy: box.top + box.height / 2,
-      rx: box.width / 2,
-      ry: box.height / 2,
-    },
+    region: { cx: box.left + box.width / 2, cy: box.top + box.height / 2, rx: 160 * unit, ry: 135 * unit },
   });
 }
 
-window.addEventListener('resize', reportRegion);
-// The canvas is sized once the pack is known, which is after startView returns.
-const watcher = new ResizeObserver(reportRegion);
-watcher.observe(canvas);
+/** The tray shows the character it is showing, cut from a real frame. */
+function sendTrayIcon(): void {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (!frameCanvas) return;
+    const size = 32;
+    const icon = document.createElement('canvas');
+    icon.width = size;
+    icon.height = size;
+    const iconContext = icon.getContext('2d')!;
+    // The middle of the frame, where the face is.
+    const crop = 300;
+    iconContext.drawImage(frameCanvas, (frameCanvas.width - crop) / 2, (frameCanvas.height - crop) / 2,
+      crop, crop, 0, 0, size, size);
+    const rgba = Array.from(iconContext.getImageData(0, 0, size, size).data);
+    void tauri.core.invoke('set_tray_icon', { rgba, width: size, height: size });
+  }));
+}
 
 /**
- * Dragging the character moves the window; clicking it is still a poke.
- *
- * There is no title bar to drag - a pet with one would be a dialog - so the
- * character is the handle. Only the page can tell the two apart, because only
- * it sees whether the pointer moved before it came up. Once dragging starts the
- * window takes over the pointer and no further events arrive here, which is
- * exactly why the poke has to be decided on the way in rather than on release.
+ * Dragging the character moves the window; a click is a poke, the same as a
+ * tap on the device's screen. Only the page sees whether the pointer moved
+ * before it came up, so it decides which.
  */
 const DRAG_THRESHOLD_PX = 4;
 let pressedAt: { x: number; y: number } | null = null;
@@ -116,18 +289,39 @@ let pressedAt: { x: number; y: number } | null = null;
 canvas.addEventListener('pointerdown', event => {
   pressedAt = { x: event.clientX, y: event.clientY };
 });
-
 canvas.addEventListener('pointermove', event => {
   if (!pressedAt) return;
-  const moved = Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y);
-  if (moved < DRAG_THRESHOLD_PX) return;
-  // Past the threshold this is a drag, not a poke. startView's own pointerdown
-  // has already fired the poke; a few pixels of travel is a cheap price for
-  // not having to delay every reaction until the button comes up.
+  if (Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) < DRAG_THRESHOLD_PX) return;
   pressedAt = null;
   void tauri.core.invoke('start_drag');
 });
-
-for (const done of ['pointerup', 'pointercancel', 'pointerleave']) {
+canvas.addEventListener('pointerup', () => {
+  if (pressedAt && engine && loaded) engine._ac_mode(MODES.surprise, 1);
+  pressedAt = null;
+});
+for (const done of ['pointercancel', 'pointerleave']) {
   canvas.addEventListener(done, () => { pressedAt = null; });
 }
+window.addEventListener('resize', resize);
+
+async function main(): Promise<void> {
+  say('Starting…');
+  // Listen before saying anything: the shell answers `ready` at once.
+  await Promise.all([
+    tauri.event.listen('to-view', event => receive(event.payload as HostMessage)),
+    tauri.event.listen('to-view-pack', event => {
+      const { url } = event.payload as { url?: string };
+      if (!url) return;
+      loadPack(url).catch(error => {
+        const text = error instanceof Error ? error.message : String(error);
+        say(text);
+        void tauri.core.invoke('from_view', { message: { type: 'failed', message: text } });
+      });
+    }),
+  ]);
+  engine = await (createEngine as () => Promise<Engine>)();
+  requestAnimationFrame(draw);
+  void tauri.core.invoke('from_view', { message: { type: 'ready' } });
+}
+
+void main().catch(error => say(error instanceof Error ? error.message : String(error)));

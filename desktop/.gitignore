@@ -4,10 +4,8 @@ dist-test/
 *.tsbuildinfo
 
 # Built artefacts
-*.vsix
-extension/packs/
+engine/dist/
 apps/desktop/ui/webview.js
-apps/desktop/ui/packs/
 # Cut from the character art by the desktop build.
 apps/desktop/src-tauri/icons/
 

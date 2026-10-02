@@ -1,20 +1,15 @@
 {
   "name": "@agent-companion/desktop",
   "version": "0.1.0",
-  "description": "The companion as a window of its own, for agents that are not inside VS Code.",
+  "description": "The ESP32 Agent Companion's character in a window of its own, drawn by the device's own engine.",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node esbuild.mjs",
     "start": "npm run build && cd src-tauri && cargo run"
   },
-  "dependencies": {
-    "@agent-companion/agent-state": "0.1.0",
-    "@agent-companion/companion-core": "0.1.0",
-    "@agent-companion/pack-format": "0.1.0",
-    "@agent-companion/renderer": "0.1.0"
-  },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.25.0",
+    "sharp": "^0.35.4"
   }
 }

@@ -13,12 +13,13 @@
       {
         "label": "main",
         "title": "Agent Companion",
-        "width": 220,
-        "height": 220,
+        "width": 240,
+        "height": 240,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true,
         "shadow": false,
         "resizable": false
       }

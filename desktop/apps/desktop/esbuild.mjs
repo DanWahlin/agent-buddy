@@ -1,17 +1,25 @@
 /**
- * Builds the page and copies the pack beside it.
+ * Builds the page, with the device's engine inside it, and the app icon.
  *
  * The bundle has to be self-contained: the window loads it from a file, with
- * no resolver and no node_modules to reach into.
+ * no resolver and no node_modules to reach into. The engine is the firmware's
+ * code compiled to WebAssembly by `engine/build.mjs`, which runs first.
  */
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = join(here, 'ui');
-const packs = join(here, '..', '..', 'packs');
+const repository = join(here, '..', '..', '..');
+const engine = join(here, '..', '..', 'engine', 'dist', 'engine.js');
+
+if (!existsSync(engine)) {
+  console.error('The engine is not built. Run: node engine/build.mjs (needs Emscripten).');
+  process.exit(1);
+}
 
 await esbuild.build({
   entryPoints: [join(here, 'src/webview/main.ts')],
@@ -20,58 +28,54 @@ await esbuild.build({
   format: 'iife',
   platform: 'browser',
   target: 'es2022',
-  sourcemap: 'inline',
+  // Emscripten's loader names these for Node, behind a check that is never true in a page.
+  external: ['node:*', 'fs', 'path', 'crypto', 'url', 'module', 'worker_threads'],
   logLevel: 'warning',
 });
+console.log('built the page with the device engine');
 
-// The three Agent Companion characters, the same set the extension bundles and
-// for the same reasons. The default is first, because the icon is cut from it.
-const DEFAULT_PACK = 'copilot';
-const bundled = [DEFAULT_PACK, 'claude', 'openclaw'];
-await rm(join(ui, 'packs'), { recursive: true, force: true });
-for (const pack of bundled) {
-  await mkdir(join(ui, 'packs', pack), { recursive: true });
-  await cp(join(packs, pack), join(ui, 'packs', pack), { recursive: true });
-}
-console.log('built the page and bundled ' + bundled.join(', '));
 /**
- * The tray icon, cut from the character's own art.
- *
- * It was a placeholder disc, which tells nobody which app it is. Frame 0 of a
- * gaze track is the centre pose every track returns to - the character looking
- * straight out, which is exactly the picture wanted here.
+ * The app icon, cut from Copilot's approved centre pose: the character looking
+ * straight out. The source is drawn on black, so the backdrop is flooded away
+ * from the edges, which keeps the dark parts inside the face.
  */
-async function trayIcon() {
+async function appIcon() {
   const { default: sharp } = await import('sharp');
-  const pack = JSON.parse(await readFile(join(packs, DEFAULT_PACK, 'pack.json'), 'utf8'));
-  const { width, height } = pack.frame;
+  const source = join(repository, 'characters', 'copilot', 'source', 'generated-sprites', 'approved-center.png');
+  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height } = info;
+  const background = new Uint8Array(width * height);
+  const queue = [];
+  const push = index => {
+    if (background[index]) return;
+    const at = index * 4;
+    if (Math.max(data[at], data[at + 1], data[at + 2]) > 24) return;
+    background[index] = 1;
+    queue.push(index);
+  };
+  for (let x = 0; x < width; x++) { push(x); push((height - 1) * width + x); }
+  for (let y = 0; y < height; y++) { push(y * width); push(y * width + width - 1); }
+  while (queue.length) {
+    const index = queue.pop();
+    const x = index % width;
+    if (x > 0) push(index - 1);
+    if (x < width - 1) push(index + 1);
+    if (index >= width) push(index - width);
+    if (index < width * (height - 1)) push(index + width);
+  }
+  for (let i = 0; i < width * height; i++) if (background[i]) data[i * 4 + 3] = 0;
+  const face = await sharp(data, { raw: { width, height, channels: 4 } })
+    .trim({ threshold: 0 }).png().toBuffer();
 
-  // Trimmed before resizing. A pack frame carries the margin the character
-  // needs to move around in, and keeping it here spends most of the icon on
-  // nothing - which at tray size leaves a speck.
-  // Two passes: sharp will not extract and trim in one, since the trim has to
-  // measure what the extract produced.
-  const frame = await sharp(join(packs, DEFAULT_PACK, pack.tracks.right.base))
-    .extract({ left: 0, top: 0, width, height })
-    .png()
-    .toBuffer();
-  const face = await sharp(frame).trim({ threshold: 0 }).png().toBuffer();
-
-  const square = (size) => sharp(face)
-    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
-
-  // Every size Windows asks for, drawn at that size. One 256 entry left it to
-  // downscale for the tray, which is where the blur came from.
+  // Every size Windows asks for, drawn at that size, so the tray is not blurred.
   const sizes = [16, 24, 32, 48, 64, 128, 256];
-  const images = await Promise.all(sizes.map(square));
+  const images = await Promise.all(sizes.map(size => sharp(face)
+    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png().toBuffer()));
 
   const header = Buffer.alloc(6);
-  header.writeUInt16LE(0, 0);
   header.writeUInt16LE(1, 2);
   header.writeUInt16LE(sizes.length, 4);
-
   let offset = 6 + sizes.length * 16;
   const entries = sizes.map((size, index) => {
     const entry = Buffer.alloc(16);
@@ -85,13 +89,11 @@ async function trayIcon() {
     return entry;
   });
 
-  // The icons are generated, so they are not in the repository and the folder
-  // will not exist in a fresh clone.
+  // Generated, so not in the repository; the folder will not exist in a fresh clone.
   const icons = join(here, 'src-tauri', 'icons');
   await mkdir(icons, { recursive: true });
   await writeFile(join(icons, 'icon.ico'), Buffer.concat([header, ...entries, ...images]));
   await writeFile(join(icons, 'icon.png'), images[images.length - 1]);
-  console.log('app icon cut from ' + DEFAULT_PACK + ', at ' + sizes.join('/'));
+  console.log('app icon cut from copilot, at ' + sizes.join('/'));
 }
-await trayIcon();
-
+await appIcon();
