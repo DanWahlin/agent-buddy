@@ -3,9 +3,9 @@
 // Everything that decides what the character looks like - the motion, the
 // sprite decoding, the effects and the agent badges - is the firmware's own
 // code, compiled unchanged from firmware/AgentCompanion/src. This file only
-// does what AgentCompanion.ino does around it on the device: owns the frame
-// buffers, applies mode changes, and steps the engine once per frame. It then
-// turns the device's RGB565 frame into RGBA for a canvas.
+// owns the frame buffers and calls the same per-frame steps AgentCompanion.ino
+// does (CharacterFrame.h: apply a request, step the motion, draw the sprite,
+// then the effects). It then turns the device's RGB565 frame into RGBA.
 //
 // The device draws on black. A desktop window is not black, so a frame can be
 // keyed: black that connects to the edge of the display is background, black
@@ -14,6 +14,7 @@
 
 #include "../../firmware/AgentCompanion/src/AgentBadges.h"
 #include "../../firmware/AgentCompanion/src/CharacterEffects.h"
+#include "../../firmware/AgentCompanion/src/CharacterFrame.h"
 #include "../../firmware/AgentCompanion/src/CharacterMotion.h"
 #include "../../firmware/AgentCompanion/src/FullFrameRenderer.h"
 #include "../../firmware/AgentCompanion/src/SpriteRenderer.h"
@@ -65,6 +66,7 @@ struct Engine {
   AgentBadges badges;
   std::unique_ptr<SpriteRenderer> renderer;
   std::unique_ptr<FullFrameRenderer> fullFrame;
+  std::unique_ptr<CharacterSprite> sprite;
   std::unique_ptr<CharacterEffects> effects;
   std::unique_ptr<CharacterMotion> motion;
   bool useFirst = true;
@@ -214,6 +216,7 @@ AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
       next->frames[0].data(), next->frames[1].data(), inflateSpriteHost, kWidth, kHeight);
   next->fullFrame = std::make_unique<FullFrameRenderer>(
       next->fullFrameScratch.data(), next->fullFrameCached.data(), inflateSpriteHost);
+  next->sprite = std::make_unique<CharacterSprite>(next->renderer.get(), next->fullFrame.get());
   next->effects = std::make_unique<CharacterEffects>(
       next->frames[0].data(), next->frames[1].data(), &next->badges, next->overlay.data());
   next->motion = std::make_unique<CharacterMotion>(seed);
@@ -232,15 +235,9 @@ AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
 // a surprise that settles back to idle, as a tap on the device's screen does.
 AC_EXPORT int ac_mode(int mode, int touch) {
   if (!engine || mode < 0 || mode > static_cast<int>(CharacterMode::Attention)) return 0;
-  const auto requested = static_cast<CharacterMode>(mode);
-  if (requested == CharacterMode::Surprise) {
-    if (touch) engine->motion->surpriseToIdle();
-    else engine->motion->surprise();
-  } else if (!engine->motion->setMode(requested)) {
-    lastError = engine->motion->error();
-    return 0;
-  }
-  return engine->motion->error() ? 0 : 1;
+  if (applyModeRequest(*engine->motion, {static_cast<CharacterMode>(mode), touch != 0})) return 1;
+  lastError = engine->motion->error();
+  return 0;
 }
 
 AC_EXPORT int ac_look(int direction) {
@@ -273,8 +270,7 @@ AC_EXPORT const uint8_t* ac_frame(double seconds, int key) {
   if (!engine) return nullptr;
   Engine& e = *engine;
   lastError = nullptr;
-  const PackHeader& header = characterPack()->header;
-  e.motion->update(std::clamp(seconds, 0.0, .25) * header.motionSpeed);
+  stepCharacterMotion(*e.motion, std::clamp(seconds, 0.0, .25));
   e.state = e.motion->state();
   const int index = e.useFirst ? 0 : 1;
   uint16_t* frame = e.frames[index].data();
@@ -286,11 +282,8 @@ AC_EXPORT const uint8_t* ac_frame(double seconds, int key) {
     std::fill(e.frames[index].begin(), e.frames[index].end(), 0);
     e.cleared[index] = true;
   }
-  const bool full = header.layout == PackLayout::FullFrame;
-  const bool rendered = full ? e.fullFrame->render(e.state.pose, e.state.effectSeconds, frame)
-                             : e.renderer->render(e.state.pose, frame);
-  if (!rendered) {
-    lastError = full ? e.fullFrame->error() : e.renderer->error();
+  if (!e.sprite->render(e.state, frame)) {
+    lastError = e.sprite->error();
     return nullptr;
   }
   if (key) std::memcpy(e.base.data(), frame, kPixels * sizeof(uint16_t));

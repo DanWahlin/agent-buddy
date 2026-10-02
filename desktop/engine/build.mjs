@@ -20,7 +20,7 @@ const out = flag >= 0 ? process.argv[flag + 1] : join(here, 'dist', 'engine.js')
 
 const sources = [
   join(here, 'engine.cpp'),
-  ...['CharacterMotion', 'FullFrameRenderer', 'CharacterPack', 'AgentBadges', 'CharacterEffects',
+  ...['CharacterMotion', 'CharacterFrame', 'FullFrameRenderer', 'CharacterPack', 'AgentBadges', 'CharacterEffects',
     'SpriteMotion', 'SpriteRenderer', 'SpriteStorage'].map(name => join(firmware, name + '.cpp')),
 ];
 

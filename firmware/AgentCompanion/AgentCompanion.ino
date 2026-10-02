@@ -19,6 +19,7 @@
 #include "src/AudioPlayer.h"
 #include "src/AgentBadges.h"
 #include "src/CharacterEffects.h"
+#include "src/CharacterFrame.h"
 #include "src/DeviceCommands.h"
 #include "src/TouchInput.h"
 #include "src/SettingsMenu.h"
@@ -63,11 +64,6 @@ NetworkManager network;
 constexpr char kPreferencesNamespace[] = "agent-companion";
 constexpr char kSoundPreference[] = "sound";
 constexpr char kSoundVolumePreference[] = "volume";
-
-struct ModeRequest {
-  CharacterMode mode = CharacterMode::Idle;
-  bool returnToIdle = false;
-};
 
 void logMessage(const char* format, ...) {
   char message[384];
@@ -126,8 +122,8 @@ bool inflatePose(uint8_t* output, size_t outputSize, const uint8_t* input, size_
 void animate(void*) {
   CharacterMotion motion(esp_random());
   if (motion.error()) fatal(motion.error());
-  const PackHeader& pack = characterPack()->header;
-  const bool fullFrame = pack.layout == PackLayout::FullFrame;
+  CharacterSprite sprite(patchRenderer, fullFrameRenderer);
+  const bool fullFrame = sprite.fullFrame();
   int64_t previous = esp_timer_get_time();
   for (;;) {
     Frame* frame;
@@ -135,15 +131,9 @@ void animate(void*) {
     const int64_t start = esp_timer_get_time();
     ModeRequest command;
     while (xQueueReceive(commands, &command, 0) == pdTRUE) {
-      if (command.mode == CharacterMode::Surprise) {
-        if (command.returnToIdle) motion.surpriseToIdle();
-        else motion.surprise();
-      } else if (!motion.setMode(command.mode)) {
-        fatal(motion.error());
-      }
-      if (motion.error()) fatal(motion.error());
+      if (!applyModeRequest(motion, command)) fatal(motion.error());
     }
-    motion.update((start - previous) / 1000000.0 * pack.motionSpeed);
+    stepCharacterMotion(motion, (start - previous) / 1000000.0);
     frame->motionUs = esp_timer_get_time() - start;
     previous = start;
     frame->state = motion.state();
@@ -157,13 +147,11 @@ void animate(void*) {
     portEXIT_CRITICAL(&renderLock);
     // Installation erases the mapped pack and always restarts the device afterwards.
     if (paused) vTaskSuspend(nullptr);
-    const bool rendered = fullFrame
-        ? fullFrameRenderer->render(frame->state.pose, frame->state.effectSeconds, frame->pixels)
-        : patchRenderer->render(frame->state.pose, frame->pixels);
+    const bool rendered = sprite.render(frame->state, frame->pixels);
     portENTER_CRITICAL(&renderLock);
     renderActive = false;
     portEXIT_CRITICAL(&renderLock);
-    if (!rendered) fatal(fullFrame ? fullFrameRenderer->error() : patchRenderer->error());
+    if (!rendered) fatal(sprite.error());
     const int64_t effectStart = esp_timer_get_time();
     if (!effects->render(frame->state, frame->pixels)) fatal(effects->error());
     frame->effectsUs = restoreUs + esp_timer_get_time() - effectStart;

@@ -31,7 +31,7 @@ function nativePreview() {
   execFileSync(process.env.CXX ?? 'clang++', [
     '-std=c++17', '-O2',
     join(repository, 'tools', 'character_preview.cpp'),
-    ...['CharacterMotion', 'FullFrameRenderer', 'CharacterPack', 'AgentBadges', 'CharacterEffects',
+    ...['CharacterMotion', 'CharacterFrame', 'FullFrameRenderer', 'CharacterPack', 'AgentBadges', 'CharacterEffects',
       'SpriteMotion', 'SpriteRenderer', 'SpriteStorage'].map(name => join(firmware, name + '.cpp')),
     '-lz', '-o', out,
   ], { stdio: 'inherit' });

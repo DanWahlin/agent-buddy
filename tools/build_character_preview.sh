@@ -12,6 +12,7 @@ python3 tools/character_pack.py build
   build/atlas_host.S -lz -o build/live-preview
 "${CXX:-clang++}" -std=c++17 -O2 -Wall -Wextra -Werror \
   tools/character_preview.cpp firmware/AgentCompanion/src/CharacterMotion.cpp \
+  firmware/AgentCompanion/src/CharacterFrame.cpp \
   firmware/AgentCompanion/src/FullFrameRenderer.cpp firmware/AgentCompanion/src/CharacterPack.cpp \
   firmware/AgentCompanion/src/AgentBadges.cpp \
   firmware/AgentCompanion/src/CharacterEffects.cpp firmware/AgentCompanion/src/SpriteMotion.cpp \

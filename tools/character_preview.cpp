@@ -1,4 +1,5 @@
 #include "../firmware/AgentCompanion/src/CharacterEffects.h"
+#include "../firmware/AgentCompanion/src/CharacterFrame.h"
 #include "../firmware/AgentCompanion/src/CharacterMotion.h"
 #include "../firmware/AgentCompanion/src/FullFrameRenderer.h"
 #include "../firmware/AgentCompanion/src/SpriteRenderer.h"
@@ -121,6 +122,7 @@ int main() {
   CharacterEffects effects(first.data(), second.data(), nullptr, badgeOverlay.data());
   FullFrameRenderer fullFrame(
       fullFrameScratch.data(), fullFrameCached.data(), inflateSpriteHost);
+  CharacterSprite sprite(&renderer, &fullFrame);
   CharacterMotion motion(20260911);
   if (motion.error()) {
     std::cerr << motion.error() << '\n';
@@ -148,7 +150,7 @@ int main() {
       continue;
     }
     const int mode = static_cast<int>(requestedMode), playing = static_cast<int>(requestedPlaying);
-    if (mode >= 0 && !motion.setMode(static_cast<CharacterMode>(mode))) {
+    if (mode >= 0 && !applyModeRequest(motion, {static_cast<CharacterMode>(mode), false})) {
       std::cout << "ERR " << motion.error() << '\n' << std::flush;
       continue;
     }
@@ -163,11 +165,10 @@ int main() {
         std::cout << "ERR " << spriteStorageError() << '\n' << std::flush;
         continue;
       }
-      renderer.invalidate();
-      fullFrame.invalidate();
+      sprite.invalidate();
       activeCharacter = character;
     }
-    motion.update(dt * characterPack()->header.motionSpeed);
+    stepCharacterMotion(motion, dt);
     const CharacterState state = motion.state();
     uint16_t* frame = useFirst ? first.data() : second.data();
     const int frameIndex = useFirst ? 0 : 1;
@@ -175,11 +176,9 @@ int main() {
     const bool restored = effects.restore(frame);
     if (renderedCharacters[frameIndex] != character)
       std::memset(frame, 0, first.size() * sizeof(uint16_t));
-    const bool fullFramePack = characterPack()->header.layout == PackLayout::FullFrame;
-    const bool rendered = fullFramePack ? fullFrame.render(state.pose, state.effectSeconds, frame)
-                                        : renderer.render(state.pose, frame);
+    const bool rendered = sprite.render(state, frame);
     if (!restored || !rendered || !effects.render(state, frame)) {
-      const char* renderError = fullFramePack ? fullFrame.error() : renderer.error();
+      const char* renderError = sprite.error();
       std::cout << "ERR " << (effects.error() ? effects.error() : renderError) << '\n' << std::flush;
       continue;
     }
