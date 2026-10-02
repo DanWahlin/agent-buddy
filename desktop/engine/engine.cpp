@@ -60,9 +60,15 @@ struct Engine {
   std::vector<uint16_t> base;
   std::vector<uint8_t> rgba;
   std::vector<uint8_t> background;
-  std::vector<float> coverage;
   std::vector<float> softened;
   std::vector<int32_t> queue;
+  // The last frame shown, to tell whether the next one differs at all.
+  std::vector<uint16_t> shown;
+  // The character-only frame the cut-out was last worked out for.
+  std::vector<uint16_t> keyedBase;
+  bool keyed = false;
+  int shownKey = -1;
+  bool changed = true;
   AgentBadges badges;
   std::unique_ptr<SpriteRenderer> renderer;
   std::unique_ptr<FullFrameRenderer> fullFrame;
@@ -76,6 +82,9 @@ struct Engine {
 
 Engine* engine = nullptr;
 const char* lastError = nullptr;
+// Where the page writes a pack before loading it, so it is not copied twice.
+std::vector<uint32_t> staged;
+size_t stagedBytes = 0;
 
 void unpack(uint16_t swapped, uint8_t& r, uint8_t& g, uint8_t& b) {
   const uint16_t rgb = static_cast<uint16_t>((swapped << 8) | (swapped >> 8));
@@ -124,26 +133,34 @@ void findBackground(Engine& e) {
     if (y < kHeight - 1) push(index + kWidth);
   }
   // Soften the silhouette by a pixel, as the art is anti-aliased against black.
-  for (int i = 0; i < kPixels; ++i) e.coverage[i] = e.background[i] ? 0.f : 1.f;
+  // Only backdrop pixels use this, and only those touching the art get more
+  // than nothing, so the rest are skipped.
   for (int y = 0; y < kHeight; ++y) {
     for (int x = 0; x < kWidth; ++x) {
-      float sum = 0;
-      int count = 0;
+      const int index = y * kWidth + x;
+      if (!e.background[index]) continue;
+      int art = 0, count = 0;
       for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {
           const int nx = x + dx, ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= kWidth || ny >= kHeight) continue;
-          sum += e.coverage[ny * kWidth + nx];
+          art += !e.background[ny * kWidth + nx];
           ++count;
         }
       }
-      e.softened[y * kWidth + x] = sum / count;
+      e.softened[index] = static_cast<float>(art) / count;
     }
   }
 }
 
 void writeRgba(Engine& e, const uint16_t* frame, bool key) {
-  if (key) findBackground(e);
+  // The cut-out depends only on the character, not the effects; while the
+  // pose holds and only the effects move, the last one still stands.
+  if (key && (!e.keyed || std::memcmp(e.base.data(), e.keyedBase.data(), kPixels * sizeof(uint16_t)) != 0)) {
+    findBackground(e);
+    std::memcpy(e.keyedBase.data(), e.base.data(), kPixels * sizeof(uint16_t));
+    e.keyed = true;
+  }
   for (int y = 0; y < kHeight; ++y) {
     for (int x = 0; x < kWidth; ++x) {
       const int index = y * kWidth + x;
@@ -186,11 +203,11 @@ AC_EXPORT int ac_frame_x() { return kCharacterFrameX; }
 
 // Loads a character pack (.acpk), the same file the device installs. The bytes
 // are copied, so the caller may free them afterwards. Returns 1 on success.
-AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
+namespace {
+int bind(std::vector<uint32_t>&& words, size_t size, uint32_t seed) {
   lastError = nullptr;
   auto next = std::make_unique<Engine>();
-  next->packWords.assign((size + sizeof(uint32_t) - 1) / sizeof(uint32_t), 0);
-  std::memcpy(next->packWords.data(), bytes, size);
+  next->packWords = std::move(words);
   if (!loadCharacterPack(reinterpret_cast<const uint8_t*>(next->packWords.data()), size)) {
     lastError = spriteStorageError();
     // The previous pack's bytes are still bound to storage; keep showing it.
@@ -208,9 +225,10 @@ AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
   next->base.assign(kPixels, 0);
   next->rgba.assign(kPixels * 4, 0);
   next->background.assign(kPixels, 0);
-  next->coverage.assign(kPixels, 0);
   next->softened.assign(kPixels, 0);
   next->queue.assign(kPixels, 0);
+  next->shown.assign(kPixels, 0);
+  next->keyedBase.assign(kPixels, 0);
   next->renderer = std::make_unique<SpriteRenderer>(
       next->openPatch[0].data(), next->openPatch[1].data(), next->patch.data(), patchPixels,
       next->frames[0].data(), next->frames[1].data(), inflateSpriteHost, kWidth, kHeight);
@@ -229,6 +247,28 @@ AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
   delete engine;
   engine = next.release();
   return 1;
+}
+}  // namespace
+
+AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
+  std::vector<uint32_t> words((size + sizeof(uint32_t) - 1) / sizeof(uint32_t), 0);
+  std::memcpy(words.data(), bytes, size);
+  return bind(std::move(words), size, seed);
+}
+
+// A buffer the page fills with a pack, then loads with ac_load_reserved. The
+// engine keeps it as the pack itself, so a 10 MB pack is held once, not twice.
+AC_EXPORT uint8_t* ac_reserve(size_t size) {
+  staged.assign((size + sizeof(uint32_t) - 1) / sizeof(uint32_t), 0);
+  staged.shrink_to_fit();
+  stagedBytes = size;
+  return reinterpret_cast<uint8_t*>(staged.data());
+}
+
+AC_EXPORT int ac_load_reserved(uint32_t seed) {
+  const size_t size = stagedBytes;
+  stagedBytes = 0;
+  return bind(std::move(staged), size, seed);
 }
 
 // A mode change, as the device's command queue applies one. `touch` is a poke:
@@ -291,10 +331,28 @@ AC_EXPORT const uint8_t* ac_frame(double seconds, int key) {
     lastError = e.effects->error();
     return nullptr;
   }
-  writeRgba(e, frame, key != 0);
+  // Most frames of an idle character are the same as the last one; skip the
+  // conversion, and let the page skip the upload and redraw.
+  e.changed = key != e.shownKey
+      || std::memcmp(frame, e.shown.data(), kPixels * sizeof(uint16_t)) != 0;
+  if (e.changed) {
+    std::memcpy(e.shown.data(), frame, kPixels * sizeof(uint16_t));
+    e.shownKey = key;
+    writeRgba(e, frame, key != 0);
+  }
   e.useFirst = !e.useFirst;
   return e.rgba.data();
 }
+
+// For tests: forget the cached cut-out, so the next frame works it out afresh.
+AC_EXPORT void ac_forget() {
+  if (!engine) return;
+  engine->keyed = false;
+  engine->shownKey = -1;
+}
+
+// Whether the last ac_frame differed from the one before it.
+AC_EXPORT int ac_changed() { return engine && engine->changed ? 1 : 0; }
 
 AC_EXPORT int ac_state_mode() { return engine ? static_cast<int>(engine->state.mode) : 0; }
 AC_EXPORT double ac_state_seconds() { return engine ? engine->state.effectSeconds : 0; }

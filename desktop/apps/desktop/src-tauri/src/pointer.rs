@@ -34,7 +34,13 @@ pub struct Region {
 /// Leaving is stickier than arriving, so a cursor resting on the boundary does
 /// not flip the window style back and forth every poll.
 const STICKY_MARGIN: f64 = 6.0;
-const POLL: Duration = Duration::from_millis(16);
+/// How often to look while the cursor is near the window: quick enough that
+/// hovering onto the character feels immediate.
+const POLL_NEAR: Duration = Duration::from_millis(50);
+/// How often to look while it is far away: there is nothing to decide until it comes back.
+const POLL_FAR: Duration = Duration::from_millis(150);
+/// "Near" is within this many CSS pixels of the window's edge.
+const NEAR: f64 = 120.0;
 
 pub fn inside(region: &Region, x: f64, y: f64, margin: f64) -> bool {
     let rx = region.rx + margin;
@@ -47,36 +53,84 @@ pub fn inside(region: &Region, x: f64, y: f64, margin: f64) -> bool {
     dx * dx + dy * dy <= 1.0
 }
 
+/// Where the window is, in physical pixels, and its scale. Kept up to date from
+/// window events, so each poll asks the system for the cursor alone: every
+/// window query is a round trip to the main thread.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Geometry {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub scale: f64,
+    pub visible: bool,
+}
+
+impl Geometry {
+    pub fn of(window: &WebviewWindow) -> Option<Self> {
+        let origin = window.inner_position().ok()?;
+        let size = window.inner_size().ok()?;
+        Some(Self {
+            x: origin.x as f64,
+            y: origin.y as f64,
+            width: size.width as f64,
+            height: size.height as f64,
+            scale: window.scale_factor().ok()?,
+            visible: window.is_visible().unwrap_or(true),
+        })
+    }
+}
+
 pub struct Pointer {
     region: Mutex<Region>,
+    geometry: Mutex<Option<Geometry>>,
 }
 
 impl Pointer {
     pub fn new() -> Self {
-        Self { region: Mutex::new(Region::default()) }
+        Self { region: Mutex::new(Region::default()), geometry: Mutex::new(None) }
     }
 
     pub fn set_region(&self, region: Region) {
         *self.region.lock().unwrap() = region;
     }
 
+    /// Called when the window moves, resizes, rescales, shows or hides.
+    pub fn refresh(&self, window: &WebviewWindow) {
+        if let Some(geometry) = Geometry::of(window) {
+            *self.geometry.lock().unwrap() = Some(geometry);
+        }
+    }
+
     /// Follow the cursor, handing the window the mouse only over the character.
     pub fn watch(self: Arc<Self>, window: WebviewWindow) {
         std::thread::spawn(move || {
             let mut over = false;
+            let mut wait = POLL_NEAR;
+            if self.geometry.lock().unwrap().is_none() {
+                self.refresh(&window);
+            }
             loop {
-                std::thread::sleep(POLL);
+                std::thread::sleep(wait);
+                let Some(geometry) = *self.geometry.lock().unwrap() else { continue };
+                if !geometry.visible {
+                    wait = POLL_FAR;
+                    continue;
+                }
 
                 let Ok(cursor) = window.app_handle().cursor_position() else { continue };
-                let (Ok(origin), Ok(scale)) = (window.inner_position(), window.scale_factor())
-                else {
-                    continue;
-                };
 
                 // Cursor and window are both physical; the region the page
                 // reported is in CSS pixels, so the difference is scaled once.
-                let x = (cursor.x - origin.x as f64) / scale;
-                let y = (cursor.y - origin.y as f64) / scale;
+                let x = (cursor.x - geometry.x) / geometry.scale;
+                let y = (cursor.y - geometry.y) / geometry.scale;
+                let width = geometry.width / geometry.scale;
+                let height = geometry.height / geometry.scale;
+                wait = if x < -NEAR || y < -NEAR || x > width + NEAR || y > height + NEAR {
+                    POLL_FAR
+                } else {
+                    POLL_NEAR
+                };
 
                 let region = *self.region.lock().unwrap();
                 let margin = if over { STICKY_MARGIN } else { 0.0 };

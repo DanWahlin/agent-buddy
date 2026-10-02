@@ -11,6 +11,7 @@
 
 // Emscripten's loader, CommonJS, bundled by esbuild.
 import createEngine from '../../../../engine/dist/engine.js';
+import { createPresenter, type Presenter } from './present.js';
 
 interface TauriApi {
   core: { invoke(command: string, args?: Record<string, unknown>): Promise<unknown> };
@@ -26,7 +27,9 @@ interface Engine {
   _free(pointer: number): void;
   UTF8ToString(pointer: number): string;
   stringToNewUTF8(text: string): number;
-  _ac_load(pointer: number, bytes: number, seed: number): number;
+  _ac_reserve(bytes: number): number;
+  _ac_load_reserved(seed: number): number;
+  _ac_changed(): number;
   _ac_error(): number;
   _ac_width(): number;
   _ac_height(): number;
@@ -42,6 +45,7 @@ interface Engine {
 
 interface DaemonSnapshot {
   state: string;
+  visible?: boolean;
   backdrop: string;
   badges: Array<{ id: string; role: 'working' | 'attention' | 'complete' }>;
   icons: Array<{ id: string; color: string; mask: string }>;
@@ -65,16 +69,20 @@ const SCREEN = 466;
 const CASE_RADIUS = 269;
 const BUTTON_REACH = 7;
 const UNITS = 2 * (CASE_RADIUS + BUTTON_REACH + 4);
+/** How strongly the case's rim catches the light. */
+const RIM_GAIN = 1.8;
 
 const tauri = window.__TAURI__;
-const canvas = document.getElementById('stage') as HTMLCanvasElement;
+const device = document.getElementById('device') as HTMLDivElement;
+const caseCanvas = document.getElementById('case') as HTMLCanvasElement;
+const caseContext = caseCanvas.getContext('2d')!;
+const stage = document.getElementById('stage') as HTMLCanvasElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
-const context = canvas.getContext('2d')!;
+let presenter: Presenter | null = null;
+// The last frame shown, kept for the tray icon.
+let lastFrame: Uint8Array | null = null;
 
 let engine: Engine | null = null;
-let frameCanvas: HTMLCanvasElement | null = null;
-let frameContext: CanvasRenderingContext2D | null = null;
-let frameImage: ImageData | null = null;
 let backdrop = 'device';
 let wantedMode = 0;
 let iconsKey = '';
@@ -86,7 +94,7 @@ let last = performance.now();
 function say(text: string): void {
   message.textContent = text;
   message.classList.add('visible');
-  canvas.classList.add('hidden');
+  device.classList.add('hidden');
 }
 
 function call(name: keyof Engine, text: string): number {
@@ -105,10 +113,9 @@ async function loadPack(url: string): Promise<void> {
   if (!response.ok) throw new Error('Could not load the character (' + response.status + ').');
   const bytes = new Uint8Array(await response.arrayBuffer());
   const e = engine!;
-  const pointer = e._malloc(bytes.length);
-  e.HEAPU8.set(bytes, pointer);
-  const ok = e._ac_load(pointer, bytes.length, (Math.random() * 0xffffffff) >>> 0);
-  e._free(pointer);
+  // Straight into the engine's own buffer, which it keeps as the pack.
+  e.HEAPU8.set(bytes, e._ac_reserve(bytes.length));
+  const ok = e._ac_load_reserved((Math.random() * 0xffffffff) >>> 0);
   if (!ok) throw new Error(e.UTF8ToString(e._ac_error()) || 'The character pack is invalid.');
   iconsKey = '';
   activeKey = '';
@@ -116,7 +123,8 @@ async function loadPack(url: string): Promise<void> {
   if (wantedMode !== 0) e._ac_mode(wantedMode, 0);
   applyBadges(pendingDaemon);
   message.classList.remove('visible');
-  canvas.classList.remove('hidden');
+  device.classList.remove('hidden');
+  dirty = true;
   resize();
   sendTrayIcon();
 }
@@ -151,8 +159,13 @@ function receive(incoming: HostMessage): void {
       break;
     case 'daemon':
       pendingDaemon = incoming.daemon;
-      backdrop = incoming.daemon?.backdrop ?? backdrop;
+      if (incoming.daemon && incoming.daemon.backdrop !== backdrop) {
+        backdrop = incoming.daemon.backdrop;
+        drawCase();
+        dirty = true;
+      }
       applyBadges(incoming.daemon);
+      setShowing(incoming.daemon?.visible !== false);
       break;
     case 'error':
       say(incoming.message);
@@ -162,19 +175,44 @@ function receive(incoming: HostMessage): void {
 
 // --- drawing -----------------------------------------------------------------
 
-/** The window is square, and holds the device's round display. */
+/**
+ * The window is square and holds the device. The case is drawn once per size;
+ * the frame canvas stays at the engine's own size (412x466), and CSS places and
+ * scales it over the screen, so on a Retina display it is not scaled at all.
+ */
 function resize(): void {
   const size = Math.max(1, Math.min(document.body.clientWidth, document.body.clientHeight));
   const ratio = window.devicePixelRatio || 1;
-  canvas.style.width = size + 'px';
-  canvas.style.height = size + 'px';
-  canvas.width = Math.round(size * ratio);
-  canvas.height = Math.round(size * ratio);
+  const unit = size / UNITS;
+  device.style.width = size + 'px';
+  device.style.height = size + 'px';
+  caseCanvas.style.width = size + 'px';
+  caseCanvas.style.height = size + 'px';
+  caseCanvas.width = Math.round(size * ratio);
+  caseCanvas.height = Math.round(size * ratio);
+  drawCase();
+  if (engine) {
+    if (!presenter) {
+      presenter = createPresenter(stage, engine._ac_width(), engine._ac_height());
+      dirty = true;
+    }
+    const screen = (UNITS - SCREEN) / 2;
+    stage.style.left = (screen + engine._ac_frame_x()) * unit + 'px';
+    stage.style.top = screen * unit + 'px';
+    stage.style.width = stage.width * unit + 'px';
+    stage.style.height = stage.height * unit + 'px';
+  }
+  dirty = true;
   reportRegion();
 }
 
+function drawCase(): void {
+  caseContext.clearRect(0, 0, caseCanvas.width, caseCanvas.height);
+  if (backdrop === 'device') drawDevice(caseCanvas.width, caseContext);
+}
+
 /** The device: case, buttons, bezel lip and the black screen the frame is drawn on. */
-function drawDevice(size: number): void {
+function drawDevice(size: number, context: CanvasRenderingContext2D): void {
   const unit = size / UNITS;
   const centre = size / 2;
   const at = (value: number) => value * unit;
@@ -241,10 +279,9 @@ function drawDevice(size: number): void {
 
   // A ring of light whose brightness varies around it. `stops` run clockwise
   // from `startDegrees`, measured from 3 o'clock, so with a start of 0 stop .625
-  // sits at the top left (225°). Drawn as short arcs rather than a conic
-  // gradient, which not every WebView has.
+  // sits at the top left (225°). Computed per pixel, with soft edges: the case
+  // is drawn once, and this has no seams and needs no conic gradient support.
   function ring(radius: number, width: number, stops: Array<[number, number]>, startDegrees = 0): void {
-    const segments = 120;
     const alphaAt = (position: number): number => {
       for (let i = 1; i < stops.length; i++) {
         const [to, high] = stops[i];
@@ -253,17 +290,34 @@ function drawDevice(size: number): void {
       }
       return stops[stops.length - 1][1];
     };
-    context.lineWidth = Math.max(1, width);
-    context.lineCap = 'butt';
-    for (let i = 0; i < segments; i++) {
-      const alpha = alphaAt((i + .5) / segments);
-      if (alpha <= .005) continue;
-      const begin = (startDegrees * Math.PI / 180) + i / segments * Math.PI * 2;
-      context.beginPath();
-      context.arc(centre, centre, radius, begin, begin + Math.PI * 2 / segments + .004);
-      context.strokeStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
-      context.stroke();
+    const half = Math.max(.5, width / 2);
+    const reach = Math.ceil(radius + half + 1);
+    const left = Math.max(0, Math.floor(centre - reach));
+    const span = Math.min(size, Math.ceil(centre + reach)) - left;
+    const light = context.createImageData(span, span);
+    const start = startDegrees * Math.PI / 180;
+    for (let y = 0; y < span; y++) {
+      for (let x = 0; x < span; x++) {
+        const dx = left + x + .5 - centre;
+        const dy = left + y + .5 - centre;
+        // Coverage of this pixel by the band, softened over one pixel at each edge.
+        const edge = half + .5 - Math.abs(Math.hypot(dx, dy) - radius);
+        if (edge <= 0) continue;
+        let position = (Math.atan2(dy, dx) - start) / (Math.PI * 2);
+        position -= Math.floor(position);
+        const alpha = Math.min(1, Math.min(1, edge) * alphaAt(position) * RIM_GAIN);
+        const at = (y * span + x) * 4;
+        light.data[at] = 255;
+        light.data[at + 1] = 255;
+        light.data[at + 2] = 255;
+        light.data[at + 3] = Math.round(alpha * 255);
+      }
     }
+    const layer = document.createElement('canvas');
+    layer.width = span;
+    layer.height = span;
+    layer.getContext('2d')!.putImageData(light, 0, 0);
+    context.drawImage(layer, left, left);
   }
 
   // The bezel's inner lip, then the screen.
@@ -277,8 +331,50 @@ function drawDevice(size: number): void {
   context.fill();
 }
 
+/**
+ * The device draws at 30 frames a second (kTargetFps), so this does too, on a
+ * timer rather than at the display's refresh rate, which can be 120 Hz. Most
+ * frames of an idle character are identical; those cost one engine step and
+ * nothing else.
+ */
+const FRAME_MS = 1000 / 30;
+let timer = 0;
+let showing = true;
+let dirty = true;
+
+function schedule(): void {
+  if (!timer && showing && !document.hidden) timer = window.setTimeout(tick, FRAME_MS);
+}
+
+function tick(): void {
+  timer = 0;
+  draw(performance.now());
+  schedule();
+}
+
+/** Hidden in Settings, or by the system: stop entirely, and resume where it was. */
+function setShowing(value: boolean): void {
+  if (value === showing) return;
+  showing = value;
+  if (showing) {
+    last = performance.now();
+    schedule();
+  } else if (timer) {
+    clearTimeout(timer);
+    timer = 0;
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearTimeout(timer);
+    timer = 0;
+  } else {
+    last = performance.now();
+    schedule();
+  }
+});
+
 function draw(now: number): void {
-  requestAnimationFrame(draw);
   const seconds = Math.min(.25, (now - last) / 1000);
   last = now;
   if (!engine || !loaded) return;
@@ -293,25 +389,11 @@ function draw(now: number): void {
     loaded = false;
     return;
   }
-  if (!frameCanvas || !frameContext || !frameImage) {
-    frameCanvas = document.createElement('canvas');
-    frameCanvas.width = width;
-    frameCanvas.height = height;
-    frameContext = frameCanvas.getContext('2d')!;
-    frameImage = frameContext.createImageData(width, height);
-  }
-  frameImage.data.set(e.HEAPU8.subarray(pixels, pixels + width * height * 4));
-  frameContext.putImageData(frameImage, 0, 0);
-
-  const size = canvas.width;
-  const scale = size / UNITS;
-  const screenLeft = (size - SCREEN * scale) / 2;
-  context.clearRect(0, 0, size, size);
-  if (backdrop === 'device') drawDevice(size);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = 'high';
-  context.drawImage(frameCanvas, screenLeft + e._ac_frame_x() * scale, screenLeft,
-    width * scale, height * scale);
+  if (!e._ac_changed() && !dirty) return;
+  dirty = false;
+  if (!presenter) return;
+  lastFrame = e.HEAPU8.subarray(pixels, pixels + width * height * 4);
+  presenter.present(lastFrame);
 }
 
 // --- the shell -----------------------------------------------------------------
@@ -322,7 +404,7 @@ function draw(now: number): void {
  * shell takes the mouse only inside it, so every other click passes through.
  */
 function reportRegion(): void {
-  const box = canvas.getBoundingClientRect();
+  const box = device.getBoundingClientRect();
   if (box.width < 1) return;
   const unit = box.width / UNITS;
   void tauri.core.invoke('set_region', {
@@ -333,7 +415,13 @@ function reportRegion(): void {
 /** The tray shows the character it is showing, cut from a real frame. */
 function sendTrayIcon(): void {
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (!frameCanvas) return;
+    if (!loaded || !lastFrame || !engine) return;
+    const width = engine._ac_width();
+    const height = engine._ac_height();
+    const frame = document.createElement('canvas');
+    frame.width = width;
+    frame.height = height;
+    frame.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(lastFrame), width, height), 0, 0);
     const size = 32;
     const icon = document.createElement('canvas');
     icon.width = size;
@@ -341,7 +429,7 @@ function sendTrayIcon(): void {
     const iconContext = icon.getContext('2d')!;
     // The middle of the frame, where the face is.
     const crop = 300;
-    iconContext.drawImage(frameCanvas, (frameCanvas.width - crop) / 2, (frameCanvas.height - crop) / 2,
+    iconContext.drawImage(frame, (width - crop) / 2, (height - crop) / 2,
       crop, crop, 0, 0, size, size);
     const rgba = Array.from(iconContext.getImageData(0, 0, size, size).data);
     void tauri.core.invoke('set_tray_icon', { rgba, width: size, height: size });
@@ -356,21 +444,21 @@ function sendTrayIcon(): void {
 const DRAG_THRESHOLD_PX = 4;
 let pressedAt: { x: number; y: number } | null = null;
 
-canvas.addEventListener('pointerdown', event => {
+device.addEventListener('pointerdown', event => {
   pressedAt = { x: event.clientX, y: event.clientY };
 });
-canvas.addEventListener('pointermove', event => {
+device.addEventListener('pointermove', event => {
   if (!pressedAt) return;
   if (Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) < DRAG_THRESHOLD_PX) return;
   pressedAt = null;
   void tauri.core.invoke('start_drag');
 });
-canvas.addEventListener('pointerup', () => {
+device.addEventListener('pointerup', () => {
   if (pressedAt && engine && loaded) engine._ac_mode(MODES.surprise, 1);
   pressedAt = null;
 });
 for (const done of ['pointercancel', 'pointerleave']) {
-  canvas.addEventListener(done, () => { pressedAt = null; });
+  device.addEventListener(done, () => { pressedAt = null; });
 }
 window.addEventListener('resize', resize);
 
@@ -390,7 +478,7 @@ async function main(): Promise<void> {
     }),
   ]);
   engine = await (createEngine as () => Promise<Engine>)();
-  requestAnimationFrame(draw);
+  schedule();
   void tauri.core.invoke('from_view', { message: { type: 'ready' } });
 }
 

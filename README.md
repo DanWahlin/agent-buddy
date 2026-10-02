@@ -661,7 +661,7 @@ python3 tools/character_pack.py build   # the .acpk packs, if you haven't built 
 cd desktop
 npm install
 npm run build
-cd apps/desktop/src-tauri && cargo run
+cd apps/desktop/src-tauri && cargo run --release
 ```
 
 The window has no frame and is always on top.

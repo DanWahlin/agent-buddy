@@ -18,8 +18,11 @@
     cursor: default;
   }
   body { display: grid; place-items: center; }
-  canvas { display: block; max-width: 100%; max-height: 100%; }
-  canvas.hidden { display: none; }
+  /* Two layers: the case, drawn once, and the engine's frame at its own size,
+     which the compositor places over the screen. */
+  #device { position: relative; }
+  #device.hidden { display: none; }
+  #device canvas { position: absolute; left: 0; top: 0; display: block; }
   #message {
     display: none;
     padding: 12px;
@@ -32,7 +35,10 @@
 </style>
 </head>
 <body>
-  <canvas id="stage" class="hidden"></canvas>
+  <div id="device" class="hidden">
+    <canvas id="case"></canvas>
+    <canvas id="stage"></canvas>
+  </div>
   <p id="message" role="status">Starting…</p>
   <script src="webview.js"></script>
 </body>

@@ -105,6 +105,7 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
 
     let visible = snapshot.as_ref().map_or(true, |it| it.visible);
     let _ = if visible { window.show() } else { window.hide() };
+    app.pointer.refresh(window);
 
     // A connected device decides the character, so the tray would only be
     // overruled a moment later; without one, the tray chooses.
@@ -232,10 +233,16 @@ fn main() {
             // this writes often; the file is two numbers and the alternative is
             // losing the position when the app is killed rather than quit.
             let moving = window.clone();
-            window.on_window_event(move |event| {
-                if let WindowEvent::Moved(at) = event {
+            let tracking = setup.pointer.clone();
+            window.on_window_event(move |event| match event {
+                WindowEvent::Moved(at) => {
                     placement::remember(&moving, Placement { x: at.x, y: at.y });
+                    tracking.refresh(&moving);
                 }
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                    tracking.refresh(&moving)
+                }
+                _ => {}
             });
 
             setup.pointer.clone().watch(window.clone());
@@ -300,6 +307,7 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
                 // that has since gone, or dragged almost off an edge.
                 "centre" => {
                     let _ = tray_window.center();
+                    tray_app.pointer.refresh(&tray_window);
                 }
                 // The daemon's page, where the character and the desktop
                 // settings live. Asked for each time: its address carries a

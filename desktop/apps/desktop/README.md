@@ -8,7 +8,7 @@ the pieces fit.
 
 ```
 npm run build                       # from desktop/: the engine, page and icons
-cd apps/desktop/src-tauri && cargo run
+cd apps/desktop/src-tauri && cargo run --release
 ```
 
 Needs Rust 1.88 or newer and the character packs (`python3 tools/character_pack.py

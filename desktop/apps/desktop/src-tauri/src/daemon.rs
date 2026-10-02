@@ -40,6 +40,7 @@ impl Snapshot {
     pub fn for_page(&self) -> Value {
         json!({
             "state": self.state,
+            "visible": self.visible,
             "backdrop": self.backdrop,
             "badges": self.badges.iter()
                 .map(|(id, role)| json!({ "id": id, "role": role }))
