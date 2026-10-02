@@ -12,7 +12,7 @@ static DeviceCommand send(DeviceCommands& parser, const std::string& text) {
 }
 
 int main() {
-  static_assert(kDeviceProtocol == 6);
+  static_assert(kDeviceProtocol == 7);
   DeviceCommands parser;
   for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
                                 DeviceCommand::Complete, DeviceCommand::Attention}) {
@@ -22,6 +22,7 @@ int main() {
   assert(send(parser, "h") == DeviceCommand::Heap);
   assert(send(parser, "i") == DeviceCommand::Info);
   assert(send(parser, "u") == DeviceCommand::UploadCharacter);
+  assert(send(parser, "w") == DeviceCommand::ScanWifi);
   assert(send(parser, "@TXkgV2ktRmk=:cGFzc3dvcmQ=\n") == DeviceCommand::ConfigureWifi);
   assert(std::strcmp(parser.wifiPayload(), "TXkgV2ktRmk=:cGFzc3dvcmQ=") == 0);
   assert(send(parser, "@b3Blbg==:\n") == DeviceCommand::ConfigureWifi);

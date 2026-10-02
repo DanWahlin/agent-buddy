@@ -22,6 +22,8 @@ class NetworkManager {
   void update();
   bool startSetup();
   bool configure(const char* ssid, const char* password);
+  // Scans for nearby networks without blocking; update() reports each result line through report.
+  bool startScan(void (*report)(const char* line));
 
   bool configured() const { return configured_; }
   bool connected() const { return connected_; }
@@ -48,6 +50,7 @@ class NetworkManager {
   void handleCharacterResponse();
   void handleDiscovery();
   void updateConnection();
+  void updateScan();
   void stopSetup();
   void ensureIdentity();
   void setChanged();
@@ -75,6 +78,8 @@ class NetworkManager {
   bool serverStarted_ = false;
   bool discoveryStarted_ = false;
   bool identityReady_ = false;
+  bool scanning_ = false;
+  void (*scanReport_)(const char* line) = nullptr;
   uint32_t setupDeadline_ = 0;
   uint32_t stopSetupAt_ = 0;
   uint32_t reconnectAt_ = 0;

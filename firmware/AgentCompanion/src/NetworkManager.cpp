@@ -370,7 +370,7 @@ void NetworkManager::updateConnection() {
     }
     setChanged();
   }
-  if (configured_ && !nowConnected && elapsed(millis(), reconnectAt_)) connect();
+  if (configured_ && !nowConnected && !scanning_ && elapsed(millis(), reconnectAt_)) connect();
 }
 
 void NetworkManager::stopSetup() {
@@ -385,7 +385,56 @@ void NetworkManager::stopSetup() {
   setChanged();
 }
 
+bool NetworkManager::startScan(void (*report)(const char* line)) {
+  if (scanning_) return false;
+  if (!(WiFi.getMode() & WIFI_MODE_STA)) WiFi.mode(setupActive_ ? WIFI_AP_STA : WIFI_STA);
+  // A join attempt in progress blocks scanning, so pause it; updateScan() retries right after.
+  if (!connected_) WiFi.disconnect(false, false);
+  if (WiFi.scanNetworks(true, false) != WIFI_SCAN_RUNNING) {
+    reconnectAt_ = millis();
+    return false;
+  }
+  scanReport_ = report;
+  scanning_ = true;
+  return true;
+}
+
+void NetworkManager::updateScan() {
+  if (!scanning_) return;
+  const int16_t found = WiFi.scanComplete();
+  if (found == WIFI_SCAN_RUNNING) return;
+  scanning_ = false;
+  char line[128];
+  if (found < 0) {
+    scanReport_("WIFI_SCAN_ERROR scan failed");
+  } else {
+    constexpr int16_t kMaxReported = 30;
+    int16_t reported = 0;
+    for (int16_t i = 0; i < found && reported < kMaxReported; ++i) {
+      const String name = WiFi.SSID(i);
+      if (name.length() == 0 || name.length() > 32) continue;
+      char encoded[48];
+      size_t written = 0;
+      if (mbedtls_base64_encode(reinterpret_cast<unsigned char*>(encoded), sizeof(encoded), &written,
+                                reinterpret_cast<const unsigned char*>(name.c_str()), name.length()) != 0)
+        continue;
+      encoded[written] = '\0';
+      snprintf(line, sizeof(line), "WIFI_NETWORK rssi=%d secure=%u ssid_b64=%s",
+               static_cast<int>(WiFi.RSSI(i)),
+               static_cast<unsigned>(WiFi.encryptionType(i) != WIFI_AUTH_OPEN), encoded);
+      scanReport_(line);
+      ++reported;
+    }
+    snprintf(line, sizeof(line), "WIFI_SCAN_END count=%d", static_cast<int>(reported));
+    scanReport_(line);
+  }
+  WiFi.scanDelete();
+  reconnectAt_ = millis();
+  if (!configured_ && !setupActive_) WiFi.mode(WIFI_OFF);
+}
+
 void NetworkManager::update() {
+  updateScan();
   updateConnection();
   if (serverStarted_) server.handleClient();
   if (setupActive_) {

@@ -936,7 +936,14 @@ pending transition. The single byte `i` reports protocol version, uptime,
 reset reason, current/requested mode, character pack size and id, and Wi-Fi
 status. Protocol 3 adds local Wi-Fi transport, protocol 4 adds USB Wi-Fi
 provisioning, and protocol 5 replaces the SD OpenClaw upload with character-pack
-installation (`u`). The boot banner `READY: ... character=ID` also tells the
+installation (`u`). Protocol 7 adds a USB Wi-Fi scan (`w`): the device
+scans without blocking the render loop and replies with up to 30
+`WIFI_NETWORK rssi=<dBm> secure=<0|1> ssid_b64=<base64>` lines, then
+`WIFI_SCAN_END count=N` or `WIFI_SCAN_ERROR <reason>`. A join attempt in
+progress pauses for the scan and resumes when it ends. The settings page reads
+the merged list from `GET /api/wifi/networks`. While the device reports a saved
+network that it hasn't joined, the daemon re-reads `i` every five seconds so the
+status updates when the join finishes. The boot banner `READY: ... character=ID` also tells the
 daemon about software restarts, which keep the USB port open.
 
 The observer negotiates protocol support before sending a mode packet, so it

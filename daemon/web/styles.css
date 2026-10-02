@@ -137,7 +137,7 @@ main {
 .button.secondary, button.secondary { background: var(--panel-2); border-color: var(--border); color: var(--text); }
 button.danger { background: transparent; border-color: #f8514966; color: var(--bad); }
 button:disabled { opacity: .45; cursor: not-allowed; }
-button:focus-visible, .button:focus-within, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, .button:focus-within, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .actions button { flex: 1; }
 
 .agents {
@@ -188,8 +188,12 @@ button:focus-visible, .button:focus-within, input:focus-visible { outline: 2px s
 .bar div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
 
 .form { display: grid; grid-template-columns: 1fr 1fr auto; gap: .8rem; align-items: end; }
-.form label { display: grid; gap: .35rem; color: var(--muted); font-size: .9rem; }
-input {
+.form label, .form .field { display: grid; gap: .35rem; color: var(--muted); font-size: .9rem; }
+.wifi-form { grid-template-columns: 1fr 1fr; }
+.wifi-form > button[type="submit"] { justify-self: start; }
+.field-row { display: flex; gap: .5rem; }
+.field-row select { flex: 1; min-width: 0; }
+input, select {
   font: inherit;
   color: var(--text);
   background: var(--bg);

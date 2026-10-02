@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.6.0]
+
+### Features and improvements
+
+- Add Wi-Fi network scan and live join status
+
 ## [v0.5.1]
 
 ### Other changes

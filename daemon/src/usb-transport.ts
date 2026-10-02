@@ -1,5 +1,13 @@
 import {SerialPort} from 'serialport';
-import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
+import {
+  deviceNetwork,
+  parseWifiNetworkLine,
+  uniqueWifiNetworks,
+  type CharacterState,
+  type DeviceNetwork,
+  type InstallProgress,
+  type WifiNetwork,
+} from './protocol.js';
 import {
   activePacket,
   iconPacket,
@@ -12,6 +20,8 @@ import {
   wifiProvisioningPacket,
   type WifiConfig,
 } from './wifi-config.js';
+
+const networkRefreshMs = 5000;
 
 interface LineWaiter {
   match: (line: string) => boolean;
@@ -26,7 +36,9 @@ export class UsbTransport {
   #path: string | null = null;
   #desired: CharacterState = 'idle';
   #scanTimer: NodeJS.Timeout | undefined;
+  #networkTimer: NodeJS.Timeout | undefined;
   #scanActive = false;
+  #networkRefreshActive = false;
   #buffer = '';
   #waiters: LineWaiter[] = [];
   #commands = Promise.resolve();
@@ -72,11 +84,14 @@ export class UsbTransport {
     if (!this.#enabled || this.#scanTimer) return;
     void this.#scan();
     this.#scanTimer = setInterval(() => void this.#scan(), 2000);
+    this.#networkTimer = setInterval(() => this.#refreshNetwork(), networkRefreshMs);
   }
 
   async stop(): Promise<void> {
     if (this.#scanTimer) clearInterval(this.#scanTimer);
+    if (this.#networkTimer) clearInterval(this.#networkTimer);
     this.#scanTimer = undefined;
+    this.#networkTimer = undefined;
     this.#rejectWaiters(new Error('USB transport stopped.'));
     const port = this.#port;
     this.#port = undefined;
@@ -158,7 +173,7 @@ export class UsbTransport {
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
       const protocol = Number(/^INFO protocol=(\d+)(?: |$)/.exec(info)?.[1]);
-      if (!Number.isInteger(protocol) || protocol < 1 || protocol > 6) {
+      if (!Number.isInteger(protocol) || protocol < 1 || protocol > 7) {
         throw new Error(`Unsupported device protocol: ${info}`);
       }
       this.#protocol = protocol;
@@ -221,6 +236,45 @@ export class UsbTransport {
     });
     this.#commands = operation.then(() => undefined, () => undefined);
     return operation;
+  }
+
+  // The device scans with its own radio, so the list holds only networks it can actually join.
+  scanWifi(): Promise<WifiNetwork[]> {
+    const operation = this.#commands.then(async () => {
+      if (!this.connected) throw new Error('Connect the Agent Companion over USB to scan for networks.');
+      if (this.#protocol < 7)
+        throw new Error('Update the device firmware to scan for Wi-Fi networks.');
+      const networks: WifiNetwork[] = [];
+      const end = await this.#request('w', line => {
+        const network = parseWifiNetworkLine(line);
+        if (network) networks.push(network);
+        return line.startsWith('WIFI_SCAN_END ') || line.startsWith('WIFI_SCAN_ERROR ');
+      }, 20000);
+      if (end.startsWith('WIFI_SCAN_ERROR '))
+        throw new Error(`Device could not scan for networks: ${end.slice('WIFI_SCAN_ERROR '.length)}`);
+      return uniqueWifiNetworks(networks);
+    });
+    this.#commands = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  // A newly saved network joins in the background, so keep asking until the device reports it joined.
+  #refreshNetwork(): void {
+    if (!this.connected || this.#networkRefreshActive || this.#protocol < 4
+        || !this.#network || this.#network.connected) return;
+    this.#networkRefreshActive = true;
+    const operation = this.#commands.then(async () => {
+      if (!this.connected) return;
+      const info = await this.#request('i', line => line.startsWith('INFO protocol='));
+      const network = deviceNetwork(/\bssid_b64=([A-Za-z0-9+/=]*)/.exec(info)?.[1],
+                                    /\bwifi_connected=1\b/.test(info));
+      if (network?.ssid !== this.#network?.ssid || network?.connected !== this.#network?.connected) {
+        this.#network = network;
+        this.#changed();
+      }
+    }).catch(error => console.error(`[usb] ${this.#message(error)}`))
+      .finally(() => { this.#networkRefreshActive = false; });
+    this.#commands = operation;
   }
 
   installCharacter(pack: Buffer, progress: InstallProgress = () => undefined): Promise<string> {

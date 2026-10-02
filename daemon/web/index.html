@@ -80,8 +80,19 @@
         Connect the device over USB, then enter a 2.4 GHz network. The password goes straight to
         the device and isn't stored on this computer.
       </p>
-      <form id="wifi-form" class="form">
-        <label>Network name <input id="ssid" name="ssid" maxlength="32" required autocomplete="off"></label>
+      <form id="wifi-form" class="form wifi-form">
+        <div class="field">
+          <label for="ssid-list">Nearby network</label>
+          <div class="field-row">
+            <select id="ssid-list" name="ssid-list">
+              <option value="">Scan to list networks</option>
+            </select>
+            <button type="button" id="wifi-scan" class="button secondary">Scan</button>
+          </div>
+        </div>
+        <label>Or type a network name
+          <input id="ssid" name="ssid" maxlength="32" autocomplete="off" placeholder="Hidden or unlisted network">
+        </label>
         <label>Password <input id="password" name="password" type="password" maxlength="63" autocomplete="off"></label>
         <button type="submit" class="button">Connect device</button>
       </form>

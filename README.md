@@ -456,8 +456,13 @@ needs a 2.4 GHz network.
 </p>
 
 1. Plug the device in over USB and set **Connection** to **Auto**.
-2. Enter your 2.4 GHz network name and password, then select **Connect device**.
-   The daemon sends the credentials over USB and pairs with the device automatically.
+2. Choose your network from **Nearby network**, or type its name in **Or type a
+   network name** if it's hidden or not listed. Enter the password, then select
+   **Connect device**. The daemon sends the credentials over USB and pairs with the
+   device automatically. The list comes from the device's own radio, so it shows
+   only 2.4 GHz networks the device can join. Select **Scan** to refresh it.
+   The Status card shows **(not connected)** after the network name until the device
+   joins. If it stays there, check the password and that the network has 2.4 GHz turned on.
 3. Unplug the device from your computer and power it from any USB source. It
    keeps working over Wi-Fi.
 

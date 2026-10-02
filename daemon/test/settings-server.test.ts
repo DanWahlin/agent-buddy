@@ -63,6 +63,9 @@ class FakeService extends EventEmitter {
     this.wifi.push([ssid, password]);
     return 'device';
   }
+  async scanWifi() {
+    return [{ssid: 'Home', rssi: -40, secure: true}];
+  }
   async setConnection(mode: string) {
     this.modes.push(mode);
   }
@@ -166,6 +169,9 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/wifi', {method: 'POST', headers: json, body: '{"ssid":1}'})).status, 400);
     assert.equal((await call('/api/wifi', {method: 'POST', headers: json, body: '{"ssid":"Home","password":"secret12"}'})).status, 200);
     assert.deepEqual(service.wifi, [['Home', 'secret12']]);
+    const networks = await call('/api/wifi/networks');
+    assert.equal(networks.status, 200);
+    assert.deepEqual(JSON.parse(networks.body), [{ssid: 'Home', rssi: -40, secure: true}]);
 
     assert.equal((await call('/api/connection', {method: 'POST', headers: json, body: '{"mode":"bluetooth"}'})).status, 400);
     assert.equal((await call('/api/connection', {method: 'POST', headers: json, body: '{"mode":"wifi"}'})).status, 200);

@@ -27,6 +27,8 @@ let status = null;
 let characters = [];
 let lastResult = null;
 let toastTimer;
+let wifiScanning = false;
+let wifiScanned = false;
 
 function toast(message, kind = 'info') {
   const element = $('toast');
@@ -240,7 +242,11 @@ function renderStatus() {
   $('mode-hint').textContent = modeHints[status.mode] ?? '';
   // Wi-Fi credentials travel over USB, so the form needs an active USB connection.
   const usbReady = status.connected && status.transport === 'usb';
-  $('wifi-form').querySelector('button').disabled = !usbReady;
+  $('wifi-form').querySelector('button[type="submit"]').disabled = !usbReady;
+  $('wifi-scan').disabled = !usbReady || wifiScanning;
+  // List nearby networks once each time the device connects over USB.
+  if (usbReady && !wifiScanned) void scanWifi({quiet: true});
+  if (!usbReady) wifiScanned = false;
   $('wifi-hint').textContent = usbReady
     ? 'Enter a 2.4 GHz network. The password goes straight to the device over USB and isn\'t stored on this computer.'
     : status.mode === 'wifi'
@@ -354,18 +360,63 @@ $('upload').addEventListener('change', async event => {
   }
 });
 
+function signalName(rssi) {
+  return rssi >= -60 ? 'strong' : rssi >= -72 ? 'good' : 'weak';
+}
+
+// The device scans with its own 2.4 GHz radio, so 5 GHz-only networks never appear here.
+async function scanWifi({quiet = false} = {}) {
+  if (wifiScanning) return;
+  wifiScanning = true;
+  wifiScanned = true;
+  const list = $('ssid-list');
+  const button = $('wifi-scan');
+  const previous = list.value || status?.network?.ssid || '';
+  button.disabled = true;
+  button.textContent = 'Scanning…';
+  try {
+    const networks = await api('/api/wifi/networks');
+    const placeholder = new Option(networks.length ? 'Choose a network' : 'No 2.4 GHz networks found', '');
+    // Network names can hold any character, so they only ever go in as text.
+    const options = networks.map(network => new Option(
+      `${network.ssid} (${signalName(network.rssi)} signal${network.secure ? '' : ', open'})`, network.ssid));
+    list.replaceChildren(placeholder, ...options);
+    if (!$('ssid').value && networks.some(network => network.ssid === previous)) list.value = previous;
+  } catch (error) {
+    list.replaceChildren(new Option('Scan unavailable. Type a network name.', ''));
+    if (!quiet) toast(error.message, 'error');
+  } finally {
+    wifiScanning = false;
+    button.textContent = 'Scan';
+    button.disabled = !(status?.connected && status.transport === 'usb');
+  }
+}
+
+$('wifi-scan').addEventListener('click', () => void scanWifi());
+$('ssid-list').addEventListener('change', () => {
+  if ($('ssid-list').value) $('ssid').value = '';
+});
+$('ssid').addEventListener('input', () => {
+  if ($('ssid').value) $('ssid-list').value = '';
+});
+
 $('wifi-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const button = event.submitter ?? event.target.querySelector('button');
+  const ssid = $('ssid').value || $('ssid-list').value;
+  if (!ssid) {
+    toast('Choose a nearby network or type a network name.', 'error');
+    return;
+  }
+  const button = event.submitter ?? event.target.querySelector('button[type="submit"]');
   button.disabled = true;
   button.textContent = 'Connecting…';
   try {
     await api('/api/wifi', {
       method: 'POST', type: 'application/json',
-      body: JSON.stringify({ssid: $('ssid').value, password: $('password').value}),
+      body: JSON.stringify({ssid, password: $('password').value}),
     });
     $('password').value = '';
-    toast(`The device is joining ${$('ssid').value}.`, 'success');
+    toast(`The device is joining ${ssid}.`, 'success');
   } catch (error) {
     toast(error.message, 'error');
   } finally {

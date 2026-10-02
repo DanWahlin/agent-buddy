@@ -5,10 +5,10 @@
 
 namespace copilot {
 enum class DeviceCommand {
-  None, Invalid, Capture, Heap, Info, UploadCharacter, ConfigureWifi,
+  None, Invalid, Capture, Heap, Info, UploadCharacter, ConfigureWifi, ScanWifi,
   DefineAgentIcon, SetAgentBadges, Idle, Surprise, Working, Complete, Attention
 };
-constexpr unsigned kDeviceProtocol = 6;
+constexpr unsigned kDeviceProtocol = 7;
 
 inline const char* commandName(DeviceCommand command) {
   switch (command) {
@@ -61,6 +61,7 @@ class DeviceCommands {
       if (byte == 'h') return DeviceCommand::Heap;
       if (byte == 'i') return DeviceCommand::Info;
       if (byte == 'u') return DeviceCommand::UploadCharacter;
+      if (byte == 'w') return DeviceCommand::ScanWifi;
       return byte == '\r' || byte == '\n' ? DeviceCommand::None : DeviceCommand::Invalid;
     }
     previous_ = milliseconds;
