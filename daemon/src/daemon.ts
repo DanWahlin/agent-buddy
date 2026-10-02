@@ -12,6 +12,7 @@ import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
 import {defaultAgentContext, normalizeAgentHook} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
+import {desktopBackdrops, isDesktopBackdrop} from './display-settings.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
@@ -40,6 +41,7 @@ export async function runDaemon(): Promise<void> {
   // Picks up characters added or changed since the last run before anyone opens the settings page.
   void service.refreshCharacterPacks();
   await service.refreshWifiPairing();
+  await service.refreshCharacterPreference();
   transport.setState(coordinator.state);
   service.syncBadges();
   const path = socketPath();
@@ -129,6 +131,15 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
         reply(service.setConnection(mode).then(() => ({ok: true, mode})));
       } else if (request.type === 'badges' && typeof request.enabled === 'boolean') {
         reply(service.setAgentBadgesEnabled(request.enabled).then(() => ({ok: true, enabled: request.enabled})));
+      } else if (request.type === 'desktop') {
+        if (request.visible !== undefined && typeof request.visible !== 'boolean')
+          throw new Error('Desktop visibility must be true or false.');
+        if (request.backdrop !== undefined && !isDesktopBackdrop(request.backdrop))
+          throw new Error(`Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
+        if (request.character !== undefined && typeof request.character !== 'string')
+          throw new Error('Desktop character must be a character id.');
+        const change = {visible: request.visible, backdrop: request.backdrop, character: request.character};
+        reply(service.setDesktop(change).then(() => ({ok: true, desktop: service.status().desktop})));
       } else if (request.type === 'listCharacters') {
         reply(service.characters());
       } else if (request.type === 'settings') {

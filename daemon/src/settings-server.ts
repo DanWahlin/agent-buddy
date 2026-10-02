@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {isCharacterName, maxPackBytes, readCharacterThumbnail} from './character-pack.js';
 import type {CompanionService} from './companion-service.js';
 import {isConnectionMode} from './connection-mode.js';
+import {desktopBackdrops, isDesktopBackdrop} from './display-settings.js';
 import {settingsInfoPath} from './paths.js';
 import {isAgentId} from './agents/types.js';
 
@@ -29,7 +30,7 @@ const securityHeaders = {
 export interface SettingsServerOptions {
   service: Pick<CompanionService, 'status' | 'installBusy' | 'characters' | 'installCharacter' | 'addCharacter'
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
-    | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'on' | 'off'>;
+    | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
@@ -162,6 +163,23 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Badge setting must be true or false.');
       await service.setAgentBadgesEnabled(body.enabled);
       return json(response, 200, {ok: true, enabled: body.enabled});
+    }
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'desktop') {
+      const body = await readJson(request) as {visible?: unknown; backdrop?: unknown; character?: unknown};
+      if (body.visible !== undefined && typeof body.visible !== 'boolean')
+        throw new HttpError(400, 'Desktop visibility must be true or false.');
+      if (body.backdrop !== undefined && !isDesktopBackdrop(body.backdrop))
+        throw new HttpError(400, `Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
+      if (body.character !== undefined && (typeof body.character !== 'string' || !isCharacterName(body.character)))
+        throw new HttpError(400, 'Desktop character must be a character id.');
+      if (body.visible === undefined && body.backdrop === undefined && body.character === undefined)
+        throw new HttpError(400, 'Nothing to change.');
+      try {
+        await service.setDesktop({visible: body.visible, backdrop: body.backdrop, character: body.character});
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
+      return json(response, 200, {ok: true, desktop: service.status().desktop});
     }
     throw new HttpError(404, 'Not found.');
   };

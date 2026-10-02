@@ -74,6 +74,24 @@
       <ul id="characters" class="grid" aria-live="polite"></ul>
     </section>
 
+    <section class="card" aria-labelledby="desktop-title">
+      <h2 id="desktop-title">Desktop companion</h2>
+      <label class="setting-row" for="desktop-toggle">
+        <span>
+          <strong>Show the character on the desktop</strong>
+          <span class="hint">The desktop app shows the same character and animation as the device. Turn this off to keep it on the device only.</span>
+        </span>
+        <input id="desktop-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <h3>Backdrop</h3>
+      <div class="segmented" role="radiogroup" aria-label="Desktop backdrop" id="backdrops">
+        <button type="button" role="radio" aria-checked="false" data-backdrop="orb">Glow orb</button>
+        <button type="button" role="radio" aria-checked="false" data-backdrop="device">Device screen</button>
+        <button type="button" role="radio" aria-checked="false" data-backdrop="none">None</button>
+      </div>
+      <p class="hint" id="backdrop-hint"></p>
+    </section>
+
     <section class="card" aria-labelledby="wifi-title">
       <h2 id="wifi-title">Wi-Fi</h2>
       <p class="hint" id="wifi-hint">
