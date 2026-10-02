@@ -1,28 +1,26 @@
 # Agent Companion, as a window of its own
 
-The companion outside VS Code, for an agent running in a terminal - Claude Code,
-Copilot CLI, or whatever comes next.
+The ESP32 Agent Companion's character on the desktop, for a second screen or for
+when the device is out of sight. See [../../README.md](../../README.md) for how
+the pieces fit.
 
 ## Running it
 
 ```
-npm run build --workspace @agent-companion/desktop
-cd src-tauri && cargo run
+npm run build                       # from desktop/: the engine, page and icons
+cd apps/desktop/src-tauri && cargo run
 ```
 
-Needs Rust 1.88 or newer, and `node` on PATH - which the hooks require anyway.
+Needs Rust 1.88 or newer and the character packs (`python3 tools/character_pack.py
+build` from the repository root). Node is only needed to build.
 
 ## How it is put together
 
-The shell is Rust and does almost nothing. Everything that decides what the
-character should be doing - the endpoint, the coordinators, which project a
-hook belongs to - runs in a Node child process, because that code is already
-written and tested on three platforms. They speak newline-delimited JSON over
-stdio, so a Rust bridge could replace it later without this app changing.
-
-The page is the same `startView` the extension uses. The only differences are
-how a message travels, and that this host serves its own files so the page
-fetches the pack rather than being handed one.
+The page runs the firmware's own animation engine, compiled to WebAssembly, on
+the `.acpk` pack the shell serves it. The shell follows the ESP32 daemon over
+its socket (`src-tauri/src/daemon.rs`) and passes the state, badges and backdrop
+to the page. It loads the character the daemon names, and shows or hides the
+window as Settings says.
 
 What is genuinely this app's own work is being a pet:
 
@@ -34,12 +32,6 @@ arrived. The decision is made in Rust from the cursor's own position instead.
 That is not really a workaround: a companion on the desktop has to follow the
 pointer across the whole screen, which a webview cannot see either. Proven
 first in `../click-through-prototype`.
-
-**Letting go of the endpoint on the way out.** The bridge leader holds it, and
-other windows only take over promptly because it closes its connections when it
-stops. So exiting asks the child to stop and waits for it, and the child also
-treats its stdin closing as a reason to shut down - which covers this app being
-killed rather than asked.
 
 ## Moving it, and getting rid of it
 
@@ -59,37 +51,21 @@ instead of somewhere nobody can reach.
 
 ## Changing character
 
-Pick one from **Character** in the tray menu. The choice is remembered, and if
-that pack has since gone the shipped one shows rather than an empty window.
+With a device connected, the character is the one installed on it: change it
+in Settings. With no device, choose **Show on desktop** in Settings, or use
+**Character** in the tray. The daemon keeps that choice, so the device gets the
+same character when it next connects without one. Without the daemon at all,
+the tray choice is remembered locally.
 
-Copilot, Claude and OpenClaw ship with the app, and Copilot is the one shown
-before anyone chooses - it is also the character the tray and app icons are cut
-from.
-**Open Characters
-Folder** in the tray opens a folder of your own that is always looked in; drop
-a pack directory in there and it appears in the menu next start. An environment
-variable is not somewhere anybody would think to look.
-
-`AGENT_COMPANION_PACKS` still works for extra folders, semicolon or comma
-separated, each either a pack folder or a folder of them.
-
-Packs are served over a protocol of the app's own rather than read off disk by
-the page. Only the packs found at startup are reachable, and only within their
-own folders - a narrower door than a filesystem scope, and the reason the
-renderer can resolve image names against a pack URL exactly as it would over
-http. Tauri's asset protocol cannot do that: it URL-encodes the whole file
-path, leaving no separator, so every pack outside the app tried to load its art
-from the root.
+Only the pack the page was told to show can be fetched, by its id, over a
+protocol of the app's own.
 
 ## What it does not do yet
 
-- **No settings, and no autostart.** Nothing to configure, and it does not come
-  back after a reboot.
-- **No way to simulate a state.** The command exists for the shell to call;
-  nothing calls it.
-- **macOS and Linux are unverified.** WebView2 is Chromium, so the renderer
-  behaves as it does in the extension; WebKit is untried.
-- **Windows only, so far.** WebView2 is Chromium, so the renderer behaves as it
-  does in the extension. macOS and Linux use WebKit and are unverified;
-  `macOSPrivateApi` is already set, since a transparent window there does not
-  work without it, and it rules out the Mac App Store.
+- **No autostart.** It does not come back after a reboot.
+- **Windows cannot follow agents.** The companion service has no Windows build,
+  so on Windows the app shows the character in idle.
+- **Windows and macOS so far; Linux is unverified.** `macOSPrivateApi` is set,
+  because a transparent window does not work on macOS without it, and it rules
+  out the Mac App Store. On macOS the app is an accessory app: it has no Dock
+  icon and can sit over full-screen Spaces.
