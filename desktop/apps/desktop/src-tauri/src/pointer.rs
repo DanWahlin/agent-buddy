@@ -10,7 +10,6 @@
 //! the pointer across the whole screen, which a webview cannot see either, so
 //! this same reading does both jobs.
 //!
-//! Proven in `apps/click-through-prototype` before any of this was built on it.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

@@ -193,16 +193,12 @@ void writeRgba(Engine& e, const uint16_t* frame, bool key) {
 }
 }  // namespace
 
-AC_EXPORT void* ac_alloc(size_t bytes) { return std::malloc(bytes); }
-AC_EXPORT void ac_free(void* pointer) { std::free(pointer); }
 AC_EXPORT const char* ac_error() { return lastError ? lastError : ""; }
 AC_EXPORT int ac_width() { return kWidth; }
 AC_EXPORT int ac_height() { return kHeight; }
 AC_EXPORT int ac_display() { return kDisplaySize; }
 AC_EXPORT int ac_frame_x() { return kCharacterFrameX; }
 
-// Loads a character pack (.acpk), the same file the device installs. The bytes
-// are copied, so the caller may free them afterwards. Returns 1 on success.
 namespace {
 int bind(std::vector<uint32_t>&& words, size_t size, uint32_t seed) {
   lastError = nullptr;
@@ -250,12 +246,6 @@ int bind(std::vector<uint32_t>&& words, size_t size, uint32_t seed) {
 }
 }  // namespace
 
-AC_EXPORT int ac_load(const uint8_t* bytes, size_t size, uint32_t seed) {
-  std::vector<uint32_t> words((size + sizeof(uint32_t) - 1) / sizeof(uint32_t), 0);
-  std::memcpy(words.data(), bytes, size);
-  return bind(std::move(words), size, seed);
-}
-
 // A buffer the page fills with a pack, then loads with ac_load_reserved. The
 // engine keeps it as the pack itself, so a 10 MB pack is held once, not twice.
 AC_EXPORT uint8_t* ac_reserve(size_t size) {
@@ -278,14 +268,6 @@ AC_EXPORT int ac_mode(int mode, int touch) {
   if (applyModeRequest(*engine->motion, {static_cast<CharacterMode>(mode), touch != 0})) return 1;
   lastError = engine->motion->error();
   return 0;
-}
-
-AC_EXPORT int ac_look(int direction) {
-  return engine && engine->motion->requestIdleDirection(direction) ? 1 : 0;
-}
-
-AC_EXPORT void ac_playing(int playing) {
-  if (engine) engine->motion->setPlaying(playing != 0);
 }
 
 // The daemon's badge packets, exactly as it sends them to the device, without
@@ -353,6 +335,3 @@ AC_EXPORT void ac_forget() {
 
 // Whether the last ac_frame differed from the one before it.
 AC_EXPORT int ac_changed() { return engine && engine->changed ? 1 : 0; }
-
-AC_EXPORT int ac_state_mode() { return engine ? static_cast<int>(engine->state.mode) : 0; }
-AC_EXPORT double ac_state_seconds() { return engine ? engine->state.effectSeconds : 0; }

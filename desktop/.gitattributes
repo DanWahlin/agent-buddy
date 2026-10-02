@@ -4,6 +4,5 @@
 * text=auto eol=lf
 
 # Never touch these.
-*.webp binary
 *.png binary
 *.svg text eol=lf

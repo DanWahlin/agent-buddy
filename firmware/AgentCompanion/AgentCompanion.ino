@@ -999,11 +999,9 @@ void startCharacter() {
       "Badge overlay allocation failed."));
   effects = new (effectMemory) CharacterEffects(frames[0].pixels, frames[1].pixels, &agentBadges, badgeOverlay);
   // Warm both frame caches before starting the presentation clock and brightness fade.
+  CharacterSprite sprite(patchRenderer, fullFrameRenderer);
   for (auto& frame : frames) {
-    const bool rendered = fullFrameRenderer
-        ? fullFrameRenderer->render({0, 0, 0}, 0, frame.pixels)
-        : patchRenderer->render({0, 0, 0}, frame.pixels);
-    if (!rendered) fatal(fullFrameRenderer ? fullFrameRenderer->error() : patchRenderer->error());
+    if (!sprite.render(CharacterState{}, frame.pixels)) fatal(sprite.error());
   }
   if (xTaskCreatePinnedToCore(animate, "copilot-render", 16384, nullptr, 1,
                               &renderTask, 0) != pdPASS) fatal("Render task creation failed.");

@@ -23,7 +23,6 @@ declare global {
 
 interface Engine {
   HEAPU8: Uint8Array;
-  _malloc(bytes: number): number;
   _free(pointer: number): void;
   UTF8ToString(pointer: number): string;
   stringToNewUTF8(text: string): number;
@@ -36,11 +35,9 @@ interface Engine {
   _ac_display(): number;
   _ac_frame_x(): number;
   _ac_mode(mode: number, touch: number): number;
-  _ac_playing(playing: number): void;
   _ac_badge_icon(packet: number): number;
   _ac_badge_active(packet: number): number;
   _ac_frame(seconds: number, key: number): number;
-  _ac_state_mode(): number;
 }
 
 interface DaemonSnapshot {
@@ -65,7 +62,9 @@ const ROLE_LETTER = { working: 'w', attention: 'a', complete: 'c' } as const;
  * a matte black case, with the two buttons on its right edge. Everything is
  * laid out in device pixels; the case and buttons need this much room.
  */
-const SCREEN = 466;
+// The device's display size, kDisplaySize; replaced by the engine's own value
+// as soon as it loads, so the two cannot disagree.
+let SCREEN = 466;
 const CASE_RADIUS = 269;
 const BUTTON_REACH = 7;
 const UNITS = 2 * (CASE_RADIUS + BUTTON_REACH + 4);
@@ -478,6 +477,7 @@ async function main(): Promise<void> {
     }),
   ]);
   engine = await (createEngine as () => Promise<Engine>)();
+  SCREEN = engine._ac_display();
   schedule();
   void tauri.core.invoke('from_view', { message: { type: 'ready' } });
 }

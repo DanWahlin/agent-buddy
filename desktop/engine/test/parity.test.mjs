@@ -83,10 +83,8 @@ for (const character of ['copilot', 'claude', 'openclaw']) {
       const require = createRequire(import.meta.url);
       const engine = await require(enginePath)();
       const bytes = readFileSync(join(packs, character + '.acpk'));
-      const pointer = engine._malloc(bytes.length);
-      engine.HEAPU8.set(bytes, pointer);
-      assert.equal(engine._ac_load(pointer, bytes.length, SEED), 1, engine.UTF8ToString(engine._ac_error()));
-      engine._free(pointer);
+      engine.HEAPU8.set(bytes, engine._ac_reserve(bytes.length));
+      assert.equal(engine._ac_load_reserved(SEED), 1, engine.UTF8ToString(engine._ac_error()));
 
       const width = engine._ac_width();
       const height = engine._ac_height();

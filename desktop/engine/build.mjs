@@ -37,7 +37,8 @@ try {
     // One file, so the page needs no second fetch for the .wasm.
     '-sSINGLE_FILE=1',
     '-sEXPORTED_RUNTIME_METHODS=HEAPU8,UTF8ToString,stringToNewUTF8',
-    '-sEXPORTED_FUNCTIONS=_malloc,_free',
+    // The page frees the strings it hands the engine (stringToNewUTF8).
+    '-sEXPORTED_FUNCTIONS=_free',
     ...sources,
     '-o', out,
   ], { stdio: 'inherit' });

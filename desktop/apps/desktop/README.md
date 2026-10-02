@@ -29,9 +29,6 @@ is all or nothing - there is no equivalent of Electron's `forward` option
 ([tauri#6164](https://github.com/tauri-apps/tauri/issues/6164)) - so while
 click-through is on the page receives nothing and cannot tell the cursor has
 arrived. The decision is made in Rust from the cursor's own position instead.
-That is not really a workaround: a companion on the desktop has to follow the
-pointer across the whole screen, which a webview cannot see either. Proven
-first in `../click-through-prototype`.
 
 ## Moving it, and getting rid of it
 

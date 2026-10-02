@@ -15,7 +15,6 @@
     "test": "npm run typecheck && node --test engine/test/*.test.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "@types/node": "^22.7.0"
+    "typescript": "^5.6.0"
   }
 }
