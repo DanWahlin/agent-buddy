@@ -7,4 +7,3 @@
 *.webp binary
 *.png binary
 *.svg text eol=lf
-*.vsix binary
