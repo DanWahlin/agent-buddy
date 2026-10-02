@@ -179,15 +179,20 @@ function drawDevice(size: number): void {
   const centre = size / 2;
   const at = (value: number) => value * unit;
 
-  // The two buttons on the right edge, behind the case so it overlaps them.
-  context.fillStyle = '#16171a';
+  // The two buttons on the right edge, behind the case so it overlaps them,
+  // lit along their top like the rim.
   for (const degrees of [-24, 24]) {
     const angle = degrees * Math.PI / 180;
     context.save();
     context.translate(centre + at(CASE_RADIUS - 2) * Math.cos(angle), centre + at(CASE_RADIUS - 2) * Math.sin(angle));
     context.rotate(angle);
+    const key = context.createLinearGradient(0, -at(17), 0, at(17));
+    key.addColorStop(0, '#3a3c42');
+    key.addColorStop(.35, '#1d1e22');
+    key.addColorStop(1, '#0e0e10');
     context.beginPath();
     context.roundRect(0, -at(17), at(BUTTON_REACH + 2), at(34), at(3));
+    context.fillStyle = key;
     context.fill();
     context.restore();
   }
@@ -195,16 +200,71 @@ function drawDevice(size: number): void {
   // The case: matte black, a touch lighter towards the top left.
   const shell = context.createLinearGradient(centre - at(CASE_RADIUS), centre - at(CASE_RADIUS),
     centre + at(CASE_RADIUS), centre + at(CASE_RADIUS));
-  shell.addColorStop(0, '#2a2b2f');
+  shell.addColorStop(0, '#2c2d32');
   shell.addColorStop(.45, '#151619');
-  shell.addColorStop(1, '#0b0b0d');
+  shell.addColorStop(1, '#0a0a0c');
   context.beginPath();
   context.arc(centre, centre, at(CASE_RADIUS), 0, Math.PI * 2);
   context.fillStyle = shell;
   context.fill();
-  context.lineWidth = Math.max(1, at(1.5));
-  context.strokeStyle = 'rgba(255, 255, 255, .10)';
-  context.stroke();
+
+  // Gloss: a broad soft reflection across the top left of the case, kept off
+  // the screen by clipping to the ring between the case edge and the bezel.
+  context.save();
+  context.beginPath();
+  context.arc(centre, centre, at(CASE_RADIUS), 0, Math.PI * 2);
+  context.arc(centre, centre, at(SCREEN / 2 + 6), 0, Math.PI * 2, true);
+  context.clip();
+  const gloss = context.createLinearGradient(centre - at(CASE_RADIUS), centre - at(CASE_RADIUS),
+    centre + at(CASE_RADIUS * .2), centre + at(CASE_RADIUS * .2));
+  gloss.addColorStop(0, 'rgba(255, 255, 255, .28)');
+  gloss.addColorStop(.35, 'rgba(255, 255, 255, .10)');
+  gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  context.fillStyle = gloss;
+  context.fillRect(0, 0, size, size);
+  context.restore();
+
+  // Rim light: a sheen around the rounded edge, brightest where light from the
+  // top left catches it, with a fainter bounce at the bottom right.
+  ring(at(CASE_RADIUS - 8), at(14), [
+    [0, .04], [.40, .06], [.52, .28], [.625, .50], [.72, .28], [.85, .06], [1, .04],
+  ]);
+  ring(at(CASE_RADIUS - 8), at(14), [[0, .22], [.07, .08], [.2, 0], [.8, 0], [.93, .08], [1, .22]], 45);
+  // A crisp highlight on the very edge.
+  ring(at(CASE_RADIUS - 1.2), at(2.2), [
+    [0, .18], [.42, .2], [.56, .75], [.625, .95], [.69, .75], [.84, .2], [1, .18],
+  ]);
+  // The bevel down into the screen catches light on the opposite side.
+  ring(at(SCREEN / 2 + 9), at(4), [
+    [0, .40], [.08, .55], [.18, .40], [.36, .08], [.62, .03], [.88, .08], [1, .40],
+  ]);
+
+  // A ring of light whose brightness varies around it. `stops` run clockwise
+  // from `startDegrees`, measured from 3 o'clock, so with a start of 0 stop .625
+  // sits at the top left (225°). Drawn as short arcs rather than a conic
+  // gradient, which not every WebView has.
+  function ring(radius: number, width: number, stops: Array<[number, number]>, startDegrees = 0): void {
+    const segments = 120;
+    const alphaAt = (position: number): number => {
+      for (let i = 1; i < stops.length; i++) {
+        const [to, high] = stops[i];
+        const [from, low] = stops[i - 1];
+        if (position <= to) return low + (high - low) * ((position - from) / Math.max(1e-6, to - from));
+      }
+      return stops[stops.length - 1][1];
+    };
+    context.lineWidth = Math.max(1, width);
+    context.lineCap = 'butt';
+    for (let i = 0; i < segments; i++) {
+      const alpha = alphaAt((i + .5) / segments);
+      if (alpha <= .005) continue;
+      const begin = (startDegrees * Math.PI / 180) + i / segments * Math.PI * 2;
+      context.beginPath();
+      context.arc(centre, centre, radius, begin, begin + Math.PI * 2 / segments + .004);
+      context.strokeStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+      context.stroke();
+    }
+  }
 
   // The bezel's inner lip, then the screen.
   context.beginPath();

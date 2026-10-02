@@ -63,11 +63,12 @@ ever disagree.
 ## The look
 
 By default, the window is a small copy of the device: the round screen in a
-matte black case, with the two buttons on its right edge. The page draws the
+matte black case, with the two buttons on its right edge. Light from the top
+left catches the case's rim and the bevel into the screen. The page draws the
 case in the canvas around the engine's frame, and the frame is the device's own
 pixels on its own black screen, so it reads exactly as the device does.
 
-With the **None** look, the character sits straight on the desktop, so the
+With **Show the device around the character** turned off, the character sits straight on the desktop, so the
 engine keys the frame (`writeRgba` in `engine.cpp`):
 
 - Black that connects to the edge of the round display is background. Black

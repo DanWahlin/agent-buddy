@@ -83,12 +83,13 @@
         </span>
         <input id="desktop-toggle" class="toggle" type="checkbox" role="switch">
       </label>
-      <h3>Look</h3>
-      <div class="segmented" role="radiogroup" aria-label="Desktop look" id="backdrops">
-        <button type="button" role="radio" aria-checked="false" data-backdrop="device">Device</button>
-        <button type="button" role="radio" aria-checked="false" data-backdrop="none">None</button>
-      </div>
-      <p class="hint" id="backdrop-hint"></p>
+      <label class="setting-row" for="device-frame-toggle">
+        <span>
+          <strong>Show the device around the character</strong>
+          <span class="hint">A small copy of the device, with its screen, case and buttons. Turn this off to show only the character and its effects.</span>
+        </span>
+        <input id="device-frame-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
     </section>
 
     <section class="card" aria-labelledby="wifi-title">

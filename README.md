@@ -647,7 +647,7 @@ no hooks of its own. The settings page controls both:
 | --- | --- |
 | Characters | The character you install on the device is also shown on the desktop. With no device connected, choose **Show on desktop** instead. The device gets that character when it next connects without one. |
 | Show the character on the desktop | Turn it off to keep the character on the device only. |
-| Look | **Device** (default): a small copy of the device (screen, bezel and buttons), so it looks and reads exactly as it does on your desk. **None**: the character and its effects straight on the desktop. |
+| Show the device around the character | On (default): a small copy of the device (screen, case and buttons), so it looks and reads exactly as it does on your desk. Off: only the character and its effects, straight on the desktop. |
 | Show agent badges | The same switch for the device and the desktop. |
 
 ### Run the desktop app

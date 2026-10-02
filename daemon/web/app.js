@@ -241,11 +241,11 @@ function renderStatus() {
   const desktop = status.desktop ?? {visible: true, backdrop: 'device'};
   const desktopToggle = $('desktop-toggle');
   if (desktopToggle && !desktopPending) desktopToggle.checked = desktop.visible !== false;
-  for (const button of document.querySelectorAll('#backdrops button')) {
-    button.setAttribute('aria-checked', String(button.dataset.backdrop === desktop.backdrop));
-    button.disabled = desktop.visible === false;
+  const frameToggle = $('device-frame-toggle');
+  if (frameToggle) {
+    if (!desktopPending) frameToggle.checked = desktop.backdrop !== 'none';
+    frameToggle.disabled = desktop.visible === false;
   }
-  $('backdrop-hint').textContent = backdropHints[desktop.backdrop] ?? '';
 
   $('mode-hint').textContent = modeHints[status.mode] ?? '';
   // Wi-Fi credentials travel over USB, so the form needs an active USB connection.
@@ -455,11 +455,6 @@ for (const button of document.querySelectorAll('#modes button')) {
   });
 }
 
-const backdropHints = {
-  device: 'The character on a small copy of the device, screen, bezel and buttons, so it looks and reads exactly as it does on your desk.',
-  none: 'Just the character and its effects, straight on the desktop.',
-};
-
 let desktopPending = false;
 
 async function updateDesktop(change, message) {
@@ -484,11 +479,11 @@ $('desktop-toggle')?.addEventListener('change', event => {
     visible ? 'The desktop character is on.' : 'The desktop character is off.');
 });
 
-for (const button of document.querySelectorAll('#backdrops button')) {
-  button.addEventListener('click', () => {
-    void updateDesktop({backdrop: button.dataset.backdrop}, `Desktop look set to ${button.textContent}.`);
-  });
-}
+$('device-frame-toggle')?.addEventListener('change', event => {
+  const framed = event.target.checked;
+  void updateDesktop({backdrop: framed ? 'device' : 'none'},
+    framed ? 'The device is shown around the character.' : 'Only the character is shown.');
+});
 
 let badgesPending = false;
 
