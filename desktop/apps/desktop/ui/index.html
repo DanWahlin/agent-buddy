@@ -23,6 +23,7 @@
   #device { position: relative; }
   #device.hidden { display: none; }
   #device canvas { position: absolute; left: 0; top: 0; display: block; }
+  #device canvas[hidden] { display: none; }
   #message {
     display: none;
     padding: 12px;
@@ -38,6 +39,7 @@
   <div id="device" class="hidden">
     <canvas id="case"></canvas>
     <canvas id="stage"></canvas>
+    <canvas id="install" hidden></canvas>
   </div>
   <p id="message" role="status">Starting…</p>
   <script src="webview.js"></script>

@@ -42,6 +42,8 @@ interface Engine {
 
 interface DaemonSnapshot {
   state: string;
+  installing?: { name: string; percent: number } | null;
+  lastInstall?: { ok: boolean; name?: string; error?: string } | null;
   backdrop: string;
   badges: Array<{ id: string; role: 'working' | 'attention' | 'complete' }>;
   icons: Array<{ id: string; color: string; mask: string }>;
@@ -76,6 +78,8 @@ const device = document.getElementById('device') as HTMLDivElement;
 const caseCanvas = document.getElementById('case') as HTMLCanvasElement;
 const caseContext = caseCanvas.getContext('2d')!;
 const stage = document.getElementById('stage') as HTMLCanvasElement;
+const installCanvas = document.getElementById('install') as HTMLCanvasElement;
+const installContext = installCanvas.getContext('2d')!;
 const message = document.getElementById('message') as HTMLParagraphElement;
 let presenter: Presenter | null = null;
 // The last frame shown, kept for the tray icon.
@@ -161,9 +165,11 @@ function receive(incoming: HostMessage): void {
       if (incoming.daemon && incoming.daemon.backdrop !== backdrop) {
         backdrop = incoming.daemon.backdrop;
         drawCase();
+        drawInstall();
         dirty = true;
       }
       applyBadges(incoming.daemon);
+      followInstall(incoming.daemon);
       break;
     case 'showing':
       // Hidden from Settings or from the character's menu: stop entirely.
@@ -192,7 +198,12 @@ function resize(): void {
   caseCanvas.style.height = size + 'px';
   caseCanvas.width = Math.round(size * ratio);
   caseCanvas.height = Math.round(size * ratio);
+  installCanvas.style.width = size + 'px';
+  installCanvas.style.height = size + 'px';
+  installCanvas.width = caseCanvas.width;
+  installCanvas.height = caseCanvas.height;
   drawCase();
+  drawInstall();
   if (engine) {
     if (!presenter) {
       presenter = createPresenter(stage, engine._ac_width(), engine._ac_height());
@@ -396,6 +407,94 @@ function draw(now: number): void {
   if (!presenter) return;
   lastFrame = e.HEAPU8.subarray(pixels, pixels + width * height * 4);
   presenter.present(lastFrame);
+}
+
+// --- installing a character -------------------------------------------------------
+
+/**
+ * The device takes about a minute to install a character; the desktop has the
+ * pack already and switches at once. Meanwhile a ring round the screen shows
+ * the device's progress, in its install screen's colours, and flashes green or
+ * red when it finishes. The character keeps going throughout.
+ */
+interface InstallView {
+  name: string;
+  percent: number;
+  result: { ok: boolean } | null;
+}
+let install: InstallView | null = null;
+let installDone = 0;
+const INSTALL_RESULT_MS = 2500;
+
+// The device install screen's RGB565 colours, as they come out on its screen.
+const INSTALL_TEXT = '#E6E6FF';
+const INSTALL_BAR_EDGE = '#5AA1CD';
+const INSTALL_BAR = '#206D94';
+const INSTALL_OK = '#41FF4A';
+const INSTALL_FAILED = '#F6484A';
+
+function followInstall(daemon: DaemonSnapshot | null): void {
+  if (daemon?.installing) {
+    clearTimeout(installDone);
+    install = { name: daemon.installing.name, percent: daemon.installing.percent, result: null };
+  } else if (install && !install.result) {
+    const last = daemon?.lastInstall;
+    if (last) {
+      install = { ...install, percent: 100, result: { ok: last.ok } };
+      installDone = window.setTimeout(() => {
+        install = null;
+        drawInstall();
+      }, INSTALL_RESULT_MS);
+    } else {
+      install = null;
+    }
+  } else {
+    return;
+  }
+  drawInstall();
+}
+
+function drawInstall(): void {
+  installCanvas.hidden = !install;
+  if (!install) return;
+  const context = installContext;
+  const unit = installCanvas.width / UNITS;
+  const centre = installCanvas.width / 2;
+  context.clearRect(0, 0, installCanvas.width, installCanvas.height);
+
+  // On the bezel when the device is drawn, else just inside the screen's edge.
+  const radius = (backdrop === 'device' ? (SCREEN / 2 + CASE_RADIUS) / 2 : SCREEN / 2 - 8) * unit;
+  const width = 7 * unit;
+  const top = -Math.PI / 2;
+  context.lineCap = 'round';
+  context.lineWidth = width;
+  context.strokeStyle = INSTALL_BAR;
+  context.beginPath();
+  context.arc(centre, centre, radius, 0, Math.PI * 2);
+  context.stroke();
+  const done = install.result;
+  const share = done ? 1 : Math.max(0.01, Math.min(1, install.percent / 100));
+  context.strokeStyle = done ? (done.ok ? INSTALL_OK : INSTALL_FAILED) : INSTALL_BAR_EDGE;
+  context.beginPath();
+  context.arc(centre, centre, radius, top, top + share * Math.PI * 2);
+  context.stroke();
+
+  // A line of text along the bottom of the screen, where the art leaves room.
+  const label = done
+    ? (done.ok ? `${install.name} installed on the device` : 'Install on the device failed')
+    : `Installing on device · ${Math.round(install.percent)}%`;
+  const offset = (UNITS - SCREEN) / 2;
+  context.font = `${15 * unit}px ui-monospace, Menlo, Consolas, monospace`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  const y = (offset + SCREEN - 34) * unit;
+  const textWidth = context.measureText(label).width;
+  context.fillStyle = 'rgba(0, 0, 0, .72)';
+  context.beginPath();
+  context.roundRect(centre - textWidth / 2 - 8 * unit, y - 11 * unit, textWidth + 16 * unit, 22 * unit, 11 * unit);
+  context.fill();
+  context.fillStyle = done ? (done.ok ? INSTALL_OK : INSTALL_FAILED) : INSTALL_TEXT;
+  context.fillText(label, centre, y);
 }
 
 // --- the shell -----------------------------------------------------------------

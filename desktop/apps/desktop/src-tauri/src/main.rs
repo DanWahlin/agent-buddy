@@ -96,7 +96,8 @@ fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
         return;
     }
     println!("[packs] showing {} from {}", next.0, next.1.display());
-    if let Some(tray) = app.tray.lock().unwrap().as_ref() {
+    let tray = app.tray.lock().unwrap().clone();
+    if let Some(tray) = tray {
         let _ = tray.set_tooltip(Some(format!("Agent Companion - {}", next.0)));
     }
     let _ = window.emit("to-view-pack", serde_json::json!({ "url": packs::pack_url(&next.0) }));
@@ -114,9 +115,26 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
 
     update_visibility(app, window);
 
+    // The tray says what the device is doing while it installs a character.
+    let tray = app.tray.lock().unwrap().clone();
+    if let Some(tray) = tray {
+        let installing = snapshot.as_ref().map(|it| &it.installing).filter(|it| !it.is_null());
+        let current = app.current.lock().unwrap().as_ref().map(|(id, _)| id.clone()).unwrap_or_default();
+        let tooltip = match installing {
+            Some(install) => format!(
+                "Agent Companion - installing {} on the device: {}%",
+                install["name"].as_str().unwrap_or("a character"),
+                install["percent"].as_u64().unwrap_or(0)
+            ),
+            None => format!("Agent Companion - {current}"),
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
+    }
+
     // A connected device decides the character, so the tray would only be
     // overruled a moment later; without one, the tray chooses.
-    if let Some(menu) = app.characters.lock().unwrap().as_ref() {
+    let menu = app.characters.lock().unwrap().clone();
+    if let Some(menu) = menu {
         let device = snapshot.as_ref().is_some_and(|it| it.connected);
         let _ = menu.set_enabled(!device && !app.ids.is_empty());
         let _ = menu.set_text(if device { "Character (install in Settings)" } else { "Character" });
@@ -134,7 +152,8 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     let _ = if visible { window.show() } else { window.hide() };
     let _ = window.emit("to-view", serde_json::json!({ "type": "showing", "showing": visible }));
     app.pointer.refresh(window);
-    if let Some(item) = app.visibility.lock().unwrap().as_ref() {
+    let item = app.visibility.lock().unwrap().clone();
+    if let Some(item) = item {
         let _ = item.set_text(if user_hidden { "Show Agent Companion" } else { "Hide Agent Companion" });
         // Settings has it off: showing it from here would be overruled.
         let _ = item.set_enabled(wanted);
@@ -220,7 +239,8 @@ fn set_tray_icon(app: tauri::State<'_, Arc<App>>, rgba: Vec<u8>, width: u32, hei
     if rgba.len() != (width * height * 4) as usize || width == 0 || width > 256 {
         return;
     }
-    if let Some(tray) = app.tray.lock().unwrap().as_ref() {
+    let tray = app.tray.lock().unwrap().clone();
+    if let Some(tray) = tray {
         let _ = tray.set_icon(Some(tauri::image::Image::new_owned(rgba, width, height)));
     }
 }
@@ -340,7 +360,10 @@ fn main() {
             daemon::follow(move |snapshot| {
                 *following.daemon.lock().unwrap() = snapshot.cloned();
                 if following.ready.load(Ordering::Relaxed) {
-                    apply_daemon(&following, &shown);
+                    // Window, tray and menu changes belong on the main thread;
+                    // made from here they wait on it, and it may be waiting on us.
+                    let (app, window) = (following.clone(), shown.clone());
+                    let _ = shown.run_on_main_thread(move || apply_daemon(&app, &window));
                 }
             });
             Ok(())

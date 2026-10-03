@@ -142,10 +142,15 @@ export class CompanionService extends EventEmitter {
     };
   }
 
+  // The desktop renders packs itself, so it switches as soon as an install starts rather than
+  // waiting the minute the device takes, and keeps the new character while the device restarts.
   desktopCharacter(): string {
-    const device = this.#transport.character;
-    if (device && device !== 'none' && isCharacterName(device)) return device;
-    return isCharacterName(this.#characterPreference) ? this.#characterPreference : 'copilot';
+    return pickDesktopCharacter({
+      installing: this.#installing?.character,
+      installed: this.#lastInstall?.ok ? this.#lastInstall.character : undefined,
+      device: this.#transport.character,
+      preference: this.#characterPreference,
+    });
   }
 
   async refreshCharacterPreference(): Promise<void> {
@@ -327,4 +332,18 @@ function desktopPackPath(character: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Which character the desktop shows: one being installed, else the one just installed (the
+// device is still restarting), else the device's own, else the saved choice.
+export function pickDesktopCharacter(sources: {
+  installing?: string | null;
+  installed?: string | null;
+  device?: string | null;
+  preference?: string | null;
+}): string {
+  for (const candidate of [sources.installing, sources.installed, sources.device, sources.preference]) {
+    if (candidate && candidate !== 'none' && isCharacterName(candidate)) return candidate;
+  }
+  return 'copilot';
 }

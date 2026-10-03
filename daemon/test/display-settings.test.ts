@@ -47,3 +47,13 @@ test('desktop settings round-trip', async () => {
     await rm(directory, {recursive: true, force: true});
   }
 });
+
+test('the desktop switches to a character as soon as its install starts', async () => {
+  const {pickDesktopCharacter} = await import('../src/companion-service.js');
+  assert.equal(pickDesktopCharacter({installing: 'claude', device: 'copilot', preference: 'copilot'}), 'claude');
+  // The device restarts after an install; the desktop keeps the new character meanwhile.
+  assert.equal(pickDesktopCharacter({installed: 'claude', device: 'copilot', preference: 'claude'}), 'claude');
+  assert.equal(pickDesktopCharacter({device: 'openclaw', preference: 'copilot'}), 'openclaw');
+  assert.equal(pickDesktopCharacter({device: 'none', preference: 'claude'}), 'claude');
+  assert.equal(pickDesktopCharacter({device: null, preference: '/abs/path.acpk'}), 'copilot');
+});

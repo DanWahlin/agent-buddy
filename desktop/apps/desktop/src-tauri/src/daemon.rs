@@ -33,6 +33,10 @@ pub struct Snapshot {
     /// Already filtered by the badge setting and cut to four, as the device gets them.
     pub badges: Vec<(String, String)>,
     pub icons: Vec<(String, String, String)>,
+    /// A character being installed on the device (name, percent), and the
+    /// result of the last install, so the desktop can show what the device does.
+    pub installing: Value,
+    pub last_install: Value,
 }
 
 impl Snapshot {
@@ -48,6 +52,8 @@ impl Snapshot {
             "icons": self.icons.iter()
                 .map(|(id, color, mask)| json!({ "id": id, "color": color, "mask": mask }))
                 .collect::<Vec<_>>(),
+            "installing": self.installing,
+            "lastInstall": self.last_install,
         })
     }
 }
@@ -175,6 +181,8 @@ pub fn parse(status: &Value) -> Option<Snapshot> {
             .to_string(),
         badges: active,
         icons,
+        installing: status.get("installing").cloned().unwrap_or(Value::Null),
+        last_install: status.get("lastInstall").cloned().unwrap_or(Value::Null),
     })
 }
 
@@ -246,6 +254,16 @@ mod tests {
         assert_eq!(snapshot.badges.len(), 4);
         assert_eq!(snapshot.badges[2], ("codex".to_string(), "attention".to_string()));
         assert_eq!(snapshot.icons, vec![("copilot".into(), "#8F9BFF".into(), "AAAA".into())]);
+        assert!(snapshot.installing.is_null());
+
+        let installing = parse(&json!({
+            "state": "idle", "transport": "wifi",
+            "installing": { "character": "claude", "name": "Claude", "percent": 42 },
+            "lastInstall": null
+        })).unwrap();
+        assert_eq!(installing.installing["name"], "Claude");
+        assert_eq!(installing.installing["percent"], 42);
+        assert_eq!(installing.for_page()["installing"]["percent"], 42);
     }
 
     #[test]
