@@ -12,12 +12,13 @@ bool applyModeRequest(CharacterMotion& motion, const ModeRequest& request) {
   return motion.error() == nullptr;
 }
 
-void stepCharacterMotion(CharacterMotion& motion, double seconds) {
-  motion.update(seconds * characterPack()->header.motionSpeed);
+void stepCharacterMotion(CharacterMotion& motion, double seconds, const PackHeader& pack) {
+  motion.update(seconds * pack.motionSpeed);
 }
 
 bool CharacterSprite::fullFrame() const {
-  return characterPack()->header.layout == PackLayout::FullFrame;
+  const CharacterPack* pack = characterPack();
+  return pack && pack->header.layout == PackLayout::FullFrame;
 }
 
 bool CharacterSprite::render(const CharacterState& state, uint16_t* frame) {
@@ -31,6 +32,7 @@ void CharacterSprite::invalidate() {
 }
 
 const char* CharacterSprite::error() const {
+  if (!characterPack()) return "The character pack is not mapped.";
   return fullFrame() ? fullFrame_->error() : patch_->error();
 }
 }

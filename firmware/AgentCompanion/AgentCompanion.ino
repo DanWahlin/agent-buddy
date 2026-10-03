@@ -124,6 +124,8 @@ void animate(void*) {
   if (motion.error()) fatal(motion.error());
   CharacterSprite sprite(patchRenderer, fullFrameRenderer);
   const bool fullFrame = sprite.fullFrame();
+  // A copy: an install unmaps the pack while this task may still step.
+  const PackHeader pack = characterPack()->header;
   int64_t previous = esp_timer_get_time();
   for (;;) {
     Frame* frame;
@@ -133,7 +135,7 @@ void animate(void*) {
     while (xQueueReceive(commands, &command, 0) == pdTRUE) {
       if (!applyModeRequest(motion, command)) fatal(motion.error());
     }
-    stepCharacterMotion(motion, (start - previous) / 1000000.0);
+    stepCharacterMotion(motion, (start - previous) / 1000000.0, pack);
     frame->motionUs = esp_timer_get_time() - start;
     previous = start;
     frame->state = motion.state();

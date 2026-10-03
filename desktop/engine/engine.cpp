@@ -335,7 +335,7 @@ AC_EXPORT const uint8_t* ac_frame(double seconds, int key) {
   if (!engine) return nullptr;
   Engine& e = *engine;
   lastError = nullptr;
-  stepCharacterMotion(*e.motion, std::clamp(seconds, 0.0, .25));
+  stepCharacterMotion(*e.motion, std::clamp(seconds, 0.0, .25), characterPack()->header);
   e.state = e.motion->state();
   const int index = e.useFirst ? 0 : 1;
   uint16_t* frame = e.frames[index].data();

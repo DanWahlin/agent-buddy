@@ -168,7 +168,7 @@ int main() {
       sprite.invalidate();
       activeCharacter = character;
     }
-    stepCharacterMotion(motion, dt);
+    stepCharacterMotion(motion, dt, characterPack()->header);
     const CharacterState state = motion.state();
     uint16_t* frame = useFirst ? first.data() : second.data();
     const int frameIndex = useFirst ? 0 : 1;
