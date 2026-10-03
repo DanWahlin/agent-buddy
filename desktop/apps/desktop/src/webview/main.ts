@@ -43,6 +43,7 @@ interface Engine {
 interface DaemonSnapshot {
   state: string;
   installing?: { name: string; percent: number } | null;
+  connected?: boolean;
   lastInstall?: { ok: boolean; name?: string; error?: string } | null;
   backdrop: string;
   badges: Array<{ id: string; role: 'working' | 'attention' | 'complete' }>;
@@ -434,7 +435,8 @@ const INSTALL_OK = '#41FF4A';
 const INSTALL_FAILED = '#F6484A';
 
 function followInstall(daemon: DaemonSnapshot | null): void {
-  if (daemon?.installing) {
+  // Only an install on a connected device; desktop-only users never see this.
+  if (daemon?.installing && daemon.connected) {
     clearTimeout(installDone);
     install = { name: daemon.installing.name, percent: daemon.installing.percent, result: null };
   } else if (install && !install.result) {
@@ -479,7 +481,8 @@ function drawInstall(): void {
   context.arc(centre, centre, radius, top, top + share * Math.PI * 2);
   context.stroke();
 
-  // A line of text along the bottom of the screen, where the art leaves room.
+  // A line of text near the bottom of the screen, high enough that the round
+  // screen's edge leaves it room.
   const label = done
     ? (done.ok ? `${install.name} installed on the device` : 'Install on the device failed')
     : `Installing on device · ${Math.round(install.percent)}%`;
@@ -487,7 +490,7 @@ function drawInstall(): void {
   context.font = `${15 * unit}px ui-monospace, Menlo, Consolas, monospace`;
   context.textAlign = 'center';
   context.textBaseline = 'middle';
-  const y = (offset + SCREEN - 34) * unit;
+  const y = (offset + SCREEN - 78) * unit;
   const textWidth = context.measureText(label).width;
   context.fillStyle = 'rgba(0, 0, 0, .72)';
   context.beginPath();

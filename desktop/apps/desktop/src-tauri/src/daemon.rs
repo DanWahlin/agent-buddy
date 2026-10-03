@@ -54,6 +54,7 @@ impl Snapshot {
                 .collect::<Vec<_>>(),
             "installing": self.installing,
             "lastInstall": self.last_install,
+            "connected": self.connected,
         })
     }
 }
