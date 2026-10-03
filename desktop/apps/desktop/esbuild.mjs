@@ -3,7 +3,7 @@
  *
  * The bundle has to be self-contained: the window loads it from a file, with
  * no resolver and no node_modules to reach into. The engine is the firmware's
- * code compiled to WebAssembly by `engine/build.mjs`, which runs first.
+ * code compiled to WebAssembly, committed in `engine/prebuilt`.
  */
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -14,10 +14,10 @@ import * as esbuild from 'esbuild';
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = join(here, 'ui');
 const repository = join(here, '..', '..', '..');
-const engine = join(here, '..', '..', 'engine', 'dist', 'engine.js');
+const engine = join(here, '..', '..', 'engine', 'prebuilt', 'engine.js');
 
 if (!existsSync(engine)) {
-  console.error('The engine is not built. Run: node engine/build.mjs (needs Emscripten).');
+  console.error('The engine is missing from desktop/engine/prebuilt. Run: npm run build:engine (needs Emscripten).');
   process.exit(1);
 }
 

@@ -38,16 +38,24 @@ There is one of everything:
 python3 tools/character_pack.py build   # from the repository root: the .acpk packs
 cd desktop
 npm install
-npm run build        # engine/build.mjs (needs Emscripten), then the page and app icon
-npm test             # typecheck, then the engine parity test
-cd apps/desktop/src-tauri
-cargo test
-cargo run --release
+npm start            # builds the page and app icon, then cargo run --release
+npm test             # typecheck, engine freshness, parity and cut-out tests
+npm run bundle -w @agent-companion/desktop   # the installable app, as releases ship it
 ```
 
-`npm run build` needs `em++` on `PATH`: `brew install emscripten` on macOS, or see
-[emscripten.org](https://emscripten.org). The engine is one 110 KB JavaScript
-file with the WebAssembly embedded, so the page loads it without a second fetch.
+The engine is committed, in [`engine/prebuilt`](engine/prebuilt): one 110 KB
+JavaScript file with the WebAssembly embedded, so the app builds with Rust and
+Node alone. Only a change to the engine or to the firmware's animation code needs
+a rebuild, with Emscripten (`em++` on `PATH`: `brew install emscripten` on
+macOS, or [emscripten.org](https://emscripten.org)):
+
+```bash
+npm run build:engine   # then commit desktop/engine/prebuilt
+```
+
+`engine/prebuilt/sources.sha256` records what it was built from, and a test
+fails until it is rebuilt after such a change. Tagged releases build the app for
+macOS (universal) and Windows and attach it to the GitHub Release.
 
 ## Matching the device exactly
 

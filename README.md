@@ -95,7 +95,7 @@ flowchart LR
 | Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
 | Node.js and Git | [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git, for the companion daemon |
 | Speaker (optional) | A small two-pin speaker, if your board or enclosure doesn't include one |
-| Desktop app (optional) | [Rust](https://rustup.rs/) 1.88 or newer and [Emscripten](https://emscripten.org/) (`brew install emscripten` on macOS) |
+| Desktop app (optional) | Nothing extra to download and run it. To build it from source: [Rust](https://rustup.rs/) 1.88 or newer. |
 
 ## Quick start
 
@@ -129,12 +129,13 @@ Restart any agent sessions that were already open, then start one and watch the
 character react ([Step 4](#step-4-try-it)).
 
 **3. Optional: put the character on your desktop too**
-([details](#desktop-agent-companion)). From the same folder, after step 2:
+([details](#desktop-agent-companion)). After step 2, download the
+**`agent-companion-desktop`** app for macOS or Windows from
+[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest) and
+open it. Or build and run it from the same folder (needs Rust):
 
 ```bash
-cd desktop
-npm install && npm run build
-cd apps/desktop/src-tauri && cargo run --release
+npm run desktop
 ```
 
 It follows the companion service, so it shows what the device shows. Turn it off,
@@ -686,16 +687,22 @@ no hooks of its own. The settings page controls both:
 
 ### Run the desktop app
 
-You need the companion service ([step 2](#step-2-install-the-companion-daemon),
-which also builds the character packs), Rust 1.88 or newer, and
-[Emscripten](https://emscripten.org) (`brew install emscripten` on macOS) to
-compile the firmware's engine.
+You need the companion service running first ([step 2](#step-2-install-the-companion-daemon)).
+The app shows the character the service names, from the service's own packs.
 
-```bash
-cd desktop
-npm install && npm run build
-cd apps/desktop/src-tauri && cargo run --release
-```
+- **Download it.** From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
+  get **`agent-companion-desktop-…-macos.zip`** (unzip it and move
+  **Agent Companion** to Applications) or **`…-windows-setup.exe`**.
+  The app isn't code-signed, so the first time you open it:
+  - **macOS:** if it says it can't be opened, go to **System Settings > Privacy &
+    Security** and choose **Open Anyway**.
+  - **Windows:** choose **More info > Run anyway**.
+- **Or build it from source** with [Rust](https://rustup.rs/) 1.88 or newer, from
+  the repository folder:
+
+  ```bash
+  npm run desktop
+  ```
 
 The app keeps running until you choose **Quit** from its tray icon.
 

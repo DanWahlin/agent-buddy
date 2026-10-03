@@ -33,8 +33,9 @@ defaults:
 
 jobs:
   engine:
-    # Compiles the firmware's engine to WebAssembly and checks it draws every
-    # frame exactly as the native firmware build does, for every character.
+    # The committed engine (desktop/engine/prebuilt) must be built from today's
+    # sources, and must draw every frame exactly as the native firmware build
+    # does, for every character. Neither check needs Emscripten.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +51,6 @@ jobs:
           python -m pip install -r requirements-art.txt
           python tools/character_pack.py build
 
-      - uses: mymindstorm/setup-emsdk@v14
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -60,21 +59,14 @@ jobs:
 
       - run: npm ci
 
-      - name: Build
+      - name: Build the page
         run: npm run build
 
-      - name: Typecheck and parity test
+      - name: Typecheck, engine freshness, parity and cut-out tests
         run: npm test
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-engine
-          path: desktop/engine/dist/engine.js
-          if-no-files-found: error
 
   shell:
     # The Rust shell: the daemon client, pack choice, placement and click-through.
-    needs: engine
     strategy:
       fail-fast: false
       matrix:
@@ -82,11 +74,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: desktop-engine
-          path: desktop/engine/dist
 
       - uses: actions/setup-node@v4
         with:
@@ -97,10 +84,7 @@ jobs:
       - run: npm ci
 
       - name: Build the page and icons
-        shell: bash
-        run: |
-          echo '{ "type": "commonjs" }' > engine/dist/package.json
-          npm run build -w @agent-companion/desktop
+        run: npm run build
 
       - uses: dtolnay/rust-toolchain@stable
 

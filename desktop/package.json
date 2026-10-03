@@ -9,10 +9,11 @@
     "apps/desktop"
   ],
   "scripts": {
+    "build": "npm run build -w @agent-companion/desktop",
     "build:engine": "node engine/build.mjs",
-    "build": "npm run build:engine && npm run build -w @agent-companion/desktop",
     "typecheck": "tsc -p apps/desktop/tsconfig.json",
-    "test": "npm run typecheck && node --test engine/test/*.test.mjs"
+    "test": "npm run typecheck && node --test engine/test/*.test.mjs",
+    "start": "npm run build && cd apps/desktop/src-tauri && cargo run --release"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, '..', '..', '..');
-const enginePath = join(here, '..', 'dist', 'engine.js');
+const enginePath = join(here, '..', 'prebuilt', 'engine.js');
 const packs = join(repository, 'build', 'characters');
 const firmware = join(repository, 'firmware', 'AgentCompanion', 'src');
 const SEED = 20260911;

@@ -14,6 +14,7 @@
     "character": "node tools/companion.mjs character",
     "connection": "node tools/companion.mjs connection",
     "agents": "node tools/companion.mjs agents",
-    "badges": "node tools/companion.mjs badges"
+    "badges": "node tools/companion.mjs badges",
+    "desktop": "npm install --prefix desktop --no-audit --no-fund && npm --prefix desktop start"
   }
 }

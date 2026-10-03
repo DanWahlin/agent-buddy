@@ -6,13 +6,14 @@ the pieces fit.
 
 ## Running it
 
+From the repository root, with Rust 1.88 or newer:
+
 ```
-npm run build                       # from desktop/: the engine, page and icons
-cd apps/desktop/src-tauri && cargo run --release
+npm run desktop
 ```
 
-Needs Rust 1.88 or newer and the character packs (`python3 tools/character_pack.py
-build` from the repository root). Node is only needed to build.
+Or download the app from the project's Releases. Either way it needs the
+companion service running, which also builds the character packs.
 
 ## How it is put together
 

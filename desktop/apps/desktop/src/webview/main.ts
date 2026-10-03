@@ -10,7 +10,7 @@
  */
 
 // Emscripten's loader, CommonJS, bundled by esbuild.
-import createEngine from '../../../../engine/dist/engine.js';
+import createEngine from '../../../../engine/prebuilt/engine.js';
 import { createPresenter, type Presenter } from './present.js';
 
 interface TauriApi {

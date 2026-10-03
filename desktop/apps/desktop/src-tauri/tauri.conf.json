@@ -29,6 +29,19 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": [
+      "app",
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "The ESP32 Agent Companion's character on your desktop",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
   }
 }

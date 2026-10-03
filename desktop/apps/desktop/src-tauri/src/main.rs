@@ -67,13 +67,14 @@ impl App {
 /// Tell the page which pack to load, when it differs from what it has.
 fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
     let Some(next) = app.wanted() else {
-        let _ = window.emit(
-            "to-view",
-            serde_json::json!({
-                "type": "error",
-                "message": "No character packs were found. Run: python3 tools/character_pack.py build",
-            }),
-        );
+        // An installed app has no packs of its own: it shows the character the
+        // companion service names, from the service's own packs.
+        let message = if app.daemon.lock().unwrap().is_some() {
+            "The companion service has no character pack to show yet."
+        } else {
+            "Waiting for the companion service. Start it with: npm run setup"
+        };
+        let _ = window.emit("to-view", serde_json::json!({ "type": "error", "message": message }));
         return;
     };
     {

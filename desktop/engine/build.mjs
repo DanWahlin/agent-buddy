@@ -2,21 +2,24 @@
  * Compiles the firmware's animation engine to WebAssembly for the desktop app.
  *
  * The sources are the device's own, from firmware/AgentCompanion/src, so the
- * desktop draws exactly what the device draws. Needs Emscripten (`em++` on
- * PATH): `brew install emscripten`, or https://emscripten.org.
+ * desktop draws exactly what the device draws. The result is committed
+ * (prebuilt/engine.js), so only someone changing the engine or the firmware's
+ * animation code needs to run this, and Emscripten (`em++` on PATH):
+ * `brew install emscripten`, or https://emscripten.org. A test fails until it
+ * is rebuilt after such a change.
  *
- *   node engine/build.mjs [--out <file>]
+ *   npm run build:engine
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fingerprint } from './fingerprint.mjs';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, '..', '..');
 const firmware = join(repository, 'firmware', 'AgentCompanion', 'src');
-const flag = process.argv.indexOf('--out');
-const out = flag >= 0 ? process.argv[flag + 1] : join(here, 'dist', 'engine.js');
+const out = join(here, 'prebuilt', 'engine.js');
 
 const sources = [
   join(here, 'engine.cpp'),
@@ -51,4 +54,5 @@ try {
 }
 // Emscripten writes CommonJS; the workspace is ES modules, so say so here.
 writeFileSync(join(dirname(out), 'package.json'), '{ "type": "commonjs" }\n');
+writeFileSync(join(dirname(out), 'sources.sha256'), fingerprint() + '\n');
 console.log('built the device engine: ' + out);

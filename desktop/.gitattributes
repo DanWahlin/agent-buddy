@@ -6,3 +6,7 @@
 # Never touch these.
 *.png binary
 *.svg text eol=lf
+
+# The firmware engine, compiled to WebAssembly and committed so the desktop
+# app builds without Emscripten. Generated: rebuild it, don't edit it.
+engine/prebuilt/engine.js -diff linguist-generated

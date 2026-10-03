@@ -116,8 +116,69 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  desktop:
+    # The desktop app, ready to run: no Rust or Emscripten needed to use it.
+    # Built on tags (and by hand), as the release is the only place it ships.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+            asset: macos.zip
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-setup.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Add Rust targets
+        run: |
+          if [ "${{ matrix.target }}" = universal-apple-darwin ]; then
+            rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          else
+            rustup target add ${{ matrix.target }}
+          fi
+      - run: npm ci
+      - name: Build the app
+        working-directory: desktop/apps/desktop
+        run: |
+          npm run bundle -- --target ${{ matrix.target }} \
+            --config "{\"version\":\"$(cat ../../../VERSION)\"}"
+      - name: Package
+        run: |
+          version="$(cat ../VERSION)"
+          bundle="apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p dist-release
+          out="dist-release/agent-companion-desktop-$version-${{ matrix.asset }}"
+          if [ "${{ runner.os }}" = macOS ]; then
+            ditto -c -k --keepParent "$bundle/macos/Agent Companion.app" "$out"
+          else
+            cp "$bundle"/nsis/*-setup.exe "$out"
+          fi
+      - name: Upload the app
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-${{ runner.os }}
+          path: desktop/dist-release/*
+          if-no-files-found: error
+
   release:
-    needs: build
+    needs: [build, desktop]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
@@ -140,6 +201,12 @@ jobs:
         with:
           name: release-bundles
           path: artifacts
+      - name: Download the desktop app
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: desktop-*
+          path: artifacts
+          merge-multiple: true
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -154,6 +221,8 @@ jobs:
             It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
 
             The **characters.zip** asset holds every built-in character pack. Install one from a source checkout with `npm run character path/to/openclaw.acpk`.
+
+            The **agent-companion-desktop** assets are the desktop app for macOS and Windows. It needs the companion service from the installation guide, and shows the same character as the device.
 
             ## Changes
 

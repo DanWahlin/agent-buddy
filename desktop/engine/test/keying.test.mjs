@@ -11,7 +11,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const enginePath = join(here, '..', 'dist', 'engine.js');
+const enginePath = join(here, '..', 'prebuilt', 'engine.js');
 const packs = join(here, '..', '..', '..', 'build', 'characters');
 const ready = existsSync(enginePath) && existsSync(join(packs, 'copilot.acpk'));
 
