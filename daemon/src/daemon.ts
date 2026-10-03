@@ -104,6 +104,9 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
           ? [{event: eventName as typeof hookEvents[number], payload: request.payload ?? {}}]
           : normalizeAgentHook(agent, request.nativeEvent ?? eventName, request.payload ?? {});
         for (const hook of canonical) service.handleHook(agent, hook.event, hook.payload);
+        // A manual `send` only lasts until the next agent event; otherwise the device keeps it for
+        // as long as the coordinator stays in one state, which can be hours while agents work.
+        if (transport.state !== coordinator.state) transport.setState(coordinator.state);
         respond(socket, {ok: true, state: coordinator.state});
       } else if (request.type === 'send' && characterStates.includes(request.state)) {
         transport.setState(request.state);
