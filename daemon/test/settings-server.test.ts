@@ -25,11 +25,13 @@ class FakeService extends EventEmitter {
   modes: string[] = [];
   agentActions: string[] = [];
   badges: boolean[] = [];
+  desktop: Array<{visible?: boolean; backdrop?: string; character?: string}> = [];
   status() {
     return {state: 'idle', transport: 'usb', connected: this.connected, port: '/dev/test', character: 'copilot',
             mode: 'auto', sessions: 0, wifiPaired: false, installing: null, lastInstall: null,
             drivingAgents: [], agents: this.agentStatuses(),
-            badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot CLI', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]}} as never;
+            badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot CLI', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
+            desktop: {visible: true, backdrop: 'device', character: 'copilot', pack: null}} as never;
   }
   agentStatuses() {
     return [{id: 'copilot', name: 'GitHub Copilot CLI', detected: true, installed: true,
@@ -71,6 +73,10 @@ class FakeService extends EventEmitter {
   }
   async setAgentBadgesEnabled(enabled: boolean) {
     this.badges.push(enabled);
+  }
+  async setDesktop(change: {visible?: boolean; backdrop?: string; character?: string}) {
+    if (change.character === 'missing') throw new Error('Unknown character.');
+    this.desktop.push(change);
   }
 }
 
@@ -179,6 +185,19 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/badges', {method: 'POST', headers: json, body: '{"enabled":"yes"}'})).status, 400);
     assert.equal((await call('/api/badges', {method: 'POST', headers: json, body: '{"enabled":false}'})).status, 200);
     assert.deepEqual(service.badges, [false]);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":"no"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":false}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"device"}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"Bad!"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"missing"}'})).status, 409);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"claude"}'})).status, 200);
+    assert.deepEqual(service.desktop, [
+      {visible: false, backdrop: undefined, character: undefined},
+      {visible: undefined, backdrop: 'device', character: undefined},
+      {visible: undefined, backdrop: undefined, character: 'claude'},
+    ]);
     assert.equal((await call('/api/agents/copilot/disable', {method: 'POST'})).status, 200);
     assert.equal((await call('/api/agents/copilot/install', {method: 'POST'})).status, 200);
     assert.equal((await call('/api/agents/copilot', {method: 'DELETE'})).status, 200);

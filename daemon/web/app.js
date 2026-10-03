@@ -238,6 +238,14 @@ function renderStatus() {
   for (const button of document.querySelectorAll('#modes button')) {
     button.setAttribute('aria-checked', String(button.dataset.mode === status.mode));
   }
+  const desktop = status.desktop ?? {visible: true, backdrop: 'device'};
+  const desktopToggle = $('desktop-toggle');
+  if (desktopToggle && !desktopPending) desktopToggle.checked = desktop.visible !== false;
+  const frameToggle = $('device-frame-toggle');
+  if (frameToggle) {
+    if (!desktopPending) frameToggle.checked = desktop.backdrop !== 'none';
+    frameToggle.disabled = desktop.visible === false;
+  }
 
   $('mode-hint').textContent = modeHints[status.mode] ?? '';
   // Wi-Fi credentials travel over USB, so the form needs an active USB connection.
@@ -297,10 +305,21 @@ function renderCharacters() {
     actions.className = 'actions';
     const install = document.createElement('button');
     install.type = 'button';
-    install.textContent = entry.installed ? 'Reinstall' : 'Install';
-    install.className = entry.installed ? 'secondary' : '';
-    install.disabled = busy;
-    install.addEventListener('click', () => installCharacter(entry));
+    if (status && !status.connected && status.desktop?.visible) {
+      // No device to install on, so choose what the desktop shows. The device
+      // gets the same character when it next connects without one.
+      const showing = status.desktop.character === entry.id;
+      install.textContent = showing ? 'On desktop' : 'Show on desktop';
+      install.className = showing ? 'secondary' : '';
+      install.disabled = showing;
+      install.addEventListener('click', () => void updateDesktop({character: entry.id},
+        `${entry.name} is on the desktop.`).then(renderCharacters));
+    } else {
+      install.textContent = entry.installed ? 'Reinstall' : 'Install';
+      install.className = entry.installed ? 'secondary' : '';
+      install.disabled = busy;
+      install.addEventListener('click', () => installCharacter(entry));
+    }
     actions.append(install);
     if (!entry.builtIn) {
       const remove = document.createElement('button');
@@ -435,6 +454,36 @@ for (const button of document.querySelectorAll('#modes button')) {
     }
   });
 }
+
+let desktopPending = false;
+
+async function updateDesktop(change, message) {
+  desktopPending = true;
+  try {
+    const result = await api('/api/desktop', {
+      method: 'POST', type: 'application/json', body: JSON.stringify(change)});
+    if (status && result?.desktop) status.desktop = result.desktop;
+    if (status) renderStatus();
+    toast(message, 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+    if (status) renderStatus();
+  } finally {
+    desktopPending = false;
+  }
+}
+
+$('desktop-toggle')?.addEventListener('change', event => {
+  const visible = event.target.checked;
+  void updateDesktop({visible},
+    visible ? 'The desktop character is on.' : 'The desktop character is off.');
+});
+
+$('device-frame-toggle')?.addEventListener('change', event => {
+  const framed = event.target.checked;
+  void updateDesktop({backdrop: framed ? 'device' : 'none'},
+    framed ? 'The device is shown around the character.' : 'Only the character is shown.');
+});
 
 let badgesPending = false;
 

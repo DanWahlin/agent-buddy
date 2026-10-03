@@ -1,0 +1,35 @@
+[package]
+name = "agent-companion-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "The companion as a window of its own."
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# macos-private-api is what `macOSPrivateApi` in tauri.conf.json requires, and
+# the build refuses without it. Transparent windows do not work on macOS at all
+# otherwise - and it is what rules out the Mac App Store.
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# A second launch shows the running pet instead of opening a second one; it is
+# also the way back to a hidden pet when the menu bar has no room for its icon.
+tauri-plugin-single-instance = "2"
+# Tauri's own async runtime, made small: one worker, not one per core.
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+# macOS: read the cursor from any thread, without a round trip to the main
+# thread. Already in the build through Tauri.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25"
+# macOS: put the pet back on screen without taking the keyboard from the app
+# you're typing in. Already in the build through Tauri.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+
+[[bin]]
+name = "agent-companion-desktop"
+path = "src/main.rs"

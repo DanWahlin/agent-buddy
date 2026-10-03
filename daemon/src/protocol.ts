@@ -52,6 +52,7 @@ export type DaemonRequest =
   | {type: 'installCharacter'; character: string}
   | {type: 'setConnection'; mode: ConnectionMode}
   | {type: 'badges'; enabled: boolean}
+  | {type: 'desktop'; visible?: boolean; backdrop?: string; character?: string}
   | {type: 'listCharacters'}
   | {type: 'settings'};
 

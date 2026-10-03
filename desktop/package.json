@@ -1,0 +1,21 @@
+{
+  "name": "agent-companion-desktop-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "build": "npm run build -w @agent-companion/desktop",
+    "build:engine": "node engine/build.mjs",
+    "typecheck": "tsc -p apps/desktop/tsconfig.json",
+    "test": "npm run typecheck && node --test engine/test/*.test.mjs",
+    "start": "npm run build && cd apps/desktop/src-tauri && cargo run --release"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

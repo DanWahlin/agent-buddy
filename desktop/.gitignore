@@ -1,0 +1,29 @@
+node_modules/
+dist/
+dist-test/
+*.tsbuildinfo
+
+# Built artefacts
+engine/dist/
+apps/desktop/ui/webview.js
+# Cut from the character art by the desktop build.
+apps/desktop/src-tauri/icons/
+
+# Rust build output. Cargo.lock is kept, as it should be for a binary.
+target/
+
+# Tauri regenerates these from tauri.conf.json on every build.
+**/src-tauri/gen/schemas/
+
+# Screen recordings of the thing running, which are for looking at, not keeping.
+*.mp4
+
+# Inspection output, written by the packer and renderer scripts
+.inspect/
+*-preview.png
+filmstrip.png
+effects-sheet.png
+
+.DS_Store
+Thumbs.db
+dist-release/

@@ -1,3 +1,4 @@
+import {existsSync} from 'node:fs';
 import {EventEmitter} from 'node:events';
 import {
   agentStatuses,
@@ -14,11 +15,13 @@ import {
 } from './agents/index.js';
 import {
   addCharacterPack,
+  isCharacterName,
   listCharacters,
   loadCharacterPreference,
   packNeedsFirmwareUpdate,
   readCharacterPack,
   removeCharacterPack,
+  resolveCharacterPack,
   saveCharacterPreference,
   type CharacterEntry,
 } from './character-pack.js';
@@ -32,7 +35,9 @@ import {
   type AgentBadgeIconDefinition,
   type AgentBadgeStatusIcon,
 } from './agent-badges.js';
-import {loadDisplaySettingsSync, saveDisplaySettings, type DisplaySettings} from './display-settings.js';
+import {
+  loadDisplaySettingsSync, saveDisplaySettings, type DesktopBackdrop, type DisplaySettings,
+} from './display-settings.js';
 import type {DaemonStatus, HookEvent, HookPayload, InstallProgress, WifiNetwork} from './protocol.js';
 import type {StateCoordinator} from './state-coordinator.js';
 import {loadWifiConfig, saveWifiConfig, validateWifiCredentials} from './wifi-config.js';
@@ -62,6 +67,14 @@ export interface CompanionStatus extends DaemonStatus {
     active: Array<{id: AgentId; role: ReturnType<typeof roleName>}>;
     icons: AgentBadgeStatusIcon[];
   };
+  // What the desktop app should show; the device's own character wins when one is connected.
+  desktop: {
+    visible: boolean;
+    backdrop: DesktopBackdrop;
+    character: string;
+    // The .acpk the desktop renders, the same file the device installs; null if it is missing.
+    pack: string | null;
+  };
 }
 
 // Actions shared by the CLI socket and the settings page; 'change' fires when status may differ.
@@ -78,6 +91,7 @@ export class CompanionService extends EventEmitter {
   readonly #badgeIcons: AgentBadgeIconDefinition[];
   readonly #characterBuilder: Pick<CharacterPackBuilder, 'refresh'>;
   #display: DisplaySettings;
+  #characterPreference = 'copilot';
 
   constructor(transport: DeviceTransport, coordinator: StateCoordinator, agentContext = defaultAgentContext(),
               badgeIcons: AgentBadgeIconDefinition[] = [],
@@ -116,10 +130,31 @@ export class CompanionService extends EventEmitter {
         active: this.#coordinator.agentBadgeRoles().active.map(item => ({id: item.id, role: roleName(item.role)})),
         icons: statusIcons(this.#badgeIcons),
       },
+      desktop: {
+        visible: this.#display.showDesktopCompanion,
+        backdrop: this.#display.desktopBackdrop,
+        character: this.desktopCharacter(),
+        pack: desktopPackPath(this.desktopCharacter()),
+      },
       wifiPaired: this.#wifiPaired,
       installing: this.#installing,
       lastInstall: this.#lastInstall,
     };
+  }
+
+  // The desktop renders packs itself, so it switches as soon as an install starts rather than
+  // waiting the minute the device takes, and keeps the new character while the device restarts.
+  desktopCharacter(): string {
+    return pickDesktopCharacter({
+      installing: this.#installing?.character,
+      installed: this.#lastInstall?.ok ? this.#lastInstall.character : undefined,
+      device: this.#transport.character,
+      preference: this.#characterPreference,
+    });
+  }
+
+  async refreshCharacterPreference(): Promise<void> {
+    this.#characterPreference = await loadCharacterPreference().catch(() => 'copilot');
   }
 
   agentStatuses(): AgentStatus[] {
@@ -196,6 +231,26 @@ export class CompanionService extends EventEmitter {
     this.emit('change');
   }
 
+  async setDesktop(change: {visible?: boolean; backdrop?: DesktopBackdrop; character?: string}): Promise<void> {
+    if (change.character !== undefined) {
+      // A connected device decides the character; this is for when there is none.
+      if (this.#transport.connected) throw new Error('The device is connected; install the character instead.');
+      if (!isCharacterName(change.character) || !desktopPackPath(change.character))
+        throw new Error('Unknown character.');
+      await saveCharacterPreference(change.character);
+      this.#characterPreference = change.character;
+    }
+    if (change.visible !== undefined || change.backdrop !== undefined) {
+      this.#display = {
+        ...this.#display,
+        ...(change.visible === undefined ? {} : {showDesktopCompanion: change.visible}),
+        ...(change.backdrop === undefined ? {} : {desktopBackdrop: change.backdrop}),
+      };
+      await saveDisplaySettings(this.#display);
+    }
+    this.emit('change');
+  }
+
   get installBusy(): boolean {
     return this.#installBusy;
   }
@@ -233,6 +288,7 @@ export class CompanionService extends EventEmitter {
         }
       });
       await saveCharacterPreference(character);
+      this.#characterPreference = character;
       console.log(`[character] installed ${result.character} via ${result.transport}`);
       this.#lastInstall = {ok: true, character: pack.id, name: pack.name, transport: result.transport};
       return this.#lastInstall;
@@ -267,4 +323,27 @@ export class CompanionService extends EventEmitter {
     await removeCharacterPack(id);
     this.emit('change');
   }
+}
+
+function desktopPackPath(character: string): string | null {
+  try {
+    const path = resolveCharacterPack(character);
+    return existsSync(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+// Which character the desktop shows: one being installed, else the one just installed (the
+// device is still restarting), else the device's own, else the saved choice.
+export function pickDesktopCharacter(sources: {
+  installing?: string | null;
+  installed?: string | null;
+  device?: string | null;
+  preference?: string | null;
+}): string {
+  for (const candidate of [sources.installing, sources.installed, sources.device, sources.preference]) {
+    if (candidate && candidate !== 'none' && isCharacterName(candidate)) return candidate;
+  }
+  return 'copilot';
 }

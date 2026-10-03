@@ -23,6 +23,10 @@ badge for the agent involved.
 Everything runs locally. There's no cloud service, account, or subscription, and
 the device works over USB or your local Wi-Fi.
 
+Want it on your screen as well? The [Desktop Agent Companion](#desktop-agent-companion)
+puts the same character, with the same animation, in a transparent window on your
+desktop, with or without the device.
+
 <p align="center">
   <img src="preview/agent-companion-demo.gif" alt="The Copilot character cycling through Idle, Surprise, Working, Needs attention, and Complete states" width="360">
 </p>
@@ -45,6 +49,7 @@ the device works over USB or your local Wi-Fi.
 - [Update](#update)
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
+- [Desktop Agent Companion](#desktop-agent-companion)
 - [Develop and customize](#develop-and-customize)
 
 ## Features
@@ -90,16 +95,53 @@ flowchart LR
 | Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
 | Node.js and Git | [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git, for the companion daemon |
 | Speaker (optional) | A small two-pin speaker, if your board or enclosure doesn't include one |
+| Desktop app (optional) | Nothing extra to download and run it. To build it from source: [Rust](https://rustup.rs/) 1.88 or newer. |
 
 ## Quick start
 
-1. [Flash the firmware](#step-1-flash-the-firmware) from the latest release.
-2. With the device still plugged in, [install the companion daemon](#step-2-install-the-companion-daemon)
-   with `npm run setup`.
-3. [Finish setting up your agents](#step-3-finish-setting-up-your-agents) on the
-   settings page, which opens automatically.
-4. [Try it](#step-4-try-it): start an agent and watch the character react.
-5. Optional: [put the device on Wi-Fi](#wi-fi) so it can run away from your computer.
+Three parts. Each links to its full step below. No device? You can use only the
+desktop app: skip part 1, do part 2 without the USB check, then do part 3.
+
+**1. Put the firmware on the device** ([details](#step-1-flash-the-firmware)).
+Download the **`-firmware.zip`** from
+[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
+extract it, connect the device over USB, and run this in the extracted folder:
+
+```bash
+python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python flash.py --list-ports                 # find your device's port
+.venv/bin/python flash.py --port /dev/cu.usbmodem2101  # use that port; type FLASH
+```
+
+This needs Python 3.10 or newer. Windows commands are in [Step 1](#step-1-flash-the-firmware).
+
+**2. Start the companion service and open Settings**
+([details](#step-2-install-the-companion-daemon)). With the device still plugged in:
+
+```bash
+git clone https://github.com/DanWahlin/esp32-agent-companion.git
+cd esp32-agent-companion
+npm run setup      # installs agent hooks, starts the service, opens Settings
+npm run status     # should say: Connected over USB
+npm run settings   # opens the Settings page again at any time
+```
+
+Restart any agent sessions that were already open, then start one and watch the
+character react ([Step 4](#step-4-try-it)).
+
+**3. Optional: put the character on your desktop too**
+([details](#run-the-desktop-app)). After step 2, download the
+**`agent-companion-desktop`** app for macOS, Windows or Linux from
+[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
+It isn't code-signed, so see [Run the desktop app](#run-the-desktop-app) for the
+one-time step on your OS. Or build and run it from the same folder (needs Rust):
+
+```bash
+npm run desktop
+```
+
+It follows the companion service, so it shows what the device shows. Turn it off,
+or hide the device around it, under **Desktop companion** in Settings.
 
 ## Step 1: Flash the firmware
 
@@ -621,6 +663,77 @@ The page needs its private link. Run `npm run settings` to open it with the link
 
 </details>
 
+## Desktop Agent Companion
+
+The same character, on your desktop. It's a small transparent window you can
+put anywhere, beside your editor or terminal or on a second screen. Use it with
+the device, or on its own. The code lives in [desktop/](desktop/).
+
+**It's the device's own animation, not a copy.** The desktop app runs the
+firmware's code (motion, sprite renderer, effects and agent badges), compiled to
+WebAssembly, and it reads the same `.acpk` character packs that the device
+installs. A parity test checks that every frame matches the firmware build pixel
+for pixel. A change to the firmware's animation reaches the desktop the next
+time you build it.
+
+**The companion service drives it.** The desktop app follows the service over
+its local socket, so it shows the state and agent badges the device shows, with
+no hooks of its own. The settings page controls both:
+
+| Setting | What it does |
+| --- | --- |
+| Characters | The character you install on the device is also shown on the desktop. With no device connected, choose **Show on desktop** instead. The device gets that character when it next connects without one. |
+| Show the character on the desktop | Turn it off to keep the character on the device only. |
+| Show the device around the character | On (default): a small copy of the device (screen, case and buttons), so it looks and reads exactly as it does on your desk. Off: only the character and its effects, straight on the desktop. |
+| Show agent badges | The same switch for the device and the desktop. |
+
+### Run the desktop app
+
+You need the companion service running first ([step 2](#step-2-install-the-companion-daemon)).
+The app shows the character the service names, from the service's own packs.
+
+- **Download it** from [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
+  The app isn't code-signed, so each OS needs one extra step:
+
+  | OS | File | First run |
+  | --- | --- | --- |
+  | macOS | `…-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
+  | Windows | `…-windows-x64-setup.exe` | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
+  | Linux | `…-linux-x86_64.AppImage` or `…-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./…-linux-amd64.deb`. |
+
+  It has no Dock or taskbar button: use its menu bar or tray icon.
+- **Or build it from source** with [Rust](https://rustup.rs/) 1.88 or newer, from
+  the repository folder. On Linux, install WebKitGTK first:
+  `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
+  (Ubuntu) or `sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator`
+  (Arch, Omarchy).
+
+  ```bash
+  npm run desktop
+  ```
+
+The window has no frame and is always on top.
+- **Clicks** go through to whatever is behind it, except on the character.
+- **Click the character** to poke it, as you tap the device. **Drag it** to move
+  it. It remembers where you put it.
+- **Right-click the character** for **Hide**, **Open Settings…** and **Close**.
+- **To bring it back after Hide**, open the app again (from Applications, Spotlight
+  or your app launcher), or use its tray icon (the menu bar on macOS). If your
+  menu bar is too full, macOS hides the icon, so opening the app again always works.
+- **The tray icon** has **Show/Hide Agent Companion**, **Character** (when no
+  device is connected), **Open Settings…**, **Bring Back to Centre** and **Quit**.
+- **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
+  `--show`, `--hide` or `--quit` to control the running one.
+
+Hide is for now; to keep it off the desktop for good, turn off **Show the
+character on the desktop** in Settings.
+
+It runs on macOS, Windows and Linux. On Hyprland (including Omarchy) it floats,
+pins and un-borders its own window, so there's nothing to configure. On other
+Wayland desktops it runs through XWayland so it can see the pointer. The
+companion service has no Windows build, so on Windows the desktop app shows the
+character, but it can't follow your agents.
+
 ## Develop and customize
 
 **Character Lab** previews every character state in your browser using the same
@@ -686,3 +799,6 @@ local and are ignored by git.
 
 This is an independent project, not an official GitHub or Waveshare product.
 GitHub Copilot and Claude artwork and product names belong to their respective owners.
+
+The Desktop Agent Companion in [desktop/](desktop/) is by Darren Robinson, a
+derivative of this project made with Dan Wahlin's approval.

@@ -1,0 +1,12 @@
+# Normalise to LF in the repository. CI runs on Linux and macOS as well as
+# Windows, and without this every checkout there shows the whole tree as
+# modified.
+* text=auto eol=lf
+
+# Never touch these.
+*.png binary
+*.svg text eol=lf
+
+# The firmware engine, compiled to WebAssembly and committed so the desktop
+# app builds without Emscripten. Generated: rebuild it, don't edit it.
+engine/prebuilt/engine.js -diff linguist-generated

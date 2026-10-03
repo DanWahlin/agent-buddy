@@ -116,8 +116,78 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  desktop:
+    # The desktop app, ready to run: no Rust or Emscripten needed to use it.
+    # Built on tags (and by hand), as the release is the only place it ships.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # The oldest supported Ubuntu, so the AppImage runs on most distributions.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Add Rust targets
+        run: |
+          if [ "${{ matrix.target }}" = universal-apple-darwin ]; then
+            rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          else
+            rustup target add ${{ matrix.target }}
+          fi
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - name: Build the app
+        working-directory: desktop/apps/desktop
+        run: |
+          npm run bundle -- --target ${{ matrix.target }} \
+            --config "{\"version\":\"$(cat ../../../VERSION)\"}"
+      - name: Package
+        run: |
+          version="$(cat ../VERSION)"
+          bundle="apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          name="dist-release/agent-companion-desktop-$version"
+          mkdir -p dist-release
+          case "${{ runner.os }}" in
+            macOS)   cp "$bundle"/dmg/*.dmg "$name-macos-universal.dmg" ;;
+            Windows) cp "$bundle"/nsis/*-setup.exe "$name-windows-x64-setup.exe" ;;
+            Linux)   cp "$bundle"/appimage/*.AppImage "$name-linux-x86_64.AppImage"
+                     cp "$bundle"/deb/*.deb "$name-linux-amd64.deb" ;;
+          esac
+          ls -l dist-release
+      - name: Upload the app
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-${{ runner.os }}
+          path: desktop/dist-release/*
+          if-no-files-found: error
+
   release:
-    needs: build
+    needs: [build, desktop]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
@@ -140,6 +210,12 @@ jobs:
         with:
           name: release-bundles
           path: artifacts
+      - name: Download the desktop app
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: desktop-*
+          path: artifacts
+          merge-multiple: true
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -150,10 +226,74 @@ jobs:
           body: |
             ## Install
 
-            Download the **firmware.zip** asset and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#install).
+            ### The device
+
+            Download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
             It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
+            Then run `npm run setup` from a clone of the repository to start the companion service and open the Settings page.
 
             The **characters.zip** asset holds every built-in character pack. Install one from a source checkout with `npm run character path/to/openclaw.acpk`.
+
+            ### The desktop app (optional)
+
+            The same character, with the same animation, in a small window on your desktop. It needs the companion
+            service (`npm run setup`, above) running, and Settings > **Desktop companion** turns it on or off.
+
+            > [!TIP]
+            > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:
+            > `copilot -p "Install the latest Agent Companion desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
+            > The app isn't code-signed, so you may still need the step for your OS below.
+
+            #### 🍎 macOS (Apple Silicon and Intel)
+
+            | File | Description |
+            | --- | --- |
+            | `agent-companion-desktop-*-macos-universal.dmg` | macOS app |
+
+            Open the `.dmg` and drag **Agent Companion** to **Applications**. The app isn't code-signed, so macOS
+            refuses to open it (it may say the app "is damaged"). Clear the download flag once, in Terminal:
+
+            ```bash
+            sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"
+            ```
+
+            Then open it from Applications. It has no Dock icon: look for it in the menu bar.
+
+            #### 🪟 Windows (x64)
+
+            | File | Description |
+            | --- | --- |
+            | `agent-companion-desktop-*-windows-x64-setup.exe` | Windows installer |
+
+            The app isn't code-signed, so Windows may flag it:
+            1. If your browser warns about the download, choose **Keep**.
+            2. When you see **Windows protected your PC**, choose **More info**.
+            3. Then choose **Run anyway**.
+
+            The companion service doesn't run on Windows itself (use [WSL 2](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#windows-wsl-2)),
+            so on Windows the desktop app shows the character but can't follow your agents yet.
+
+            #### 🐧 Linux (x86_64)
+
+            | File | Description |
+            | --- | --- |
+            | `agent-companion-desktop-*-linux-x86_64.AppImage` | Runs on most distributions, including Arch and Omarchy |
+            | `agent-companion-desktop-*-linux-amd64.deb` | Debian and Ubuntu package |
+
+            **AppImage:** make it executable, then run it:
+
+            ```bash
+            chmod +x agent-companion-desktop-*-linux-x86_64.AppImage
+            ./agent-companion-desktop-*-linux-x86_64.AppImage
+            ```
+
+            If it says it needs FUSE, install it (`sudo pacman -S --needed fuse2` on Arch and Omarchy,
+            `sudo apt install libfuse2` on Ubuntu), or run it with `--appimage-extract-and-run`.
+
+            **Debian or Ubuntu:** `sudo apt install ./agent-companion-desktop-*-linux-amd64.deb`, then run **Agent Companion** from your apps.
+
+            On Hyprland (including Omarchy) the app floats, pins and un-borders its own window, so there is nothing to configure.
+            On other Wayland desktops it runs through XWayland, so it can see the pointer and remember where you put it.
 
             ## Changes
 

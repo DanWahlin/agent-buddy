@@ -1,0 +1,105 @@
+name: Desktop Agent Companion
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      # The desktop runs the firmware's engine and the device's packs, so a
+      # change to either must still match frame for frame.
+      - 'firmware/AgentCompanion/src/**'
+      - 'characters/**'
+      - 'tools/character_pack.py'
+      - 'tools/character_preview.cpp'
+      - 'tools/HostSpriteInflate.h'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'firmware/AgentCompanion/src/**'
+      - 'characters/**'
+      - 'tools/character_pack.py'
+      - 'tools/character_preview.cpp'
+      - 'tools/HostSpriteInflate.h'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  engine:
+    # The committed engine (desktop/engine/prebuilt) must be built from today's
+    # sources, and must draw every frame exactly as the native firmware build
+    # does, for every character. Neither check needs Emscripten.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-art.txt
+
+      - name: Build the character packs
+        working-directory: .
+        run: |
+          python -m pip install -r requirements-art.txt
+          python tools/character_pack.py build
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Build the page
+        run: npm run build
+
+      - name: Typecheck, engine freshness, parity and cut-out tests
+        run: npm test
+
+  shell:
+    # The Rust shell: the daemon client, Hyprland support, pack choice,
+    # placement and click-through, on all three platforms.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Build the page and icons
+        run: npm run build
+
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+
+      - name: Test
+        working-directory: desktop/apps/desktop/src-tauri
+        run: cargo test

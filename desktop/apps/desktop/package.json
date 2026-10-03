@@ -1,0 +1,17 @@
+{
+  "name": "@agent-companion/desktop",
+  "version": "0.1.0",
+  "description": "The ESP32 Agent Companion's character in a window of its own, drawn by the device's own engine.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "start": "npm run build && cd src-tauri && cargo run",
+    "bundle": "node esbuild.mjs && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1",
+    "esbuild": "^0.25.0",
+    "sharp": "^0.35.4"
+  }
+}
