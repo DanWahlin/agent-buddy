@@ -99,7 +99,8 @@ flowchart LR
 
 ## Quick start
 
-Three parts. Each links to its full step below.
+Three parts. Each links to its full step below. No device? You can use only the
+desktop app: skip part 1, do part 2 without the USB check, then do part 3.
 
 **1. Put the firmware on the device** ([details](#step-1-flash-the-firmware)).
 Download the **`-firmware.zip`** from
@@ -696,7 +697,7 @@ The app shows the character the service names, from the service's own packs.
 
   | OS | File | First run |
   | --- | --- | --- |
-  | macOS | `…-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once. |
+  | macOS | `…-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
   | Windows | `…-windows-x64-setup.exe` | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
   | Linux | `…-linux-x86_64.AppImage` or `…-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./…-linux-amd64.deb`. |
 
