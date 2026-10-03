@@ -253,7 +253,25 @@ fn main() {
 
     let setup = app.clone();
     let serving = app.clone();
+    let again = app.clone();
+    #[cfg(target_os = "macos")]
+    let reopened = app.clone();
     tauri::Builder::default()
+        // Must be the first plugin. Opening the app while it runs brings the
+        // pet back, which matters when it was hidden and the menu bar was too
+        // full for its icon to show.
+        .plugin(tauri_plugin_single_instance::init(move |handle, args, _cwd| {
+            let Some(window) = handle.get_webview_window("main") else { return };
+            match Command::from_args(&args) {
+                Command::Show => set_user_hidden(&again, &window, false),
+                Command::Hide => set_user_hidden(&again, &window, true),
+                Command::Toggle => {
+                    let hidden = again.user_hidden.load(Ordering::Relaxed);
+                    set_user_hidden(&again, &window, !hidden);
+                }
+                Command::Quit => handle.exit(0),
+            }
+        }))
         .manage(app.clone())
         .invoke_handler(tauri::generate_handler![
             set_region, from_view, start_drag, set_tray_icon, show_context_menu
@@ -330,6 +348,14 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("the app should start")
         .run(move |handle, event| {
+            // macOS: opening the app again from Finder, Spotlight or the Dock.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = handle.get_webview_window("main") {
+                    set_user_hidden(&reopened, &window, false);
+                }
+                return;
+            }
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
                 // Take the window down before the process goes. Tauri's exit
                 // ends in `std::process::exit`, which runs no destructors, so
@@ -341,6 +367,32 @@ fn main() {
                 }
             }
         });
+}
+
+/// What a second launch asks of the running app. Plain, it shows the pet,
+/// which is the way back when the menu bar is too full for the tray icon; the
+/// flags make it scriptable, for a keyboard shortcut for example.
+#[derive(Debug, PartialEq)]
+enum Command {
+    Show,
+    Hide,
+    Toggle,
+    Quit,
+}
+
+impl Command {
+    fn from_args(args: &[String]) -> Self {
+        let flag = |name: &str| args.iter().skip(1).any(|arg| arg == name);
+        if flag("--quit") {
+            Self::Quit
+        } else if flag("--toggle") {
+            Self::Toggle
+        } else if flag("--hide") {
+            Self::Hide
+        } else {
+            Self::Show
+        }
+    }
 }
 
 /// Choices that have to be made before GTK starts.
@@ -457,4 +509,24 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
         _ => {}
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Command;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|it| it.to_string()).collect()
+    }
+
+    #[test]
+    fn a_second_launch_shows_the_pet_unless_asked_otherwise() {
+        assert_eq!(Command::from_args(&args(&["agent-companion-desktop"])), Command::Show);
+        assert_eq!(Command::from_args(&args(&["app", "--show"])), Command::Show);
+        assert_eq!(Command::from_args(&args(&["app", "--hide"])), Command::Hide);
+        assert_eq!(Command::from_args(&args(&["app", "--toggle"])), Command::Toggle);
+        assert_eq!(Command::from_args(&args(&["app", "--quit"])), Command::Quit);
+        // The program's own path is never mistaken for a flag.
+        assert_eq!(Command::from_args(&args(&["--hide"])), Command::Show);
+    }
 }

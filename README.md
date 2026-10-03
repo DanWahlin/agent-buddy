@@ -715,10 +715,14 @@ The window has no frame and is always on top.
 - **Clicks** go through to whatever is behind it, except on the character.
 - **Click the character** to poke it, as you tap the device. **Drag it** to move
   it. It remembers where you put it.
-- **Right-click the character** for **Hide** (it stays in the tray, or the menu
-  bar on macOS), **Open Settings…** and **Close**.
+- **Right-click the character** for **Hide**, **Open Settings…** and **Close**.
+- **To bring it back after Hide**, open the app again (from Applications, Spotlight
+  or your app launcher), or use its tray icon (the menu bar on macOS). If your
+  menu bar is too full, macOS hides the icon, so opening the app again always works.
 - **The tray icon** has **Show/Hide Agent Companion**, **Character** (when no
   device is connected), **Open Settings…**, **Bring Back to Centre** and **Quit**.
+- **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
+  `--show`, `--hide` or `--quit` to control the running one.
 
 Hide is for now; to keep it off the desktop for good, turn off **Show the
 character on the desktop** in Settings.
