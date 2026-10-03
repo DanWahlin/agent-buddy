@@ -149,12 +149,11 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     let user_hidden = app.user_hidden.load(Ordering::Relaxed);
     let visible = wanted && !user_hidden;
     let was_visible = app.visible.swap(visible, Ordering::Relaxed);
-    if visible {
-        // macOS: Cmd-H hides the whole app, which a window show does not undo.
-        #[cfg(target_os = "macos")]
-        let _ = window.app_handle().show();
-        let _ = window.show();
-    } else {
+    // Every daemon update comes through here, so only a change shows the
+    // window: showing it takes the keyboard on some platforms.
+    if visible && !was_visible {
+        show_without_focus(window);
+    } else if !visible {
         let _ = window.hide();
     }
     let _ = window.emit("to-view", serde_json::json!({ "type": "showing", "showing": visible }));
@@ -169,6 +168,34 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     if visible && !was_visible {
         settle_on_hyprland(window);
     }
+}
+
+/// Put the window on screen without making it the key window or this the
+/// active app: a pet must never take the keys from the app you type in.
+#[cfg(target_os = "macos")]
+fn show_without_focus(window: &WebviewWindow) {
+    let Ok(pointer) = window.ns_window() else {
+        let _ = window.show();
+        return;
+    };
+    let address = pointer as usize;
+    let _ = window.run_on_main_thread(move || {
+        use objc2_app_kit::{NSApplication, NSWindow};
+        let main = objc2::MainThreadMarker::new().expect("on the main thread");
+        let app = NSApplication::sharedApplication(main);
+        // Cmd-H hides the whole app, which ordering a window front does not undo.
+        if app.isHidden() {
+            app.unhideWithoutActivation();
+        }
+        // SAFETY: Tauri's NSWindow, alive for as long as the app runs.
+        let ns_window = unsafe { &*(address as *const NSWindow) };
+        ns_window.orderFrontRegardless();
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_without_focus(window: &WebviewWindow) {
+    let _ = window.show();
 }
 
 fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
