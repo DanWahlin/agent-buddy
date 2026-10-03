@@ -29,6 +29,8 @@ interface Engine {
   _ac_reserve(bytes: number): number;
   _ac_load_reserved(seed: number): number;
   _ac_changed(): number;
+  _ac_dirty_count(): number;
+  _ac_dirty_rects(): number;
   _ac_error(): number;
   _ac_width(): number;
   _ac_height(): number;
@@ -404,10 +406,14 @@ function draw(now: number): void {
     return;
   }
   if (!e._ac_changed() && !dirty) return;
-  dirty = false;
   if (!presenter) return;
   lastFrame = e.HEAPU8.subarray(pixels, pixels + width * height * 4);
-  presenter.present(lastFrame);
+  // Only the tiles that changed, unless the page needs the whole frame again.
+  const count = e._ac_dirty_count();
+  const rects = dirty || !count ? null
+    : new Int32Array(e.HEAPU8.buffer, e._ac_dirty_rects(), count * 4);
+  dirty = false;
+  presenter.present(lastFrame, rects);
 }
 
 // --- installing a character -------------------------------------------------------

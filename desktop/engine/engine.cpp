@@ -64,6 +64,8 @@ struct Engine {
   std::vector<int32_t> queue;
   // The last frame shown, to tell whether the next one differs at all.
   std::vector<uint16_t> shown;
+  // What changed in the last frame, as x, y, width, height rectangles.
+  std::vector<int32_t> dirty;
   // The character-only frame the cut-out was last worked out for.
   std::vector<uint16_t> keyedBase;
   bool keyed = false;
@@ -153,41 +155,81 @@ void findBackground(Engine& e) {
   }
 }
 
-void writeRgba(Engine& e, const uint16_t* frame, bool key) {
+// The frame is converted, compared and uploaded in tiles, so a frame where only
+// the orbiting dots moved costs a few tiles rather than the whole frame.
+constexpr int kTile = 32;
+constexpr int kTilesX = (kWidth + kTile - 1) / kTile;
+constexpr int kTilesY = (kHeight + kTile - 1) / kTile;
+
+// One pixel, as premultiplied RGBA: what a canvas composites, so the browser
+// does not convert every upload (measured as WebKit's hottest path).
+void writePixel(Engine& e, const uint16_t* frame, int x, int y, bool key) {
+  const int index = y * kWidth + x;
+  uint8_t* out = &e.rgba[index * 4];
+  uint8_t r, g, b;
+  unpack(frame[index], r, g, b);
+  float alpha = insideDisplay(x, y) ? 1.f : 0.f;
+  if (key && alpha > 0 && e.background[index]) {
+    alpha = e.softened[index];
+    if (frame[index] != e.base[index]) {
+      // An effect over backdrop. The device blends effects against black,
+      // so brightness is coverage: give it back as alpha, at full colour.
+      const uint8_t peak = std::max({r, g, b});
+      const bool fill = frame[index] == kBadgeFill;
+      if (!fill && peak > 0) {
+        const float scale = 255.f / peak;
+        r = static_cast<uint8_t>(std::min(255.f, r * scale));
+        g = static_cast<uint8_t>(std::min(255.f, g * scale));
+        b = static_cast<uint8_t>(std::min(255.f, b * scale));
+      }
+      alpha = std::max(alpha, fill ? 1.f : peak / 255.f);
+    }
+  }
+  const int a = static_cast<int>(std::lround(std::clamp(alpha, 0.f, 1.f) * 255));
+  out[0] = static_cast<uint8_t>((r * a + 127) / 255);
+  out[1] = static_cast<uint8_t>((g * a + 127) / 255);
+  out[2] = static_cast<uint8_t>((b * a + 127) / 255);
+  out[3] = static_cast<uint8_t>(a);
+}
+
+// Converts the tiles that changed since the last frame shown, and records them
+// as rectangles (runs of changed tiles merged along each row) for the page.
+void writeRgba(Engine& e, const uint16_t* frame, bool key, bool everything) {
   // The cut-out depends only on the character, not the effects; while the
   // pose holds and only the effects move, the last one still stands.
   if (key && (!e.keyed || std::memcmp(e.base.data(), e.keyedBase.data(), kPixels * sizeof(uint16_t)) != 0)) {
     findBackground(e);
     std::memcpy(e.keyedBase.data(), e.base.data(), kPixels * sizeof(uint16_t));
     e.keyed = true;
+    everything = true;  // The rim's alpha may have moved where the pixels did not.
   }
-  for (int y = 0; y < kHeight; ++y) {
-    for (int x = 0; x < kWidth; ++x) {
-      const int index = y * kWidth + x;
-      uint8_t* out = &e.rgba[index * 4];
-      uint8_t r, g, b;
-      unpack(frame[index], r, g, b);
-      float alpha = insideDisplay(x, y) ? 1.f : 0.f;
-      if (key && alpha > 0 && e.background[index]) {
-        alpha = e.softened[index];
-        if (frame[index] != e.base[index]) {
-          // An effect over backdrop. The device blends effects against black,
-          // so brightness is coverage: give it back as alpha, at full colour.
-          const uint8_t peak = std::max({r, g, b});
-          const bool fill = frame[index] == kBadgeFill;
-          if (!fill && peak > 0) {
-            const float scale = 255.f / peak;
-            r = static_cast<uint8_t>(std::min(255.f, r * scale));
-            g = static_cast<uint8_t>(std::min(255.f, g * scale));
-            b = static_cast<uint8_t>(std::min(255.f, b * scale));
+  e.dirty.clear();
+  for (int ty = 0; ty < kTilesY; ++ty) {
+    const int top = ty * kTile, bottom = std::min(kHeight, top + kTile);
+    int runStart = -1;
+    for (int tx = 0; tx <= kTilesX; ++tx) {
+      bool changed = false;
+      if (tx < kTilesX) {
+        const int left = tx * kTile, width = std::min(kWidth, left + kTile) - left;
+        for (int y = top; y < bottom && !changed; ++y) {
+          const size_t offset = static_cast<size_t>(y) * kWidth + left;
+          changed = everything
+              || std::memcmp(frame + offset, e.shown.data() + offset, width * sizeof(uint16_t)) != 0;
+        }
+        if (changed) {
+          for (int y = top; y < bottom; ++y) {
+            const size_t offset = static_cast<size_t>(y) * kWidth + left;
+            std::memcpy(e.shown.data() + offset, frame + offset, width * sizeof(uint16_t));
+            for (int x = left; x < left + width; ++x) writePixel(e, frame, x, y, key);
           }
-          alpha = std::max(alpha, fill ? 1.f : peak / 255.f);
         }
       }
-      out[0] = r;
-      out[1] = g;
-      out[2] = b;
-      out[3] = static_cast<uint8_t>(std::lround(std::clamp(alpha, 0.f, 1.f) * 255));
+      if (changed && runStart < 0) runStart = tx;
+      if (!changed && runStart >= 0) {
+        const int left = runStart * kTile;
+        e.dirty.insert(e.dirty.end(), {left, top, std::min(kWidth, tx * kTile) - left, bottom - top});
+        runStart = -1;
+      }
     }
   }
 }
@@ -224,6 +266,7 @@ int bind(std::vector<uint32_t>&& words, size_t size, uint32_t seed) {
   next->softened.assign(kPixels, 0);
   next->queue.assign(kPixels, 0);
   next->shown.assign(kPixels, 0);
+  next->dirty.reserve(kTilesX * kTilesY * 4);
   next->keyedBase.assign(kPixels, 0);
   next->renderer = std::make_unique<SpriteRenderer>(
       next->openPatch[0].data(), next->openPatch[1].data(), next->patch.data(), patchPixels,
@@ -313,15 +356,11 @@ AC_EXPORT const uint8_t* ac_frame(double seconds, int key) {
     lastError = e.effects->error();
     return nullptr;
   }
-  // Most frames of an idle character are the same as the last one; skip the
-  // conversion, and let the page skip the upload and redraw.
-  e.changed = key != e.shownKey
-      || std::memcmp(frame, e.shown.data(), kPixels * sizeof(uint16_t)) != 0;
-  if (e.changed) {
-    std::memcpy(e.shown.data(), frame, kPixels * sizeof(uint16_t));
-    e.shownKey = key;
-    writeRgba(e, frame, key != 0);
-  }
+  // Most frames of an idle character are the same as the last one; then no
+  // tile changed, and the page uploads and draws nothing.
+  writeRgba(e, frame, key != 0, key != e.shownKey);
+  e.shownKey = key;
+  e.changed = !e.dirty.empty();
   e.useFirst = !e.useFirst;
   return e.rgba.data();
 }
@@ -335,3 +374,8 @@ AC_EXPORT void ac_forget() {
 
 // Whether the last ac_frame differed from the one before it.
 AC_EXPORT int ac_changed() { return engine && engine->changed ? 1 : 0; }
+
+// The rectangles the last ac_frame changed: ac_dirty_count() of them, each
+// four int32 (x, y, width, height) at ac_dirty_rects().
+AC_EXPORT int ac_dirty_count() { return engine ? static_cast<int>(engine->dirty.size() / 4) : 0; }
+AC_EXPORT const int32_t* ac_dirty_rects() { return engine ? engine->dirty.data() : nullptr; }

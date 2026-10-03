@@ -2,16 +2,20 @@
  * Putting the engine's frame on screen, as cheaply as the platform allows.
  *
  * WebGL keeps one texture the size of the frame and updates it in place; the
- * GPU scales it for free. A 2D canvas fed by putImageData looks simpler, but
- * WebKit turns every one of those into a fresh GPU surface: measured on macOS,
- * about 400 MB of GPU memory against 240 MB, and more CPU, for the same
- * picture. An ImageBitmap per frame measured worse still. The 2D path is kept
- * only for a WebView without WebGL.
+ * GPU scales it for free. The engine writes premultiplied pixels, so WebKit
+ * uploads them as they are (converting every upload was its hottest path), and
+ * says which tiles changed, so with WebGL2 only those are uploaded. A 2D canvas
+ * fed by putImageData cost a new GPU surface every frame: about 400 MB of GPU
+ * memory against 240 MB, and more CPU. It is kept only for a WebView without
+ * WebGL.
  */
 
 export interface Presenter {
-  /** Show `rgba` (straight alpha, width x height x 4 bytes). */
-  present(rgba: Uint8Array): void;
+  /**
+   * Show `rgba` (premultiplied, width x height x 4 bytes). `rects` are the
+   * changed regions as x, y, width, height; null means all of it.
+   */
+  present(rgba: Uint8Array, rects: Int32Array | null): void;
 }
 
 const VERTEX = `
@@ -35,10 +39,12 @@ export function createPresenter(canvas: HTMLCanvasElement, width: number, height
 }
 
 function webgl(canvas: HTMLCanvasElement, width: number, height: number): Presenter | null {
-  const gl = canvas.getContext('webgl', {
+  const options: WebGLContextAttributes = {
     alpha: true, antialias: false, depth: false, stencil: false,
     premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'low-power',
-  });
+  };
+  const gl2 = canvas.getContext('webgl2', options);
+  const gl = gl2 ?? canvas.getContext('webgl', options);
   if (!gl) return null;
 
   const compile = (type: number, source: string) => {
@@ -65,14 +71,32 @@ function webgl(canvas: HTMLCanvasElement, width: number, height: number): Presen
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  // The engine's alpha is straight; the page composites premultiplied.
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  // Already premultiplied by the engine: upload as is, with no conversion.
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   gl.viewport(0, 0, width, height);
+  // WebGL2 can upload a rectangle straight out of the whole frame.
+  if (gl2) gl2.pixelStorei(gl2.UNPACK_ROW_LENGTH, width);
 
   return {
-    present(rgba) {
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+    present(rgba, rects) {
+      if (gl2 && rects) {
+        for (let i = 0; i + 3 < rects.length; i += 4) {
+          const [x, y, w, h] = [rects[i], rects[i + 1], rects[i + 2], rects[i + 3]];
+          gl2.pixelStorei(gl2.UNPACK_SKIP_PIXELS, x);
+          gl2.pixelStorei(gl2.UNPACK_SKIP_ROWS, y);
+          gl2.texSubImage2D(gl2.TEXTURE_2D, 0, x, y, w, h, gl2.RGBA, gl2.UNSIGNED_BYTE, rgba);
+        }
+      } else {
+        if (gl2) {
+          gl2.pixelStorei(gl2.UNPACK_SKIP_PIXELS, 0);
+          gl2.pixelStorei(gl2.UNPACK_SKIP_ROWS, 0);
+        }
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+      }
+      // The drawing buffer is not preserved, so the whole quad is drawn every
+      // time, from the texture that keeps everything that did not change.
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
   };
@@ -83,7 +107,16 @@ function canvas2d(canvas: HTMLCanvasElement, width: number, height: number): Pre
   const image = context.createImageData(width, height);
   return {
     present(rgba) {
-      image.data.set(rgba);
+      // ImageData is straight alpha; undo the engine's premultiplying.
+      const out = image.data;
+      for (let i = 0; i < out.length; i += 4) {
+        const a = rgba[i + 3];
+        const scale = a ? 255 / a : 0;
+        out[i] = rgba[i] * scale;
+        out[i + 1] = rgba[i + 1] * scale;
+        out[i + 2] = rgba[i + 2] * scale;
+        out[i + 3] = a;
+      }
       context.putImageData(image, 0, 0);
     },
   };

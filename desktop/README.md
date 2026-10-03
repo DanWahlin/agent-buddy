@@ -91,38 +91,42 @@ engine keys the frame (`writeRgba` in `engine.cpp`):
 
 ## Keeping it light
 
-A desktop pet runs all day, so it is measured, not assumed. Below are the
-figures on an Apple Silicon Mac (release build, all processes the app uses,
-including WebKit's), as a share of one CPU core:
+A desktop pet runs all day, so it is measured, not assumed. These are the
+figures on an Apple Silicon Mac (release build, all four processes the app
+uses, WebKit's included), as a share of one CPU core:
 
 | State | CPU | Memory |
 | --- | --- | --- |
-| Idle | about 3% | about 45 MB in the app and page, 240 MB of GPU memory in WebKit |
-| Working (effects every frame) | about 7% | the same |
-| Hidden from Settings | 0.1% | GPU memory released |
+| Idle | about 3% | 35 MB app, 43 MB page, 7 MB network, 245 MB WebKit GPU |
+| Working (effects every frame) | about 7% | the same, flat over a 4-minute soak |
+| Hidden | 0.3% | WebKit's GPU memory drops to 16 MB |
 
 What keeps it there:
-- **30 frames a second, as on the device** (`kTargetFps`), on a timer, not
-  at the display's refresh rate, which can be 120 Hz.
-- **Unchanged frames cost one engine step and nothing else.** The engine
-  compares each frame with the last, and the page uploads and draws nothing
-  when they match.
-- **One WebGL texture, updated in place**
-  ([`present.ts`](apps/desktop/src/webview/present.ts)). WebKit turned a 2D
-  canvas's `putImageData` into a new GPU surface each frame: about 400 MB of
-  GPU memory and more CPU. A per-frame `ImageBitmap` measured worse still.
-- **The engine's frame is shown at its own size.** The frame canvas is
-  412x466 and CSS places it, so on a Retina display nothing is scaled.
-- **The case is drawn once per size**, on its own canvas under the frame.
-- **The "character only" cut-out is cached** while the character holds still
-  and only the effects move; a test checks the cached cut-out matches a fresh one.
-- **The pack is held once.** The page writes it straight into the engine's
-  own buffer.
-- **Hidden means stopped**: no engine steps, no drawing, and the shell checks
-  the cursor 7 times a second instead of 20.
-- **The shell asks the system for the cursor only.** The window's position,
-  size and scale come from window events, because each query is a round trip
-  to the main thread.
+- **30 frames a second, as on the device** (`kTargetFps`), on a timer, not at
+  the display's refresh rate, which can be 120 Hz.
+- **Only what changed is converted and uploaded.** The engine compares each
+  frame with the last in 32x32 tiles, converts only changed tiles, and lists
+  them as rectangles; the page uploads only those to one WebGL2 texture. An
+  unchanged frame costs one engine step and nothing else.
+- **Premultiplied pixels.** The engine writes what the GPU composites, so
+  WebKit does not convert each upload, which profiling showed was its hottest
+  path. A 2D canvas fed by `putImageData` cost a new GPU surface per frame
+  (about 400 MB of GPU memory, and more CPU); a per-frame `ImageBitmap` was
+  worse still. WebGL 1 and a 2D canvas remain only as fallbacks.
+- **The frame is shown at its own size**, scaled by CSS, and **the case is
+  drawn once per size** on its own canvas.
+- **The "character only" cut-out is cached** while only the effects move; a
+  test checks it matches a fresh cut-out.
+- **The pack is held once.** The page writes it straight into the engine.
+- **A small shell.** One async worker instead of one per core. On macOS the
+  cursor is read from Core Graphics, not through the main thread; the window's
+  place comes from window events. The cursor is checked 20 times a second near
+  the window, 7 times far from it, and once a second while hidden.
+- **Hidden means stopped**: no engine steps and no drawing.
+
+The floor is WebKit's: about 240 MB of GPU memory while anything on the page
+animates, which it releases when nothing does. Going below that would mean a
+native renderer instead of a WebView.
 
 ## Credits and licensing
 

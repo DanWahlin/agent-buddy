@@ -149,7 +149,14 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     let user_hidden = app.user_hidden.load(Ordering::Relaxed);
     let visible = wanted && !user_hidden;
     let was_visible = app.visible.swap(visible, Ordering::Relaxed);
-    let _ = if visible { window.show() } else { window.hide() };
+    if visible {
+        // macOS: Cmd-H hides the whole app, which a window show does not undo.
+        #[cfg(target_os = "macos")]
+        let _ = window.app_handle().show();
+        let _ = window.show();
+    } else {
+        let _ = window.hide();
+    }
     let _ = window.emit("to-view", serde_json::json!({ "type": "showing", "showing": visible }));
     app.pointer.refresh(window);
     let item = app.visibility.lock().unwrap().clone();
@@ -166,6 +173,11 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
 
 fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
     app.user_hidden.store(hidden, Ordering::Relaxed);
+    // Showing is also the cure for any hide from outside the app, so make
+    // sure the window is put back even if this app thought it was showing.
+    if !hidden {
+        app.visible.store(false, Ordering::Relaxed);
+    }
     update_visibility(app, window);
 }
 
@@ -248,6 +260,15 @@ fn set_tray_icon(app: tauri::State<'_, Arc<App>>, rgba: Vec<u8>, width: u32, hei
 fn main() {
     #[cfg(target_os = "linux")]
     linux_environment();
+
+    // Tauri starts a worker thread per CPU core for async work, and this app
+    // has next to none: its commands are quick and synchronous. One will do.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("an async runtime");
+    tauri::async_runtime::set(runtime.handle().clone());
 
     let built_in = packs::built_in_directory();
     let ids = built_in.as_deref().map(packs::list).unwrap_or_default();

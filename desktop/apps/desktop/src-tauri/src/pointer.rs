@@ -38,6 +38,9 @@ const STICKY_MARGIN: f64 = 6.0;
 const POLL_NEAR: Duration = Duration::from_millis(50);
 /// How often to look while it is far away: there is nothing to decide until it comes back.
 const POLL_FAR: Duration = Duration::from_millis(150);
+/// While the window is hidden there is nothing to decide at all; this is only
+/// how quickly a show is noticed.
+const POLL_HIDDEN: Duration = Duration::from_millis(1000);
 /// "Near" is within this many CSS pixels of the window's edge.
 const NEAR: f64 = 120.0;
 
@@ -80,6 +83,33 @@ impl Geometry {
     }
 }
 
+/// The cursor in physical screen pixels, as Tauri reports it. On macOS it is
+/// read straight from Core Graphics, which any thread may do: Tauri's own call
+/// waits for the main thread every time, and this runs 20 times a second.
+fn cursor_position(window: &WebviewWindow) -> Option<tauri::PhysicalPosition<f64>> {
+    #[cfg(target_os = "macos")]
+    {
+        use core_graphics::event::CGEvent;
+        use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+        let _ = window;
+        let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+        let point = CGEvent::new(source).ok()?.location();
+        // Core Graphics answers in points, from the top left of the main
+        // display, as the window's position is given; Tauri's are physical.
+        let scale = MAIN_SCALE.with(|it| *it);
+        return Some(tauri::PhysicalPosition::new(point.x * scale, point.y * scale));
+    }
+    #[allow(unreachable_code)]
+    window.app_handle().cursor_position().ok()
+}
+
+#[cfg(target_os = "macos")]
+thread_local! {
+    /// The main display's scale, which Tauri's positions are multiplied by.
+    static MAIN_SCALE: f64 = core_graphics::display::CGDisplay::main().pixels_wide() as f64
+        / core_graphics::display::CGDisplay::main().bounds().size.width.max(1.0);
+}
+
 pub struct Pointer {
     region: Mutex<Region>,
     geometry: Mutex<Option<Geometry>>,
@@ -117,11 +147,11 @@ impl Pointer {
                 std::thread::sleep(wait);
                 let Some(geometry) = *self.geometry.lock().unwrap() else { continue };
                 if !geometry.visible {
-                    wait = POLL_FAR;
+                    wait = POLL_HIDDEN;
                     continue;
                 }
 
-                let Ok(cursor) = window.app_handle().cursor_position() else { continue };
+                let Some(cursor) = cursor_position(&window) else { continue };
 
                 // Cursor and window are both physical; the region the page
                 // reported is in CSS pixels, so the difference is scaled once.
@@ -165,7 +195,7 @@ impl Pointer {
                 std::thread::sleep(wait);
                 let Some(geometry) = *self.geometry.lock().unwrap() else { continue };
                 if !geometry.visible {
-                    wait = FAR_WAIT;
+                    wait = POLL_HIDDEN;
                     ticks = REFRESH_EVERY;
                     continue;
                 }
