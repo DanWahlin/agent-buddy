@@ -83,10 +83,11 @@ impl Geometry {
     }
 }
 
-/// The cursor in physical screen pixels, as Tauri reports it. On macOS it is
-/// read straight from Core Graphics, which any thread may do: Tauri's own call
-/// waits for the main thread every time, and this runs 20 times a second.
-fn cursor_position(window: &WebviewWindow) -> Option<tauri::PhysicalPosition<f64>> {
+/// The cursor in the same physical pixels as the window's position. On macOS
+/// it is read straight from Core Graphics, which any thread may do: Tauri's
+/// own call waits for the main thread every time, and this runs 20 times a
+/// second.
+fn cursor_position(window: &WebviewWindow, geometry: &Geometry) -> Option<tauri::PhysicalPosition<f64>> {
     #[cfg(target_os = "macos")]
     {
         use core_graphics::event::CGEvent;
@@ -94,20 +95,17 @@ fn cursor_position(window: &WebviewWindow) -> Option<tauri::PhysicalPosition<f64
         let _ = window;
         let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
         let point = CGEvent::new(source).ok()?.location();
-        // Core Graphics answers in points, from the top left of the main
-        // display, as the window's position is given; Tauri's are physical.
-        let scale = MAIN_SCALE.with(|it| *it);
-        return Some(tauri::PhysicalPosition::new(point.x * scale, point.y * scale));
+        // Core Graphics answers in points from the top left of the main
+        // display. Tauri gives the window's position as those points times
+        // the window's own scale, so the cursor takes the same scale: with
+        // displays of mixed scale, the main display's would miss.
+        return Some(tauri::PhysicalPosition::new(point.x * geometry.scale, point.y * geometry.scale));
     }
     #[allow(unreachable_code)]
-    window.app_handle().cursor_position().ok()
-}
-
-#[cfg(target_os = "macos")]
-thread_local! {
-    /// The main display's scale, which Tauri's positions are multiplied by.
-    static MAIN_SCALE: f64 = core_graphics::display::CGDisplay::main().pixels_wide() as f64
-        / core_graphics::display::CGDisplay::main().bounds().size.width.max(1.0);
+    {
+        let _ = geometry;
+        window.app_handle().cursor_position().ok()
+    }
 }
 
 pub struct Pointer {
@@ -151,7 +149,7 @@ impl Pointer {
                     continue;
                 }
 
-                let Some(cursor) = cursor_position(&window) else { continue };
+                let Some(cursor) = cursor_position(&window, &geometry) else { continue };
 
                 // Cursor and window are both physical; the region the page
                 // reported is in CSS pixels, so the difference is scaled once.

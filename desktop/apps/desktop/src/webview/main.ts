@@ -119,8 +119,12 @@ async function loadPack(url: string): Promise<void> {
   if (!response.ok) throw new Error('Could not load the character (' + response.status + ').');
   const bytes = new Uint8Array(await response.arrayBuffer());
   const e = engine!;
-  // Straight into the engine's own buffer, which it keeps as the pack.
-  e.HEAPU8.set(bytes, e._ac_reserve(bytes.length));
+  // Straight into the engine's own buffer, which it keeps as the pack. Reserve
+  // first: reserving can grow the memory, which detaches any earlier HEAPU8.
+  const at = e._ac_reserve(bytes.length);
+  e.HEAPU8.set(bytes, at);
+  // The last frame is the old character's, and its view may be detached.
+  lastFrame = null;
   const ok = e._ac_load_reserved((Math.random() * 0xffffffff) >>> 0);
   if (!ok) throw new Error(e.UTF8ToString(e._ac_error()) || 'The character pack is invalid.');
   iconsKey = '';
@@ -523,9 +527,14 @@ function reportRegion(): void {
 }
 
 /** The tray shows the character it is showing, cut from a real frame. */
-function sendTrayIcon(): void {
+function sendTrayIcon(tries = 30): void {
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (!loaded || !lastFrame || !engine) return;
+    if (!loaded || !engine) return;
+    // Wait for the new character's first frame.
+    if (!lastFrame) {
+      if (tries > 0) sendTrayIcon(tries - 1);
+      return;
+    }
     const width = engine._ac_width();
     const height = engine._ac_height();
     const frame = document.createElement('canvas');

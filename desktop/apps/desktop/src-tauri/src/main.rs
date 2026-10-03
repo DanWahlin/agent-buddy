@@ -3,10 +3,10 @@
 //! The companion as a window of its own: a second screen for the ESP32 device.
 //!
 //! The page inside draws with the firmware's own engine, compiled to
-//! WebAssembly, from the same `.acpk` pack the device installs. Everything else
-//! - what the agents are doing, the badges, which character, whether to show at
-//! all, the backdrop - comes from the ESP32 daemon, the same place the device
-//! gets it. This file is what is genuinely the window's job: a transparent pet
+//! WebAssembly, from the same `.acpk` pack the device installs. Everything
+//! else (what the agents are doing, the badges, which character, whether to
+//! show at all, the backdrop) comes from the ESP32 daemon, the same place the
+//! device gets it. This file is what is genuinely the window's job: a transparent pet
 //! that stays out of the way until the pointer is on the character, can be
 //! picked up and moved, and can be quit.
 
@@ -36,6 +36,8 @@ struct App {
     ready: AtomicBool,
     /// Whether the window is showing.
     visible: AtomicBool,
+    /// What Settings last said, kept while the daemon can't be reached.
+    wanted: AtomicBool,
     /// Hidden by the user from its menu, until they show it again from the
     /// tray. For this run only: Settings decides whether it shows at all.
     user_hidden: AtomicBool,
@@ -145,7 +147,11 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
 /// Show or hide the window: hidden if Settings turns the desktop companion
 /// off, or the user hid it from its menu. The page stops drawing while hidden.
 fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
-    let wanted = app.daemon.lock().unwrap().as_ref().map_or(true, |it| it.visible);
+    let reported = app.daemon.lock().unwrap().as_ref().map(|it| it.visible);
+    if let Some(reported) = reported {
+        app.wanted.store(reported, Ordering::Relaxed);
+    }
+    let wanted = app.wanted.load(Ordering::Relaxed);
     let user_hidden = app.user_hidden.load(Ordering::Relaxed);
     let visible = wanted && !user_hidden;
     let was_visible = app.visible.swap(visible, Ordering::Relaxed);
@@ -308,6 +314,7 @@ fn main() {
         drawn: AtomicBool::new(false),
         ready: AtomicBool::new(false),
         visible: AtomicBool::new(true),
+        wanted: AtomicBool::new(true),
         user_hidden: AtomicBool::new(false),
         built_in,
         ids,
