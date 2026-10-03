@@ -66,10 +66,14 @@ fn monitors_of(window: &WebviewWindow) -> Vec<(PhysicalPosition<i32>, (u32, u32)
 }
 
 /// Put the window back where it was, if that is still a place.
+/// Where the window was last put, if anywhere.
+pub fn saved(window: &WebviewWindow) -> Option<Placement> {
+    let text = std::fs::read_to_string(file(window)?).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
 pub fn restore(window: &WebviewWindow) {
-    let Some(path) = file(window) else { return };
-    let Ok(text) = std::fs::read_to_string(&path) else { return };
-    let Ok(saved) = serde_json::from_str::<Placement>(&text) else { return };
+    let Some(saved) = saved(window) else { return };
 
     // Asked before the window has been laid out, so a zero size is an answer
     // meaning "not yet" rather than "no window". Taken literally it makes every

@@ -11,6 +11,7 @@
 //! picked up and moved, and can be quit.
 
 mod daemon;
+mod hyprland;
 mod packs;
 mod placement;
 mod pointer;
@@ -33,6 +34,8 @@ struct App {
     drawn: AtomicBool,
     /// Whether the page is listening, so a pack can be sent to it.
     ready: AtomicBool,
+    /// Whether the window is meant to be showing.
+    visible: AtomicBool,
     /// The repository's built packs, for when there is no daemon.
     built_in: Option<PathBuf>,
     ids: Vec<String>,
@@ -105,8 +108,13 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
     let _ = window.emit("to-view", serde_json::json!({ "type": "state", "state": state }));
 
     let visible = snapshot.as_ref().map_or(true, |it| it.visible);
+    let was_visible = app.visible.swap(visible, Ordering::Relaxed);
     let _ = if visible { window.show() } else { window.hide() };
     app.pointer.refresh(window);
+    // Shown again, the window is new to the compositor, and tiled again.
+    if visible && !was_visible {
+        settle_on_hyprland(window);
+    }
 
     // A connected device decides the character, so the tray would only be
     // overruled a moment later; without one, the tray chooses.
@@ -166,6 +174,9 @@ fn set_tray_icon(app: tauri::State<'_, Arc<App>>, rgba: Vec<u8>, width: u32, hei
 }
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    linux_environment();
+
     let built_in = packs::built_in_directory();
     let ids = built_in.as_deref().map(packs::list).unwrap_or_default();
     println!(
@@ -176,6 +187,7 @@ fn main() {
         pointer: Arc::new(Pointer::new()),
         drawn: AtomicBool::new(false),
         ready: AtomicBool::new(false),
+        visible: AtomicBool::new(true),
         built_in,
         ids,
         chosen: Mutex::new(None),
@@ -247,6 +259,7 @@ fn main() {
             });
 
             setup.pointer.clone().watch(window.clone());
+            settle_on_hyprland(&window);
 
             let following = setup.clone();
             let shown = window.clone();
@@ -272,6 +285,41 @@ fn main() {
                 }
             }
         });
+}
+
+/// Choices that have to be made before GTK starts.
+#[cfg(target_os = "linux")]
+fn linux_environment() {
+    // On most Wayland desktops an app cannot read the cursor's position, place
+    // its own window, or keep it above others, and a pet needs all three; GTK's
+    // X11 backend (XWayland) can. Hyprland answers all three over its IPC
+    // (hyprland.rs), so there it stays native. A backend the user chose wins.
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("GDK_BACKEND").is_none()
+        && !hyprland::available()
+    {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+    // WebKitGTK's DMA-BUF renderer draws a blank window on NVIDIA's driver.
+    if std::path::Path::new("/proc/driver/nvidia/version").exists()
+        && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+    {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
+/// On Hyprland, float, pin and unclutter the window and put it back where it
+/// was, in the background: Hyprland maps it a moment after it is shown.
+fn settle_on_hyprland(window: &WebviewWindow) {
+    if !hyprland::available() {
+        return;
+    }
+    let at = placement::saved(window).map(|it| (it.x, it.y));
+    std::thread::spawn(move || {
+        if hyprland::settle(at).is_none() {
+            eprintln!("[hyprland] the window did not appear to Hyprland");
+        }
+    });
 }
 
 /// With no title bar and no taskbar button, the tray is the only way in.

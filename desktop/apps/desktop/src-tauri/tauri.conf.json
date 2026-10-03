@@ -32,7 +32,10 @@
     "active": true,
     "targets": [
       "app",
-      "nsis"
+      "dmg",
+      "nsis",
+      "appimage",
+      "deb"
     ],
     "icon": [
       "icons/icon.png",

@@ -126,10 +126,11 @@ jobs:
         include:
           - os: macos-latest
             target: universal-apple-darwin
-            asset: macos.zip
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            asset: windows-setup.exe
+          # The oldest supported Ubuntu, so the AppImage runs on most distributions.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -153,6 +154,12 @@ jobs:
           else
             rustup target add ${{ matrix.target }}
           fi
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - run: npm ci
       - name: Build the app
         working-directory: desktop/apps/desktop
@@ -163,13 +170,15 @@ jobs:
         run: |
           version="$(cat ../VERSION)"
           bundle="apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle"
+          name="dist-release/agent-companion-desktop-$version"
           mkdir -p dist-release
-          out="dist-release/agent-companion-desktop-$version-${{ matrix.asset }}"
-          if [ "${{ runner.os }}" = macOS ]; then
-            ditto -c -k --keepParent "$bundle/macos/Agent Companion.app" "$out"
-          else
-            cp "$bundle"/nsis/*-setup.exe "$out"
-          fi
+          case "${{ runner.os }}" in
+            macOS)   cp "$bundle"/dmg/*.dmg "$name-macos-universal.dmg" ;;
+            Windows) cp "$bundle"/nsis/*-setup.exe "$name-windows-x64-setup.exe" ;;
+            Linux)   cp "$bundle"/appimage/*.AppImage "$name-linux-x86_64.AppImage"
+                     cp "$bundle"/deb/*.deb "$name-linux-amd64.deb" ;;
+          esac
+          ls -l dist-release
       - name: Upload the app
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -217,12 +226,74 @@ jobs:
           body: |
             ## Install
 
-            Download the **firmware.zip** asset and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#install).
+            ### The device
+
+            Download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
             It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
+            Then run `npm run setup` from a clone of the repository to start the companion service and open the Settings page.
 
             The **characters.zip** asset holds every built-in character pack. Install one from a source checkout with `npm run character path/to/openclaw.acpk`.
 
-            The **agent-companion-desktop** assets are the desktop app for macOS and Windows. It needs the companion service from the installation guide, and shows the same character as the device.
+            ### The desktop app (optional)
+
+            The same character, with the same animation, in a small window on your desktop. It needs the companion
+            service (`npm run setup`, above) running, and Settings > **Desktop companion** turns it on or off.
+
+            > [!TIP]
+            > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:
+            > `copilot -p "Install the latest Agent Companion desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
+            > The app isn't code-signed, so you may still need the step for your OS below.
+
+            #### 🍎 macOS (Apple Silicon and Intel)
+
+            | File | Description |
+            | --- | --- |
+            | `agent-companion-desktop-*-macos-universal.dmg` | macOS app |
+
+            Open the `.dmg` and drag **Agent Companion** to **Applications**. The app isn't code-signed, so macOS
+            refuses to open it (it may say the app "is damaged"). Clear the download flag once, in Terminal:
+
+            ```bash
+            sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"
+            ```
+
+            Then open it from Applications. It has no Dock icon: look for it in the menu bar.
+
+            #### 🪟 Windows (x64)
+
+            | File | Description |
+            | --- | --- |
+            | `agent-companion-desktop-*-windows-x64-setup.exe` | Windows installer |
+
+            The app isn't code-signed, so Windows may flag it:
+            1. If your browser warns about the download, choose **Keep**.
+            2. When you see **Windows protected your PC**, choose **More info**.
+            3. Then choose **Run anyway**.
+
+            The companion service doesn't run on Windows itself (use [WSL 2](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#windows-wsl-2)),
+            so on Windows the desktop app shows the character but can't follow your agents yet.
+
+            #### 🐧 Linux (x86_64)
+
+            | File | Description |
+            | --- | --- |
+            | `agent-companion-desktop-*-linux-x86_64.AppImage` | Runs on most distributions, including Arch and Omarchy |
+            | `agent-companion-desktop-*-linux-amd64.deb` | Debian and Ubuntu package |
+
+            **AppImage:** make it executable, then run it:
+
+            ```bash
+            chmod +x agent-companion-desktop-*-linux-x86_64.AppImage
+            ./agent-companion-desktop-*-linux-x86_64.AppImage
+            ```
+
+            If it says it needs FUSE, install it (`sudo pacman -S --needed fuse2` on Arch and Omarchy,
+            `sudo apt install libfuse2` on Ubuntu), or run it with `--appimage-extract-and-run`.
+
+            **Debian or Ubuntu:** `sudo apt install ./agent-companion-desktop-*-linux-amd64.deb`, then run **Agent Companion** from your apps.
+
+            On Hyprland (including Omarchy) the app floats, pins and un-borders its own window, so there is nothing to configure.
+            On other Wayland desktops it runs through XWayland, so it can see the pointer and remember where you put it.
 
             ## Changes
 

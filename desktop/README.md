@@ -55,7 +55,8 @@ npm run build:engine   # then commit desktop/engine/prebuilt
 
 `engine/prebuilt/sources.sha256` records what it was built from, and a test
 fails until it is rebuilt after such a change. Tagged releases build the app for
-macOS (universal) and Windows and attach it to the GitHub Release.
+macOS (universal `.dmg`), Windows (installer) and Linux (x86_64 AppImage and
+`.deb`) and attach it to the GitHub Release, with first-run steps for each.
 
 ## Matching the device exactly
 

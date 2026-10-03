@@ -58,12 +58,30 @@ the tray choice is remembered locally.
 Only the pack the page was told to show can be fetched, by its id, over a
 protocol of the app's own.
 
+## Linux, Wayland and Hyprland
+
+On X11 the app works as on macOS and Windows. Wayland lets an app read neither
+the pointer's position on the screen nor where its own window is, and both are
+needed to take the mouse only over the character and to remember its place:
+
+- **Hyprland** (including Omarchy) answers both over its IPC socket
+  (`src-tauri/src/hyprland.rs`), so the app stays native Wayland there. When it
+  opens it also floats, pins and un-borders its window, switches off blur behind
+  it, and moves it back to where it was, so nobody needs a window rule. Each
+  command is sent in Hyprland's Lua form first and its classic form if that is
+  refused, as Omarchy's own scripts do, so old and new versions both work.
+- **Other Wayland desktops** run it through XWayland (`GDK_BACKEND=x11`, unless
+  you set a backend yourself).
+- **NVIDIA:** WebKitGTK's DMA-BUF renderer draws a blank window on NVIDIA's
+  driver, so the app switches it off there.
+
 ## What it does not do yet
 
 - **No autostart.** It does not come back after a reboot.
 - **Windows cannot follow agents.** The companion service has no Windows build,
   so on Windows the app shows the character in idle.
-- **Windows and macOS so far; Linux is unverified.** `macOSPrivateApi` is set,
-  because a transparent window does not work on macOS without it, and it rules
-  out the Mac App Store. On macOS the app is an accessory app: it has no Dock
-  icon and can sit over full-screen Spaces.
+- **Not code-signed.** Each OS needs a one-time step on first run; the release
+  notes and the root README give it. `macOSPrivateApi` is set, because a
+  transparent window does not work on macOS without it, and it rules out the
+  Mac App Store. On macOS the app is an accessory app: it has no Dock icon and
+  can sit over full-screen Spaces.

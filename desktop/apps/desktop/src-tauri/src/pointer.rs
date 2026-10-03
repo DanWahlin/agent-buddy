@@ -103,12 +103,16 @@ impl Pointer {
 
     /// Follow the cursor, handing the window the mouse only over the character.
     pub fn watch(self: Arc<Self>, window: WebviewWindow) {
+        if self.geometry.lock().unwrap().is_none() {
+            self.refresh(&window);
+        }
+        if crate::hyprland::available() {
+            self.watch_hyprland(window);
+            return;
+        }
         std::thread::spawn(move || {
             let mut over = false;
             let mut wait = POLL_NEAR;
-            if self.geometry.lock().unwrap().is_none() {
-                self.refresh(&window);
-            }
             loop {
                 std::thread::sleep(wait);
                 let Some(geometry) = *self.geometry.lock().unwrap() else { continue };
@@ -135,6 +139,69 @@ impl Pointer {
                 let margin = if over { STICKY_MARGIN } else { 0.0 };
                 let now = inside(&region, x, y, margin);
 
+                if now != over {
+                    over = now;
+                    let _ = window.set_ignore_cursor_events(!now);
+                }
+            }
+        });
+    }
+
+    /// The same, on Hyprland, where a Wayland window can learn neither the
+    /// cursor nor its own place: Hyprland's IPC answers both, in the same
+    /// layout coordinates. Its requests are handled synchronously, so it is
+    /// asked for the cursor at 10 Hz near the window, and for the window's
+    /// place once a second, which is also when a move is noticed and saved.
+    fn watch_hyprland(self: Arc<Self>, window: WebviewWindow) {
+        const NEAR_WAIT: Duration = Duration::from_millis(100);
+        const FAR_WAIT: Duration = Duration::from_millis(300);
+        const REFRESH_EVERY: u32 = 10;
+        std::thread::spawn(move || {
+            let mut over = false;
+            let mut wait = NEAR_WAIT;
+            let mut client: Option<crate::hyprland::Client> = None;
+            let mut ticks = REFRESH_EVERY;
+            loop {
+                std::thread::sleep(wait);
+                let Some(geometry) = *self.geometry.lock().unwrap() else { continue };
+                if !geometry.visible {
+                    wait = FAR_WAIT;
+                    ticks = REFRESH_EVERY;
+                    continue;
+                }
+                if ticks >= REFRESH_EVERY || client.is_none() {
+                    ticks = 0;
+                    let found = crate::hyprland::own_window();
+                    if let (Some(now), Some(before)) = (&found, &client) {
+                        if (now.x, now.y) != (before.x, before.y) {
+                            crate::placement::remember(
+                                &window,
+                                crate::placement::Placement { x: now.x as i32, y: now.y as i32 },
+                            );
+                        }
+                    }
+                    client = found;
+                }
+                ticks += 1;
+                let (Some(placed), Some((cursor_x, cursor_y))) = (&client, crate::hyprland::cursor()) else {
+                    wait = FAR_WAIT;
+                    continue;
+                };
+
+                // Layout units to the page's CSS pixels: the window's CSS
+                // width over its width on the layout.
+                let css = (geometry.width / geometry.scale) / placed.width.max(1.0);
+                let x = (cursor_x - placed.x) * css;
+                let y = (cursor_y - placed.y) * css;
+                let (width, height) = (placed.width * css, placed.height * css);
+                wait = if x < -NEAR || y < -NEAR || x > width + NEAR || y > height + NEAR {
+                    FAR_WAIT
+                } else {
+                    NEAR_WAIT
+                };
+
+                let region = *self.region.lock().unwrap();
+                let now = inside(&region, x, y, if over { STICKY_MARGIN } else { 0.0 });
                 if now != over {
                     over = now;
                     let _ = window.set_ignore_cursor_events(!now);

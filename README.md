@@ -129,10 +129,11 @@ Restart any agent sessions that were already open, then start one and watch the
 character react ([Step 4](#step-4-try-it)).
 
 **3. Optional: put the character on your desktop too**
-([details](#desktop-agent-companion)). After step 2, download the
-**`agent-companion-desktop`** app for macOS or Windows from
-[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest) and
-open it. Or build and run it from the same folder (needs Rust):
+([details](#run-the-desktop-app)). After step 2, download the
+**`agent-companion-desktop`** app for macOS, Windows or Linux from
+[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
+It isn't code-signed, so see [Run the desktop app](#run-the-desktop-app) for the
+one-time step on your OS. Or build and run it from the same folder (needs Rust):
 
 ```bash
 npm run desktop
@@ -690,15 +691,21 @@ no hooks of its own. The settings page controls both:
 You need the companion service running first ([step 2](#step-2-install-the-companion-daemon)).
 The app shows the character the service names, from the service's own packs.
 
-- **Download it.** From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
-  get **`agent-companion-desktop-…-macos.zip`** (unzip it and move
-  **Agent Companion** to Applications) or **`…-windows-setup.exe`**.
-  The app isn't code-signed, so the first time you open it:
-  - **macOS:** if it says it can't be opened, go to **System Settings > Privacy &
-    Security** and choose **Open Anyway**.
-  - **Windows:** choose **More info > Run anyway**.
+- **Download it** from [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
+  The app isn't code-signed, so each OS needs one extra step:
+
+  | OS | File | First run |
+  | --- | --- | --- |
+  | macOS | `…-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once. |
+  | Windows | `…-windows-x64-setup.exe` | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
+  | Linux | `…-linux-x86_64.AppImage` or `…-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./…-linux-amd64.deb`. |
+
+  It has no Dock or taskbar button: use its menu bar or tray icon.
 - **Or build it from source** with [Rust](https://rustup.rs/) 1.88 or newer, from
-  the repository folder:
+  the repository folder. On Linux, install WebKitGTK first:
+  `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
+  (Ubuntu) or `sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator`
+  (Arch, Omarchy).
 
   ```bash
   npm run desktop
@@ -713,9 +720,11 @@ The window has no frame and is always on top.
 - **The tray icon** has **Character** (when no device is connected),
   **Open Settings…**, **Bring Back to Centre** and **Quit**.
 
-The app was built on Windows and checked on macOS. The companion service has no
-Windows build, so on Windows the desktop app shows the character, but it can't
-follow your agents.
+It runs on macOS, Windows and Linux. On Hyprland (including Omarchy) it floats,
+pins and un-borders its own window, so there's nothing to configure. On other
+Wayland desktops it runs through XWayland so it can see the pointer. The
+companion service has no Windows build, so on Windows the desktop app shows the
+character, but it can't follow your agents.
 
 ## Develop and customize
 

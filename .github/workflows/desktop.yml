@@ -66,14 +66,21 @@ jobs:
         run: npm test
 
   shell:
-    # The Rust shell: the daemon client, pack choice, placement and click-through.
+    # The Rust shell: the daemon client, Hyprland support, pack choice,
+    # placement and click-through, on all three platforms.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: actions/setup-node@v4
         with:
