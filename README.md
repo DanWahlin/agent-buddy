@@ -711,14 +711,17 @@ The app shows the character the service names, from the service's own packs.
   npm run desktop
   ```
 
-The app keeps running until you choose **Quit** from its tray icon.
-
 The window has no frame and is always on top.
 - **Clicks** go through to whatever is behind it, except on the character.
 - **Click the character** to poke it, as you tap the device. **Drag it** to move
   it. It remembers where you put it.
-- **The tray icon** has **Character** (when no device is connected),
-  **Open Settings…**, **Bring Back to Centre** and **Quit**.
+- **Right-click the character** for **Hide** (it stays in the tray, or the menu
+  bar on macOS), **Open Settings…** and **Close**.
+- **The tray icon** has **Show/Hide Agent Companion**, **Character** (when no
+  device is connected), **Open Settings…**, **Bring Back to Centre** and **Quit**.
+
+Hide is for now; to keep it off the desktop for good, turn off **Show the
+character on the desktop** in Settings.
 
 It runs on macOS, Windows and Linux. On Hyprland (including Omarchy) it floats,
 pins and un-borders its own window, so there's nothing to configure. On other

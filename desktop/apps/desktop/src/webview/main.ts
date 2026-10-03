@@ -42,7 +42,6 @@ interface Engine {
 
 interface DaemonSnapshot {
   state: string;
-  visible?: boolean;
   backdrop: string;
   badges: Array<{ id: string; role: 'working' | 'attention' | 'complete' }>;
   icons: Array<{ id: string; color: string; mask: string }>;
@@ -51,6 +50,7 @@ interface DaemonSnapshot {
 type HostMessage =
   | { type: 'state'; state: string }
   | { type: 'daemon'; daemon: DaemonSnapshot | null }
+  | { type: 'showing'; showing: boolean }
   | { type: 'error'; message: string };
 
 /** The device's CharacterMode values. */
@@ -164,7 +164,10 @@ function receive(incoming: HostMessage): void {
         dirty = true;
       }
       applyBadges(incoming.daemon);
-      setShowing(incoming.daemon?.visible !== false);
+      break;
+    case 'showing':
+      // Hidden from Settings or from the character's menu: stop entirely.
+      setShowing(incoming.showing);
       break;
     case 'error':
       say(incoming.message);
@@ -444,6 +447,8 @@ const DRAG_THRESHOLD_PX = 4;
 let pressedAt: { x: number; y: number } | null = null;
 
 device.addEventListener('pointerdown', event => {
+  // Only the main button pokes or drags; the right one opens the menu.
+  if (event.button !== 0) return;
   pressedAt = { x: event.clientX, y: event.clientY };
 });
 device.addEventListener('pointermove', event => {
@@ -460,6 +465,14 @@ for (const done of ['pointercancel', 'pointerleave']) {
   device.addEventListener(done, () => { pressedAt = null; });
 }
 window.addEventListener('resize', resize);
+
+// A right-click opens the character's own menu (Hide, Open Settings, Close),
+// never the WebView's (Reload, Inspect Element).
+window.addEventListener('contextmenu', event => {
+  event.preventDefault();
+  pressedAt = null;
+  void tauri.core.invoke('show_context_menu');
+});
 
 async function main(): Promise<void> {
   say('Starting…');

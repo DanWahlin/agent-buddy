@@ -34,8 +34,11 @@ struct App {
     drawn: AtomicBool,
     /// Whether the page is listening, so a pack can be sent to it.
     ready: AtomicBool,
-    /// Whether the window is meant to be showing.
+    /// Whether the window is showing.
     visible: AtomicBool,
+    /// Hidden by the user from its menu, until they show it again from the
+    /// tray. For this run only: Settings decides whether it shows at all.
+    user_hidden: AtomicBool,
     /// The repository's built packs, for when there is no daemon.
     built_in: Option<PathBuf>,
     ids: Vec<String>,
@@ -46,6 +49,8 @@ struct App {
     current: Mutex<Option<(String, PathBuf)>>,
     tray: Mutex<Option<tauri::tray::TrayIcon>>,
     characters: Mutex<Option<Submenu<Wry>>>,
+    /// The tray's Show/Hide item, whose label follows the window.
+    visibility: Mutex<Option<MenuItem<Wry>>>,
 }
 
 impl App {
@@ -107,14 +112,7 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
     );
     let _ = window.emit("to-view", serde_json::json!({ "type": "state", "state": state }));
 
-    let visible = snapshot.as_ref().map_or(true, |it| it.visible);
-    let was_visible = app.visible.swap(visible, Ordering::Relaxed);
-    let _ = if visible { window.show() } else { window.hide() };
-    app.pointer.refresh(window);
-    // Shown again, the window is new to the compositor, and tiled again.
-    if visible && !was_visible {
-        settle_on_hyprland(window);
-    }
+    update_visibility(app, window);
 
     // A connected device decides the character, so the tray would only be
     // overruled a moment later; without one, the tray chooses.
@@ -124,6 +122,60 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
         let _ = menu.set_text(if device { "Character (install in Settings)" } else { "Character" });
     }
     show_pack(app, window, false);
+}
+
+/// Show or hide the window: hidden if Settings turns the desktop companion
+/// off, or the user hid it from its menu. The page stops drawing while hidden.
+fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
+    let wanted = app.daemon.lock().unwrap().as_ref().map_or(true, |it| it.visible);
+    let user_hidden = app.user_hidden.load(Ordering::Relaxed);
+    let visible = wanted && !user_hidden;
+    let was_visible = app.visible.swap(visible, Ordering::Relaxed);
+    let _ = if visible { window.show() } else { window.hide() };
+    let _ = window.emit("to-view", serde_json::json!({ "type": "showing", "showing": visible }));
+    app.pointer.refresh(window);
+    if let Some(item) = app.visibility.lock().unwrap().as_ref() {
+        let _ = item.set_text(if user_hidden { "Show Agent Companion" } else { "Hide Agent Companion" });
+        // Settings has it off: showing it from here would be overruled.
+        let _ = item.set_enabled(wanted);
+    }
+    // Shown again, the window is new to the compositor, and tiled again.
+    if visible && !was_visible {
+        settle_on_hyprland(window);
+    }
+}
+
+fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
+    app.user_hidden.store(hidden, Ordering::Relaxed);
+    update_visibility(app, window);
+}
+
+/// Open the Settings page, which the daemon serves with a private token.
+fn open_settings() {
+    std::thread::spawn(|| match daemon::settings_url() {
+        Some(url) => packs::open(&url),
+        None => eprintln!("[settings] the ESP32 daemon is not running"),
+    });
+}
+
+/// The character's own menu, on a right-click: hide it to the tray or menu
+/// bar, open Settings, or close the app.
+#[tauri::command]
+fn show_context_menu(window: WebviewWindow) {
+    let handle = window.app_handle();
+    let build = || -> tauri::Result<Menu<Wry>> {
+        let hide = MenuItem::with_id(handle, "context:hide", "Hide", true, None::<&str>)?;
+        let settings = MenuItem::with_id(handle, "context:settings", "Open Settings…", true, None::<&str>)?;
+        let separator = tauri::menu::PredefinedMenuItem::separator(handle)?;
+        let close = MenuItem::with_id(handle, "context:close", "Close", true, None::<&str>)?;
+        Menu::with_items(handle, &[&hide, &settings, &separator, &close])
+    };
+    match build() {
+        Ok(menu) => {
+            let _ = window.popup_menu(&menu);
+        }
+        Err(error) => eprintln!("[menu] could not build the menu: {error}"),
+    }
 }
 
 /// The page saying where it drew the character.
@@ -188,6 +240,7 @@ fn main() {
         drawn: AtomicBool::new(false),
         ready: AtomicBool::new(false),
         visible: AtomicBool::new(true),
+        user_hidden: AtomicBool::new(false),
         built_in,
         ids,
         chosen: Mutex::new(None),
@@ -195,13 +248,16 @@ fn main() {
         current: Mutex::new(None),
         tray: Mutex::new(None),
         characters: Mutex::new(None),
+        visibility: Mutex::new(None),
     });
 
     let setup = app.clone();
     let serving = app.clone();
     tauri::Builder::default()
         .manage(app.clone())
-        .invoke_handler(tauri::generate_handler![set_region, from_view, start_drag, set_tray_icon])
+        .invoke_handler(tauri::generate_handler![
+            set_region, from_view, start_drag, set_tray_icon, show_context_menu
+        ])
         // Only the pack the page was told to show can be fetched, by its id.
         .register_uri_scheme_protocol(packs::SCHEME, move |_ctx, request| {
             let current = serving.current.lock().unwrap().clone();
@@ -336,10 +392,11 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
         entries.iter().map(|item| item as &dyn tauri::menu::IsMenuItem<Wry>).collect();
     let characters = Submenu::with_items(handle, "Character", !entries.is_empty(), &references)?;
 
+    let visibility = MenuItem::with_id(handle, "visibility", "Hide Agent Companion", true, None::<&str>)?;
     let settings = MenuItem::with_id(handle, "settings", "Open Settings…", true, None::<&str>)?;
     let centre = MenuItem::with_id(handle, "centre", "Bring Back to Centre", true, None::<&str>)?;
     let quit = MenuItem::with_id(handle, "quit", "Quit Agent Companion", true, None::<&str>)?;
-    let menu = Menu::with_items(handle, &[&characters, &settings, &centre, &quit])?;
+    let menu = Menu::with_items(handle, &[&visibility, &characters, &settings, &centre, &quit])?;
 
     let tray_window = window.clone();
     let tray_app = app.clone();
@@ -352,6 +409,10 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
             let id = event.id.as_ref();
             match id {
                 "quit" => handle.exit(0),
+                "visibility" => {
+                    let hidden = tray_app.user_hidden.load(Ordering::Relaxed);
+                    set_user_hidden(&tray_app, &tray_window, !hidden);
+                }
                 // For when it has ended up somewhere unreachable - a screen
                 // that has since gone, or dragged almost off an edge.
                 "centre" => {
@@ -361,12 +422,7 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
                 // The daemon's page, where the character and the desktop
                 // settings live. Asked for each time: its address carries a
                 // token that changes when the daemon restarts.
-                "settings" => {
-                    std::thread::spawn(|| match daemon::settings_url() {
-                        Some(url) => packs::open(&url),
-                        None => eprintln!("[settings] the ESP32 daemon is not running"),
-                    });
-                }
+                "settings" => open_settings(),
                 _ if id.starts_with("pack:") => {
                     let chosen = id.trim_start_matches("pack:").to_string();
                     *tray_app.chosen.lock().unwrap() = Some(chosen.clone());
@@ -389,5 +445,16 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
         .build(handle)?;
     *app.tray.lock().unwrap() = Some(tray);
     *app.characters.lock().unwrap() = Some(characters);
+    *app.visibility.lock().unwrap() = Some(visibility);
+
+    // The character's right-click menu.
+    let menu_window = window.clone();
+    let menu_app = app.clone();
+    handle.on_menu_event(move |handle, event| match event.id.as_ref() {
+        "context:hide" => set_user_hidden(&menu_app, &menu_window, true),
+        "context:settings" => open_settings(),
+        "context:close" => handle.exit(0),
+        _ => {}
+    });
     Ok(())
 }
