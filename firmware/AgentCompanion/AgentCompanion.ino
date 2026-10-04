@@ -1027,6 +1027,9 @@ void setup() {
   characterReady = initializeSpriteStorage();
   if (!characterReady) logMessage("CHARACTER id=none reason=%s\n", spriteStorageError());
   if (!initializeTouchInput()) fatal(touchInputError());
+  // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
+  // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
+  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket);
   const uint8_t storedSoundVolume = loadSoundVolume();
   settings.setSoundVolume(storedSoundVolume);
   setSoundVolume(storedSoundVolume);
@@ -1039,7 +1042,6 @@ void setup() {
   commands = xQueueCreate(8, sizeof(ModeRequest));
   if (!freeFrames || !readyFrames || !commands) fatal("Frame or command queue allocation failed.");
   if (characterReady) startCharacter();
-  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket);
   if (!characterReady) {
     drawShellScreen();
     display.setBrightness(settings.brightness());
