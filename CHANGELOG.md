@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.8.1]
+
+### Fixes
+
+- Fix the Linux AppImage build: remove the musl serialport binding from the bundle
+
 ## [v0.8.0]
 
 ### Features and improvements
