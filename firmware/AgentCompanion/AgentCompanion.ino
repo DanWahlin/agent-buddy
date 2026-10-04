@@ -24,12 +24,15 @@
 #include "src/TouchInput.h"
 #include "src/SettingsMenu.h"
 #include "src/Motion.h"
+#include "src/OrientedDisplay.h"
+#include "src/OrientationSensor.h"
 
 using namespace copilot;
 
 namespace {
 Arduino_ESP32QSPI displayBus(12, 38, 4, 5, 6, 7);
-Arduino_CO5300 display(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
+Arduino_CO5300 panel(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
+OrientedDisplay display(&panel, &displayBus);
 QueueHandle_t freeFrames, readyFrames, commands;
 TaskHandle_t renderTask;
 SpriteRenderer* patchRenderer = nullptr;
@@ -61,6 +64,7 @@ size_t startupFreeInternal = 0;
 bool captureInterrupted = false;
 SettingsMenu settings(kBrightness);
 NetworkManager network;
+OrientationSensor orientationSensor;
 constexpr char kPreferencesNamespace[] = "agent-companion";
 constexpr char kSoundPreference[] = "sound";
 constexpr char kSoundVolumePreference[] = "volume";
@@ -77,6 +81,14 @@ void logMessage(const char* format, ...) {
     return;
   }
   if (Serial.write(reinterpret_cast<const uint8_t*>(message), length) != static_cast<size_t>(length)) ++droppedLogs;
+}
+
+bool updateOrientation() {
+  if (!orientationSensor.update()) return false;
+  const float angle = orientationSensor.angle();
+  display.setAngle(angle);
+  setTouchRotation(angle);
+  return true;
 }
 
 struct Frame {
@@ -434,6 +446,7 @@ void drawSettingsMenu(CharacterMode selected) {
                      selected == CharacterMode::Attention, 1, 34);
   drawSettingsButton(58, 382, 165, "Surprise", selected == CharacterMode::Surprise, 2, 34);
   drawSettingsButton(243, 382, 165, "Close", false, 2, 34);
+  display.flush();
 }
 
 void drawNetworkSettings() {
@@ -489,6 +502,7 @@ void drawNetworkSettings() {
   drawSettingsButton(88, 336, 290, network.setupActive() ? "Restart setup" : "Setup Wi-Fi",
                      network.setupActive(), 2, 44);
   drawSettingsButton(150, 394, 166, "Back", false, 2, 38);
+  display.flush();
 }
 
 void clearCharacterMargins() {
@@ -619,6 +633,7 @@ void drawInstallScreen(const char* source) {
   drawCenteredText("Installing character", 140, 2, 0xE73F);
   drawCenteredText(source, 208, 2, 0x8C71);
   display.drawRoundRect(83, 238, 300, 24, 8, 0x5D19);
+  display.flush();
 }
 
 // The pack's display name arrives in its header, shortly after the transfer starts.
@@ -642,6 +657,7 @@ void drawInstallProgress(uint32_t received, uint32_t total) {
   snprintf(label, sizeof(label), "%d%%", percent);
   display.fillRect(183, 276, 100, 16, 0);
   drawCenteredText(label, 276, 2, 0xE73F);
+  display.flush();
 }
 
 void drawInstallResult(const char* error) {
@@ -654,6 +670,7 @@ void drawInstallResult(const char* error) {
   } else {
     drawCenteredText("Installed. Restarting...", 306, 2, 0x47E9);
   }
+  display.flush();
 }
 
 // Stops pack reads, then erases the old pack; every attempt ends in a restart.
@@ -798,6 +815,7 @@ void drawShellScreen() {
   drawCenteredText("Connect USB or Wi-Fi and run", 236, 1, 0x8C71);
   drawCenteredText("npm run character", 256, 2, 0x8C71);
   drawCenteredText(spriteStorageError() ? spriteStorageError() : "", 300, 1, 0x8C71);
+  display.flush();
 }
 
 bool queueNetworkMode(const char* state) {
@@ -1030,6 +1048,11 @@ void setup() {
   // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
   // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
   network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket);
+  if (!orientationSensor.begin()) {
+    logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
+  } else {
+    logMessage("ORIENTATION sensor=QMI8658 mode=continuous\n");
+  }
   const uint8_t storedSoundVolume = loadSoundVolume();
   settings.setSoundVolume(storedSoundVolume);
   setSoundVolume(storedSoundVolume);
@@ -1037,6 +1060,7 @@ void setup() {
   transferBuffer = static_cast<uint8_t*>(heap_caps_aligned_alloc(
       16, kTransferBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   if (!transferBuffer) fatal("DMA staging allocation failed.");
+  display.setTransferBuffer(transferBuffer, kTransferBytes);
   freeFrames = xQueueCreate(2, sizeof(Frame*));
   readyFrames = xQueueCreate(2, sizeof(Frame*));
   commands = xQueueCreate(8, sizeof(ModeRequest));
@@ -1056,10 +1080,13 @@ void shellLoop() {
   static DeviceCommands parser;
   static uint32_t networkRevision = UINT32_MAX;
   network.update();
+  const bool orientationChanged = updateOrientation();
   if (restartAt || installStarted) return;
   if (network.revision() != networkRevision) {
     drawShellScreen();
     networkRevision = network.revision();
+  } else if (orientationChanged) {
+    display.flush();
   }
   processCommand(parser.expire(esp_timer_get_time() / 1000), parser, nullptr);
   for (unsigned read = 0; read < 64 && Serial.available(); ++read)
@@ -1089,6 +1116,7 @@ void loop() {
     return;
   }
   network.update();
+  updateOrientation();
   if (installStarted) return;
   Frame* frame;
   if (xQueueReceive(readyFrames, &frame, pdMS_TO_TICKS(3000)) != pdTRUE) fatal("Renderer stalled.");
@@ -1110,18 +1138,12 @@ void loop() {
   previousPresentation = start;
   uint32_t transferUs = 0;
   if (!settings.isOpen()) {
-    display.startWrite();
-    display.writeAddrWindow(kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight);
-    const auto* bytes = reinterpret_cast<const uint8_t*>(frame->pixels);
-    constexpr size_t frameBytes = kCharacterFrameWidth * kCharacterFrameHeight * 2;
-    for (size_t offset = 0; offset < frameBytes; offset += kTransferBytes) {
-      const size_t count = std::min(kTransferBytes, frameBytes - offset);
-      std::memcpy(transferBuffer, bytes + offset, count);
-      displayBus.writeBytes(transferBuffer, count);
-    }
-    display.endWrite();
-    transferUs = esp_timer_get_time() - start;
+    display.flushFrame(
+        frame->pixels, kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight);
+  } else {
+    display.flush();
   }
+  transferUs = esp_timer_get_time() - start;
   if (fadeFrame <= 40) {
     display.setBrightness(static_cast<uint8_t>(settings.brightness() * smoother(fadeFrame / 40.0f)));
     ++fadeFrame;
@@ -1159,6 +1181,10 @@ void loop() {
                     frameCount * 1000000.0 / (now - lastReport),
                     renderTotal / (1000.0 * frameCount), transferTotal / (1000.0 * frameCount),
                     maxRender / 1000.0, ESP.getFreePsram(), droppedLogs.load(std::memory_order_relaxed));
+      logMessage("ORIENTATION available=%u angle=%.1f accel=%.3f,%.3f,%.3f\n",
+                    orientationSensor.available(), orientationSensor.angle() * 180.0f / kOrientationPi,
+                    orientationSensor.accelerometerX(), orientationSensor.accelerometerY(),
+                    orientationSensor.accelerometerZ());
       logMessage("STAGES motion=%uus decode=%uus composite=%uus eyes=%uus effects=%uus inflate=%uus predict=%uus\n",
                     timing.motionUs, timing.decodeUs, timing.compositeUs, timing.eyesUs, timing.effectsUs,
                     timing.inflateUs, timing.predictUs);

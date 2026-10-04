@@ -35,6 +35,7 @@ constexpr unsigned kTouchTapMaxMs = 650;
 constexpr int kTouchSwipePixels = 72;
 constexpr unsigned kTouchSwipeMaxMs = 1200;
 constexpr unsigned kTouchSweepMs = 250;
+constexpr unsigned kOrientationPollMs = 16;
 constexpr unsigned kSettingsIdleTimeoutMs = 30000;
 constexpr unsigned kCharacterUploadStallMs = 500;
 constexpr unsigned kCharacterUploadKicks = 3;

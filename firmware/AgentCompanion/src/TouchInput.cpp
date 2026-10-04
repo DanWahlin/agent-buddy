@@ -1,4 +1,5 @@
 #include "TouchInput.h"
+#include "ScreenOrientation.h"
 #ifdef ARDUINO_ARCH_ESP32
 #include <Arduino.h>
 #include <Wire.h>
@@ -22,6 +23,7 @@ bool initialized = false;
 // controller occasionally clears any latched state and also recovers the missed
 // touch itself.
 uint32_t lastTouchReadMs = 0;
+float touchRotation = 0.0f;
 
 void IRAM_ATTR interrupt() {
   portENTER_CRITICAL_ISR(&touchLock);
@@ -32,6 +34,14 @@ void IRAM_ATTR interrupt() {
 }
 
 const char* touchInputError() { return error; }
+
+void setTouchRotation(float radians) {
+#ifdef ARDUINO_ARCH_ESP32
+  touchRotation = radians;
+#else
+  (void)radians;
+#endif
+}
 
 bool initializeTouchInput() {
   error = nullptr;
@@ -78,6 +88,15 @@ bool pollTouchGesture(TouchGesture& gesture) {
   // An idle sweep that finds nothing must not reach the tracker, or the sweep
   // itself could be read as the end of a gesture that never began.
   if (!ready && !tracker.active() && !count) return false;
+  if (count) {
+    int16_t transformedX, transformedY;
+    if (!ScreenOrientation::panelToContent(
+            touchRotation, kDisplaySize, x[0], y[0], transformedX, transformedY)) {
+      return tracker.sample(false, 0, 0, now, gesture);
+    }
+    x[0] = transformedX;
+    y[0] = transformedY;
+  }
   return tracker.sample(count != 0, x[0], y[0], now, gesture);
 #else
   (void)gesture;

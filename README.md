@@ -66,6 +66,8 @@ desktop, with or without the device.
   the connection mode.
 - **Natural motion:** eight looking directions, blinks, touch reactions, and a
   sleep cycle after two idle minutes.
+- **Automatic orientation:** the onboard accelerometer keeps the character,
+  settings, and touch controls upright when the device is rotated.
 - **Wi-Fi or USB:** run it tethered to your computer or from any USB power source
   on the same network.
 - **Optional sound:** short local sound cues through the board's speaker connector.
