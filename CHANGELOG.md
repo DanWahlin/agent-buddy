@@ -2,6 +2,17 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.8.0]
+
+### Features and improvements
+
+- Add the desktop app as the single entry point: Settings window, bundled service, USB firmware install, and Wi-Fi updates approved with BOOT
+
+
+### Fixes
+
+- Fix the Claude frames metadata for the new character partition size
+
 ## [v0.7.0]
 
 ### Build and maintenance
