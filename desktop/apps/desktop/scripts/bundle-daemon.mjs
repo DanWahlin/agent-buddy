@@ -96,6 +96,14 @@ async function main() {
   for (const name of readdirSync(prebuilds)) {
     if (!keep.includes(name)) rmSync(join(prebuilds, name), {recursive: true, force: true});
   }
+  if (platform === 'linux') {
+    // The app runs on glibc only, and linuxdeploy cannot resolve the musl binding's libc.
+    for (const arch of arches) {
+      const dir = join(prebuilds, `linux-${arch}`);
+      if (!existsSync(dir)) continue;
+      for (const name of readdirSync(dir)) if (name.includes('.musl.')) rmSync(join(dir, name), {force: true});
+    }
+  }
   if (readdirSync(prebuilds).length === 0) throw new Error(`serialport has no prebuilt binding for ${target}.`);
 
   mkdirSync(join(output, 'build', 'characters'), {recursive: true});
