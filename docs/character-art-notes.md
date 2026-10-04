@@ -228,8 +228,8 @@ and refuses one that does not match.
 
 ### How much room there is
 
-The device holds one character at a time, in a **13.875 MiB** character
-partition (14,548,992 bytes). The two built-in packs are 9,540,870 bytes
+The device holds one character at a time, in an **11.875 MiB** character
+partition (12,451,840 bytes). The two built-in packs are 9,540,870 bytes
 (Copilot) and 10,000,700 bytes (OpenClaw), so a new character has room, but not
 unlimited room -- and the partition cannot grow: see the 16 MiB ceiling in
 [development.md](development.md), which applies even on a 32 MB board.

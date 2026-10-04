@@ -7,7 +7,7 @@ import type {AgentAdapter, AgentContext, HookStatus} from './types.js';
 
 export const copilotAdapter: AgentAdapter = {
   id: 'copilot',
-  name: 'GitHub Copilot CLI',
+  name: 'GitHub Copilot',
   hint: status => status === 'missing' ? 'Run setup to install the Copilot hook file.' : undefined,
   detect(ctx) {
     const configPath = copilotHookPath(ctx.home);

@@ -1,7 +1,7 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {updateJsonFile} from './file-utils.js';
-import {codexQuote, versionOf} from './commands.js';
+import {codexQuote, isCompanionHookCommand, versionOf} from './commands.js';
 import {attentionPayload, canonicalEvent, namespacePayload, normalized} from './normalize.js';
 import type {AgentAdapter, AgentContext, NormalizedHook} from './types.js';
 import type {HookPayload} from '../protocol.js';
@@ -88,17 +88,20 @@ function removeOurGroups(groups: unknown[], ctx: AgentContext): unknown[] {
   return groups.map(group => {
     if (!group || typeof group !== 'object') return group;
     const copy = {...group as Record<string, unknown>};
-    const hooks = array(copy.hooks).filter(hook => !isOurHook(hook, ctx));
+    const hooks = array(copy.hooks).filter(hook => !isOurHook(hook, ctx, true));
     if (!hooks.length) return null;
     copy.hooks = hooks;
     return copy;
   }).filter(Boolean);
 }
 
-function isOurHook(value: unknown, ctx: AgentContext): boolean {
+// `anyInstall` also matches the hooks of another companion install, to replace them.
+function isOurHook(value: unknown, ctx: AgentContext, anyInstall = false): boolean {
   if (!value || typeof value !== 'object') return false;
   const command = (value as Record<string, unknown>).command;
-  return typeof command === 'string' && command.includes(`${codexQuote(ctx.cli)} hook codex`);
+  if (typeof command !== 'string') return false;
+  return command.includes(`${codexQuote(ctx.cli)} hook codex`)
+    || (anyInstall && isCompanionHookCommand(command, 'codex', ctx));
 }
 
 function containsOurHook(ctx: AgentContext): boolean {

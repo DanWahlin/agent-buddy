@@ -9,6 +9,7 @@ import {isConnectionMode} from './connection-mode.js';
 import {desktopBackdrops, isDesktopBackdrop} from './display-settings.js';
 import {settingsInfoPath} from './paths.js';
 import {isAgentId} from './agents/types.js';
+import {isUsageWindow, usageWindows} from './usage-tracker.js';
 
 export const defaultSettingsPort = 4667;
 const maxJsonBytes = 64 * 1024;
@@ -16,6 +17,8 @@ const eventIntervalMs = 1000;
 const staticFiles: Record<string, [string, string]> = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/theme.js': ['theme.js', 'text/javascript; charset=utf-8'],
+  '/logo.svg': ['logo.svg', 'image/svg+xml'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
 };
 const securityHeaders = {
@@ -30,7 +33,8 @@ const securityHeaders = {
 export interface SettingsServerOptions {
   service: Pick<CompanionService, 'status' | 'installBusy' | 'characters' | 'installCharacter' | 'addCharacter'
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
-    | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'on' | 'off'>;
+    | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
+    | 'stopDesktop' | 'setUsage' | 'updateFirmware' | 'installFirmwareOverUsb' | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
@@ -142,6 +146,31 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         return json(response, 200, {ok: true});
       }
     }
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'firmware' && segments[1] === 'update') {
+      const status = service.status();
+      if (status.installing || status.firmware.updating || service.installBusy)
+        throw new HttpError(409, 'Wait for the current installation to finish.');
+      if (!status.firmware.canUpdate)
+        throw new HttpError(409, status.firmware.built === null ? 'No firmware is built.'
+          : status.firmware.built === status.firmware.device ? 'The device already runs this firmware.'
+          : 'The device must be on Wi-Fi with firmware protocol 9 or later.');
+      // Progress and the result arrive through /api/events.
+      service.updateFirmware().catch(error => console.error(`[settings] firmware update failed: ${
+        error instanceof Error ? error.message : String(error)}`));
+      return json(response, 202, {ok: true});
+    }
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'firmware' && segments[1] === 'usb') {
+      const status = service.status();
+      if (status.installing || status.firmware.updating || status.firmware.usb.installing || service.installBusy)
+        throw new HttpError(409, 'Wait for the current installation to finish.');
+      if (!status.firmware.usb.flasher)
+        throw new HttpError(409, 'Installing firmware over USB needs the desktop app. Open the desktop app, then try again.');
+      if (!status.firmware.usb.release)
+        throw new HttpError(409, 'The companion service has no VERSION file, so it cannot choose a release.');
+      // Download and write progress, and the result, arrive through /api/events.
+      service.installFirmwareOverUsb().catch(() => undefined);
+      return json(response, 202, {ok: true});
+    }
     if (method === 'GET' && segments.length === 2 && segments[0] === 'wifi' && segments[1] === 'networks') {
       return json(response, 200, await service.scanWifi());
     }
@@ -176,6 +205,26 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         throw new HttpError(400, 'Nothing to change.');
       try {
         await service.setDesktop({visible: body.visible, backdrop: body.backdrop, character: body.character});
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
+      return json(response, 200, {ok: true, desktop: service.status().desktop});
+    }
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'usage') {
+      const body = await readJson(request) as {enabled?: unknown; window?: unknown};
+      if (body.enabled !== undefined && typeof body.enabled !== 'boolean')
+        throw new HttpError(400, 'Usage setting must be true or false.');
+      if (body.window !== undefined && !isUsageWindow(body.window))
+        throw new HttpError(400, `Usage window must be one of: ${usageWindows.join(', ')}.`);
+      if (body.enabled === undefined && body.window === undefined) throw new HttpError(400, 'Nothing to change.');
+      await service.setUsage({enabled: body.enabled, window: body.window});
+      return json(response, 200, {ok: true, usage: service.status().usage});
+    }
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'desktop'
+        && (segments[1] === 'start' || segments[1] === 'stop')) {
+      try {
+        if (segments[1] === 'start') await service.startDesktop();
+        else service.stopDesktop();
       } catch (error) {
         throw new HttpError(409, error instanceof Error ? error.message : String(error));
       }

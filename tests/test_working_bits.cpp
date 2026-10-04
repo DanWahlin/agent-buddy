@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <new>
 #include <utility>
@@ -231,7 +232,10 @@ void protectionRestorationAndBudget() {
   first.front() = first.back() = second.front() = second.back() = 0xbeef;
   std::copy(original.begin(), original.end(), first.begin() + 1);
   std::copy(original.begin(), original.end(), second.begin() + 1);
-  CharacterEffects effects(first.data() + 1, second.data() + 1);
+  // The longest usage lines draw every frame on top of the busiest effects.
+  AgentBadges badges;
+  assert(badges.setUsagePacket("AIC: 999,999|Tokens: 999.9B"));
+  CharacterEffects effects(first.data() + 1, second.data() + 1, &badges);
   size_t mostDamage = 0;
   forbidAllocations = true;
   for (int tick = 0; tick < 1440; ++tick) {
@@ -267,6 +271,54 @@ void protectionRestorationAndBudget() {
 }
 }
 
+void usageLinesAtBottom() {
+  AgentBadges badges;
+  assert(badges.setUsagePacket("AIC: 26,458|Tokens: 1.2M"));
+  assert(badges.usage().count == 2);
+  assert(std::strcmp(badges.usage().text[1], "Tokens: 1.2M") == 0);
+  assert(!badges.setUsagePacket("AIC: 1|Tokens: 2|Tokens: 3"));
+  assert(!badges.setUsagePacket("AIC: 1||Tokens: 2"));
+  assert(!badges.setUsagePacket("AIC; 1"));
+  assert(!badges.setUsagePacket("Tokens: 123,456,789"));
+  assert(badges.usage().count == 2);
+
+  first.fill(0);
+  second.fill(0);
+  CharacterEffects effects(first.data() + 1, second.data() + 1, &badges);
+  const CharacterState idle{{0, 0, 0}, CharacterMode::Idle, CharacterMode::Idle, 1, 0};
+  uint16_t* frame = first.data() + 1;
+  draw(effects, idle, frame);
+  int left = kCharacterFrameWidth, right = -1, top = kDisplaySize, bottom = -1;
+  size_t lit = 0;
+  uint16_t labelColor = 0, valueColor = 0;
+  for (size_t i = 0; i < kPixels; ++i) {
+    if (!frame[i]) continue;
+    const int x = i % kCharacterFrameWidth + kCharacterFrameX, y = i / kCharacterFrameWidth;
+    left = std::min(left, x), right = std::max(right, x), top = std::min(top, y), bottom = std::max(bottom, y);
+    ++lit;
+    // "AIC:" starts the first line in the label color; the last line ends with the bright value.
+    if (y < 424 && x < kDisplaySize / 2 - 30) labelColor = frame[i];
+    if (y >= 427) valueColor = frame[i];
+  }
+  assert(lit > 0 && top == 410 && bottom < 427 + 14);
+  // "Tokens: 1.2M" is the wider line: 12 glyphs, centered.
+  assert(right - left + 1 == 12 * 12 - 2 && std::abs((left + right) / 2 - kDisplaySize / 2) <= 1);
+  assert(labelColor && valueColor && labelColor != valueColor);
+
+  assert(badges.setUsagePacket("AIC: 902"));
+  frame = second.data() + 1;
+  draw(effects, idle, frame);
+  top = kDisplaySize;
+  for (size_t i = 0; i < kPixels; ++i)
+    if (frame[i]) top = std::min(top, static_cast<int>(i / kCharacterFrameWidth));
+  assert(top == 420);
+
+  assert(badges.setUsagePacket(""));
+  draw(effects, idle, frame);
+  assert(std::all_of(frame, frame + kPixels, [](uint16_t value) { return value == 0; }));
+  std::cout << "Usage lines: centered at the bottom, label and value colors, cleared by an empty packet\n";
+}
+
 int main(int argc, char**) {
   if (argc > 1) { otherModes(true); return 0; }
   otherModes(false);
@@ -275,6 +327,7 @@ int main(int argc, char**) {
   circularOrbitHasClearance();
   sleepingZsAlternateSides();
   protectionRestorationAndBudget();
+  usageLinesAtBottom();
   std::cout << "Character effects: working bits and alternating sleeping Zs; opposing motion, "
                "wrap/pose continuity, body protection, restoration, canaries and allocation guard passed\n";
 }

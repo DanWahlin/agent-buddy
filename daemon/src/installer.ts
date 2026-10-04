@@ -70,7 +70,7 @@ export function createInstallationPlan(
     ];
     messages.push(`Installed systemd user service: ${servicePath}`);
   }
-  messages.push('Restart Copilot CLI to load the new hooks.');
+  messages.push('Restart GitHub Copilot to load the new hooks.');
   return {files, commands, messages};
 }
 

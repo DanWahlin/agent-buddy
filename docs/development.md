@@ -28,12 +28,15 @@ but the application and partition table change. Do not assume existing factory
 application data remains compatible. This project never writes to the battery
 charger configuration.
 
-The current source uses a custom **2 MiB application partition** and a separate
-**13.875 MiB character partition** that holds exactly one character pack. The
-application is a shell: it contains no artwork or frame tables. A complete
-upload writes the application, partition table, and default Copilot pack
-together. Firmware verifies the pack's SHA-256 before animation starts. There is
-no OTA slot or flash filesystem.
+The current source uses two **2 MiB application slots** (`app0`, `app1`) for
+updates over Wi-Fi and a separate **11.875 MiB character partition** that holds
+exactly one character pack. The application is a shell: it contains no artwork
+or frame tables. A complete upload writes the application, partition table, and
+default Copilot pack together. Firmware verifies the pack's SHA-256 before
+animation starts. There is no flash filesystem. Devices that have the older
+layout (one 2 MiB slot and a 13.875 MiB character partition) need one complete
+USB upload before they can update over Wi-Fi. That upload also installs the
+character again.
 
 ### 16 MiB is a hard ceiling, even on a 32 MB board
 
@@ -207,7 +210,7 @@ duplicate commands and uninstalling doesn't remove another tool's hook.
 
 | Agent | Install target | Event notes | Approval notes |
 | --- | --- | --- | --- |
-| Copilot CLI | `~/.copilot/hooks/agent-companion.json` | Existing v1 event names map directly. The old `hook <event>` command still works and is treated as Copilot. | Restart Copilot CLI after setup. |
+| GitHub Copilot | `~/.copilot/hooks/agent-companion.json` | Existing v1 event names map directly. The old `hook <event>` command still works and is treated as Copilot. | Restart GitHub Copilot after setup. |
 | Claude Code | `~/.claude/settings.json` | `PermissionRequest`, `Elicitation`, and selected notifications become Needs attention. `AskUserQuestion` and `ExitPlanMode` are treated as waiting for the user. | Claude may ask for folder trust. |
 | Codex CLI | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | Permission and elicitation notifications become Needs attention. `Stop` only completes when its reason is `end_turn`; channel shutdown clears. | Grok's hook directory is trusted. Claude hooks invoked by Grok are ignored when Grok's own hook is installed and enabled. |
@@ -245,11 +248,42 @@ Wi-Fi exposes the same data as authenticated text bodies:
 | --- | --- | --- |
 | `POST /icon` | the `%...` icon packet | Requires `Authorization: Bearer <token>`. |
 | `POST /agents` | the `&...` active-list packet | `&\n` clears badges. |
+| `POST /usage` | the `$...` usage packet | `$\n` clears the usage lines. |
 
 `GET /status` includes the firmware `protocol` number so the daemon can skip
 badge endpoints for older firmware. Badge visibility lives in `display.json`
 beside `state.json` and defaults to on. The settings page exposes the toggle and
 shows badge previews from the same 24 x 24 masks the daemon sends to the device.
+
+### Usage lines
+
+Protocol 8 adds usage text at the bottom of the screen. The daemon's
+`usage-tracker.ts` reads the agents' own session logs. It takes GitHub Copilot's
+cumulative `totalNanoAiu` from `session.usage_checkpoint` and `session.shutdown`
+events (AIC = nano / 1e9, the same conversion as the CLI's "AIC used"; the
+checkpoint is written at the end of each turn and includes sub-agents). Copilot
+tokens are not counted: `session.shutdown` `modelMetrics` are lost when a session
+does not stop cleanly, and sub-agent tokens are only in `agentMetrics`, which can
+repeat the main agent. It takes Claude Code's input, cache-creation and
+output tokens (de-duplicated by message id), and Codex CLI's last `token_count`
+total (input minus cached, plus output). The window is Today, This month, or
+Active sessions, set in `display.json` (`showUsage`, `usageWindow`).
+
+`deviceUsageLines()` picks what the device shows from the running agents
+(`agentActivity()`): `AIC` while Copilot runs, else `Tokens` while another agent
+runs, else nothing. The service sends it again when sessions start or stop. The
+status JSON has `usage.lines` (the device and desktop lines) and `usage.summary`
+(both values, for Settings).
+
+The daemon sends a packet such as `$AIC: 902|Tokens: 1.2M\n`: up to two lines of up to 18
+characters, from letters, digits, space and `,.:`. `$\n` clears them. The
+device replies `USAGE accepted=N`. The daemon sends usage only to protocol 8 or
+later firmware, and only when the lines change.
+
+`CharacterEffects` draws the lines with a 5 x 7 font at scale 2, centered below
+the character art (display y 410 and up). The label up to `:` is dim and the
+value is bright. In Sleep both are dimmed. The desktop engine gets the same
+packet through `ac_usage()`.
 
 Default glyphs live in `daemon/src/agent-badges.ts` as 24-line ASCII masks with
 brand-evocative colors. They're hand-drawn pixel art, and some (like OpenClaw's
@@ -258,6 +292,72 @@ override them locally with `<daemon data>/icons/<id>.png`; the dependency-free
 decoder accepts 8-bit, non-interlaced grayscale, grayscale+alpha, RGB, and RGBA
 PNGs and converts alpha or luminance to the mask. An optional adjacent
 `<id>.json` can set `{ "color": "#RRGGBB" }`, the accent used for the glyph and ring on the dark badge.
+
+### Firmware updates over Wi-Fi
+
+The firmware ID is the first 8 bytes of the application's ELF SHA-256, as 16
+hex digits. The device reads it from `esp_app_get_description()`, and
+`daemon/src/firmware-image.ts` reads the same bytes from the `.bin` (offset 176;
+the app description starts at offset 32 with magic `0xABCD5432`). The daemon
+compares the device ID with the built image at
+`build/firmware/AgentCompanion.ino.bin` (`AGENT_COMPANION_FIRMWARE` overrides
+the path). The settings page shows the result in the **Device firmware** row on
+the Device tab, and **Update** calls `POST /api/firmware/update`.
+
+Protocol 11 and later firmware also needs a BOOT button press, because the
+pairing token goes over plain HTTP and a person on the same network could copy
+it. The daemon first sends `POST /firmware/approval` with the token. The device
+shows **Press BOOT to allow it** for 60 seconds, and `GET /status` reports
+`"firmwareApproval":"waiting"`. A BOOT press in that time changes the state to
+`allowed` for 60 seconds. That press does not open Settings. The daemon polls
+`GET /status` every 500 ms, and the settings page shows **Press BOOT** during
+the wait. The next `POST /firmware` uses the approval, so each update needs a
+new press. Without an approval the device refuses the upload with
+`Press the BOOT button on the device to allow the update.`
+
+The daemon sends the raw image to the device's `POST /firmware` route with the
+pairing token and an `X-Firmware-MD5` header. The device writes the free slot,
+checks the MD5, replies, and restarts. During the upload the device does not
+read USB, so the daemon closes the USB port until the upload ends; if the port
+stayed open, USB commands would time out and the port would open again in the
+middle of the upload. The new image starts as pending. The device confirms it
+when it joins Wi-Fi, or goes back to the previous slot after 90 seconds. The
+settings page shows **Went back** if the old ID returns.
+
+Only an application image goes over Wi-Fi. A change to the partition table,
+the bootloader, or the character partition layout still needs a complete USB
+upload.
+
+### Firmware installs over USB
+
+The **Install over USB** row on the Device tab installs the release that matches
+the daemon's `VERSION` (`v<VERSION>`, not "latest"), so the firmware and the
+service always match. `POST /api/firmware/usb` starts it, and
+`status.firmware.usb` reports the release, the USB port, the stage, and the
+result.
+
+1. `daemon/src/firmware-release.ts` downloads `SHA256SUMS` and
+   `esp32-agent-companion-v<VERSION>-firmware.zip` from the GitHub release
+   (`AGENT_COMPANION_RELEASES_URL` overrides the base URL), checks the zip's
+   SHA-256, extracts `manifest.json` and `bin/`, checks the inner `SHA256SUMS`
+   and the manifest, and keeps the result in `<daemon data>/firmware/v<VERSION>`.
+   A later install uses that copy.
+2. The daemon closes its USB port and runs the desktop app's binary with
+   `--flash-firmware <folder> --port <port>` (`daemon/src/usb-flasher.ts`).
+3. That mode ([`flasher.rs`](../desktop/apps/desktop/src-tauri/src/flasher.rs))
+   checks the manifest again with the same rules as `tools/flash_release.py`,
+   then writes the five images with [espflash](https://github.com/esp-rs/espflash)
+   and resets the device. It prints `stage`, `progress`, and `done` or
+   `error` lines, which the daemon shows in Settings.
+4. The daemon opens USB again, and the device reconnects with the release's
+   firmware ID.
+
+Only a desktop app that reports `flasher: 1` in its `status` request can do
+this, so the row asks for the desktop app when none has. The USB transport
+finds an ESP32-S3 port (USB VID `0x303a`) that does not answer as an Agent
+Companion, and the row then offers the install for a new device. The install
+keeps NVS, so Wi-Fi settings stay, but the character partition gets the
+release's Copilot pack.
 
 ### Settings page
 
@@ -691,7 +791,7 @@ pre-scaled offline to the original 400 x 352 display region within the logical
 412-pixel row stride. Shared black borders are then cropped without changing
 any displayed pixels. The deployed thirteen-track payload is **9,526,790 bytes**,
 down from 13,776,811 bytes: **4,250,021 bytes saved (30.85%)**, with
-**5,022,202 bytes free** in the character partition. The largest decoded eye patch remains
+**2,925,050 bytes free** in the character partition. The largest decoded eye patch remains
 14,904 bytes. Its SHA256 is
 `ca175574c42c39d0c40b07a2d484cf9a7b463f721eb911c292e1187d8f1764e3`.
 Install changed artwork with a full upload or `npm run character copilot`.
@@ -939,7 +1039,22 @@ provisioning, and protocol 5 replaces the SD OpenClaw upload with character-pack
 installation (`u`). Protocol 7 adds a USB Wi-Fi scan (`w`): the device
 scans without blocking the render loop and replies with up to 30
 `WIFI_NETWORK rssi=<dBm> secure=<0|1> ssid_b64=<base64>` lines, then
-`WIFI_SCAN_END count=N` or `WIFI_SCAN_ERROR <reason>`. A join attempt in
+`WIFI_SCAN_END count=N` or `WIFI_SCAN_ERROR <reason>`. Protocol 8 adds the
+`$` usage packet (see [Usage lines](#usage-lines)). Protocol 9 adds
+`firmware=<id>` to the `i` reply and to `GET /status`, and the Wi-Fi
+`POST /firmware` route (see [Firmware updates over Wi-Fi](#firmware-updates-over-wi-fi)).
+Protocol 10 reports BOOT button (GPIO0) presses. The firmware debounces the
+button and counts presses since boot. It sends `BUTTON settings presses=N` over
+USB and adds `"buttonPresses":N` to `GET /status`. The daemon reads both, drops
+a count that it already saw in the last 10 seconds (USB and Wi-Fi report the
+same press), and opens Settings. If the desktop app follows the daemon, the
+reply to its status poll carries `desktopCommand: "settings"` and the app opens
+its Settings window. If not, the daemon opens a browser tab. Protocol 11 needs
+a BOOT press before a Wi-Fi firmware update (see
+[Firmware updates over Wi-Fi](#firmware-updates-over-wi-fi)). The USB transport
+re-reads `i` after each `READY` banner, so the protocol and firmware ID stay
+current after an update. Keep `maxProtocol` in `daemon/src/usb-transport.ts`
+equal to `kDeviceProtocol` in the firmware. A join attempt in
 progress pauses for the scan and resumes when it ends. The settings page reads
 the merged list from `GET /api/wifi/networks`. While the device reports a saved
 network that it hasn't joined, the daemon re-reads `i` every five seconds so the

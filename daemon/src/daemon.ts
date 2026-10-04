@@ -13,6 +13,7 @@ import {isAgentId} from './agents/types.js';
 import {defaultAgentContext, normalizeAgentHook} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
 import {desktopBackdrops, isDesktopBackdrop} from './display-settings.js';
+import {isUsageWindow, usageWindows} from './usage-tracker.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
@@ -20,12 +21,13 @@ export async function runDaemon(): Promise<void> {
   let lastAutoInstall = 0;
   let service: CompanionService | undefined;
   // A device that lost its pack (for example, an interrupted install) gets the preferred one back.
+  let settingsUrl: string | null = null;
   const transport = new DeviceTransport(() => {
     if (!service || transport.installing || Date.now() - lastAutoInstall < autoInstallRetryMs) return;
     lastAutoInstall = Date.now();
     service.restoreCharacter().catch(error => console.error(`[character] automatic install failed: ${
       error instanceof Error ? error.message : String(error)}`));
-  });
+  }, () => void service?.openSettings(settingsUrl));
   const store = new StateStore(statePath());
   const restored = await store.load();
   const agentContext = defaultAgentContext();
@@ -35,6 +37,7 @@ export async function runDaemon(): Promise<void> {
     onMutation: state => {
       store.schedule(state);
       service?.syncBadges();
+      service?.syncUsage();
     },
   });
   service = new CompanionService(transport, coordinator, agentContext, badgeIcons);
@@ -42,14 +45,15 @@ export async function runDaemon(): Promise<void> {
   void service.refreshCharacterPacks();
   await service.refreshWifiPairing();
   await service.refreshCharacterPreference();
+  void service.loadSavedRelease();
   transport.setState(coordinator.state);
   service.syncBadges();
+  service.startUsage();
   const path = socketPath();
   await mkdir(dirname(path), {recursive: true, mode: 0o700});
   await removeStaleSocket(path);
 
   const companion = service;
-  let settingsUrl: string | null = null;
   const server = createServer({allowHalfOpen: true},
     socket => handleSocket(socket, coordinator, transport, companion, () => settingsUrl));
   server.on('error', error => {
@@ -69,6 +73,7 @@ export async function runDaemon(): Promise<void> {
   settingsUrl = await startSettingsServer(companion);
 
   const shutdown = async () => {
+    companion.stopUsage();
     coordinator.close();
     await store.flush(coordinator.snapshot());
     await transport.stop();
@@ -112,7 +117,11 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
         transport.setState(request.state);
         respond(socket, {ok: true, state: request.state});
       } else if (request.type === 'status') {
-        respond(socket, service.status());
+        const command = request.client === 'desktop'
+          ? service.desktopSeen({
+            executable: request.executable, environment: request.environment, flasher: request.flasher,
+          }) : null;
+        respond(socket, command ? {...service.status(), desktopCommand: command} : service.status());
       } else if (request.type === 'agents') {
         respond(socket, service.agentStatuses());
       } else if (request.type === 'agentEnable' && isAgentId(request.agent)) {
@@ -143,6 +152,13 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
           throw new Error('Desktop character must be a character id.');
         const change = {visible: request.visible, backdrop: request.backdrop, character: request.character};
         reply(service.setDesktop(change).then(() => ({ok: true, desktop: service.status().desktop})));
+      } else if (request.type === 'usage') {
+        if (request.enabled !== undefined && typeof request.enabled !== 'boolean')
+          throw new Error('Usage must be on (true) or off (false).');
+        if (request.window !== undefined && !isUsageWindow(request.window))
+          throw new Error(`Usage window must be one of: ${usageWindows.join(', ')}.`);
+        reply(service.setUsage({enabled: request.enabled, window: request.window})
+          .then(() => ({ok: true, usage: service.status().usage})));
       } else if (request.type === 'listCharacters') {
         reply(service.characters());
       } else if (request.type === 'settings') {

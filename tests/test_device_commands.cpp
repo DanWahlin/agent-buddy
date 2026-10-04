@@ -12,7 +12,7 @@ static DeviceCommand send(DeviceCommands& parser, const std::string& text) {
 }
 
 int main() {
-  static_assert(kDeviceProtocol == 7);
+  static_assert(kDeviceProtocol == 11);
   DeviceCommands parser;
   for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
                                 DeviceCommand::Complete, DeviceCommand::Attention}) {
@@ -33,6 +33,11 @@ int main() {
   assert(std::strcmp(parser.payload(), "copilot=w,claude=a,codex=c") == 0);
   assert(send(parser, "&\n") == DeviceCommand::SetAgentBadges);
   assert(std::strcmp(parser.payload(), "") == 0);
+  assert(send(parser, "$AIC: 26,458|Tokens: 1.2M\n") == DeviceCommand::SetUsage);
+  assert(std::strcmp(parser.payload(), "AIC: 26,458|Tokens: 1.2M") == 0);
+  assert(send(parser, "$\n") == DeviceCommand::SetUsage);
+  assert(std::strcmp(parser.payload(), "") == 0);
+  assert(send(parser, "$AIC: <1>\n") == DeviceCommand::Invalid);
   assert(send(parser, "@invalid packet\n") == DeviceCommand::Invalid);
   assert(send(parser, "%copilot?:6F7CFF:" + mask + "\n") == DeviceCommand::Invalid);
   assert(send(parser, "&copilot=W\n") == DeviceCommand::Invalid);
@@ -46,5 +51,5 @@ int main() {
   assert(parser.expire(1000) == DeviceCommand::Invalid);
   assert(send(parser, "!attention\n") == DeviceCommand::Attention);
   assert(send(parser, "%" + std::string(192, 'a') + "\n") == DeviceCommand::Invalid);
-  std::cout << "PASS: bounded mode, Wi-Fi, badge packets, legacy diagnostics, CRLF, overflow and timeout recovery\n";
+  std::cout << "PASS: bounded mode, Wi-Fi, badge and usage packets, legacy diagnostics, CRLF, overflow and timeout recovery\n";
 }

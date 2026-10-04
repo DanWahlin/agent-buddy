@@ -36,7 +36,19 @@ class NetworkManager {
   const char* pairingCode() const { return pairingCode_; }
   const char* deviceId() const { return deviceId_; }
   const char* token() const { return token_; }
+  // The first 16 hex digits of the running firmware's ELF SHA-256, as GET /status reports it.
+  const char* firmwareId() const { return firmwareId_; }
   uint32_t revision() const { return revision_; }
+  // How many times the BOOT button was pressed since startup; GET /status reports it.
+  void setButtonPresses(uint32_t presses) { buttonPresses_ = presses; }
+  // A Wi-Fi firmware update needs a BOOT press on the device. The daemon asks first (Waiting),
+  // the press allows one upload (Allowed), and each state ends after kFirmwareApprovalMs.
+  enum class FirmwareApproval : uint8_t { None, Waiting, Allowed };
+  FirmwareApproval firmwareApproval() const;
+  // Called on a BOOT press while the approval waits. Returns false when nothing waits.
+  bool approveFirmware();
+  // The device received new firmware and restarts into it.
+  bool firmwareRestarting() const { return restartAt_ != 0; }
 
  private:
   void configureRoutes();
@@ -45,9 +57,13 @@ class NetworkManager {
   void handlePair();
   void handleState();
   void handleIcon();
-  void handleAgents();
+  void handleBadge(const char* fallback);
   void handleCharacterBody();
   void handleCharacterResponse();
+  void handleFirmwareBody();
+  void handleFirmwareResponse();
+  void handleFirmwareApproval();
+  void confirmFirmware();
   void handleDiscovery();
   void updateConnection();
   void updateScan();
@@ -63,6 +79,14 @@ class NetworkManager {
   const char* uploadError_ = nullptr;
   bool uploadAuthorized_ = false;
   bool uploadStarted_ = false;
+  const char* firmwareError_ = nullptr;
+  bool firmwareAuthorized_ = false;
+  bool firmwareStarted_ = false;
+  bool firmwarePending_ = false;
+  FirmwareApproval firmwareApproval_ = FirmwareApproval::None;
+  uint32_t firmwareApprovalUntil_ = 0;
+  uint32_t restartAt_ = 0;
+  char firmwareId_[17] = {};
   char ssid_[33] = {};
   char password_[65] = {};
   char token_[33] = {};
@@ -84,5 +108,6 @@ class NetworkManager {
   uint32_t stopSetupAt_ = 0;
   uint32_t reconnectAt_ = 0;
   uint32_t revision_ = 0;
+  uint32_t buttonPresses_ = 0;
 };
 }

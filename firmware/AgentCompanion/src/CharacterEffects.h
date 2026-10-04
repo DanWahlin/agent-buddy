@@ -48,6 +48,7 @@ class CharacterEffects {
   };
   void workingBits(double seconds);
   void sleepingZs(double seconds);
+  void usageText(const CharacterState& state);
   uint16_t* outputs_[2];
   const AgentBadges* badges_ = nullptr;
   uint32_t damage_[2][kDamageBudget] = {};

@@ -40,8 +40,49 @@ cd desktop
 npm install
 npm start            # builds the page and app icon, then cargo run --release
 npm test             # typecheck, engine freshness, parity and cut-out tests
-npm run bundle -w @agent-companion/desktop   # the installable app, as releases ship it
+npm run bundle -w @agent-companion/desktop   # the installable app, without the service
 ```
+
+### The bundled companion service
+
+Release builds for macOS and Linux carry the daemon, so a user needs only the
+app. To build one as a release does:
+
+```bash
+cd desktop/apps/desktop
+node scripts/bundle-daemon.mjs --target universal-apple-darwin   # or no --target, for this computer
+npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemon.conf.json
+```
+
+- [`scripts/bundle-daemon.mjs`](apps/desktop/scripts/bundle-daemon.mjs) builds
+  the daemon and puts it in `src-tauri/daemon-runtime` (ignored by Git), with
+  its production dependencies, the packs from `build/characters`, `VERSION`, and
+  the official Node.js binary, checked against its `SHASUMS256.txt`. Node.js is
+  about 128 MB for each architecture, and the universal macOS build has two.
+  In CI, the packs come from the release's `-characters.zip`.
+- [`tauri.daemon.conf.json`](apps/desktop/src-tauri/tauri.daemon.conf.json)
+  adds that folder to the app's resources. A build without it (`npm start`,
+  `cargo run`, the Windows app) carries no service and never installs one.
+- [`service.rs`](apps/desktop/src-tauri/src/service.rs) runs at start. The
+  daemon's `status` has `service: {root, version}`, the folder it runs from and
+  its `VERSION`. If no daemon answers within 10 s, the app copies the resource to
+  `<data folder>/runtime`, runs its `install.js` with the user's login-shell
+  `PATH`, and opens Settings. If the daemon from `runtime` runs at another
+  version, it copies and installs again. It leaves a daemon from any other folder,
+  such as a clone, alone.
+- The hook installers replace the hooks of any companion install (a path that
+  ends in `daemon/dist/src/cli.js`), so a change between a clone and the app's
+  copy never leaves two sets of hooks.
+
+### Firmware installs over USB
+
+The app's binary also installs firmware. With `--flash-firmware <folder> --port
+<port> [--pid <hex>]`, [`flasher.rs`](apps/desktop/src-tauri/src/flasher.rs) runs
+before Tauri starts, opens no window, writes the release in `<folder>` to the
+device with espflash, and exits. The daemon starts this mode from the
+**Install over USB** row in Settings; see
+[Firmware installs over USB](../docs/development.md#firmware-installs-over-usb).
+Every build of the app has this mode, also a build without the bundled service.
 
 The engine is committed, in [`engine/prebuilt`](engine/prebuilt): one 110 KB
 JavaScript file with the WebAssembly embedded, so the app builds with Rust and

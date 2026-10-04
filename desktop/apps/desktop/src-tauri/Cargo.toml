@@ -20,6 +20,11 @@ serde_json = "1"
 tauri-plugin-single-instance = "2"
 # Tauri's own async runtime, made small: one worker, not one per core.
 tokio = { version = "1", features = ["rt-multi-thread"] }
+# Installs release firmware over USB (--flash-firmware). Without the CLI
+# feature it is the flashing library only; serialport without libudev.
+espflash = { version = "~4.5", default-features = false, features = ["serialport"] }
+serialport = { version = "4.7", default-features = false }
+sha2 = "0.11"
 
 # macOS: read the cursor from any thread, without a round trip to the main
 # thread. Already in the build through Tauri.

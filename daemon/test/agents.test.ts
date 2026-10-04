@@ -74,6 +74,34 @@ test('Claude reinstall after a Node upgrade replaces the old hooks instead of du
   }
 });
 
+test('installing from the desktop app\'s copy replaces a repository install\'s hooks, and back', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  const app = {...ctx, node: '/data/runtime/node', cli: '/data/runtime/daemon/dist/src/cli.js'};
+  try {
+    const settings = join(home, '.claude', 'settings.json');
+    await mkdir(join(home, '.claude'), {recursive: true});
+    // Someone else's hook that happens to run a cli.js is kept.
+    await writeFile(settings, JSON.stringify({hooks: {SessionStart: [{hooks: [
+      {type: 'command', command: '/opt/node', args: ['/other/cli.js', 'hook', 'claude', 'SessionStart']}]}]}}));
+    for (const install of [ctx, app, ctx]) {
+      await claudeAdapter.install(install);
+      await codexAdapter.install(install);
+      await hermesAdapter.install(install);
+    }
+    const claude = JSON.parse(await readFile(settings, 'utf8'));
+    assert.deepEqual(claude.hooks.SessionStart.map((group: {hooks: Array<{args: string[]}>}) => group.hooks[0]?.args[0]),
+                     ['/other/cli.js', ctx.cli]);
+    const codex = await readFile(join(home, '.codex', 'hooks.json'), 'utf8');
+    assert.equal(codex.includes(app.cli), false);
+    assert.equal(JSON.parse(codex).hooks.SessionStart.length, 1);
+    const hermes = await readFile(join(home, '.hermes', 'config.yaml'), 'utf8');
+    assert.equal(hermes.includes(app.cli), false);
+    assert.equal(hermes.split('hook hermes on_session_start').length - 1, 1);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('config edits write through symlinks and refuse malformed JSON', async () => {
   const {home, ctx, cleanup} = await fixture();
   try {

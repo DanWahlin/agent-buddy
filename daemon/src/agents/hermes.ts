@@ -1,7 +1,7 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {isMap, isScalar, parseDocument, stringify} from 'yaml';
-import {shellQuote, versionOf} from './commands.js';
+import {isCompanionHookCommand, shellQuote, versionOf} from './commands.js';
 import {readText, writeTextAtomically} from './file-utils.js';
 import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
 import type {AgentAdapter, AgentContext, NormalizedHook} from './types.js';
@@ -118,7 +118,7 @@ function currentHooks(source: string): Record<string, HookEntry[]> {
 function withoutOurHooks(hooks: Record<string, HookEntry[]>, ctx: AgentContext): Record<string, HookEntry[]> {
   const result: Record<string, HookEntry[]> = {};
   for (const [event, entries] of Object.entries(hooks)) {
-    const kept = entries.filter(entry => !isOurCommand(String(entry?.command ?? ''), ctx));
+    const kept = entries.filter(entry => !isCompanionHookCommand(String(entry?.command ?? ''), 'hermes', ctx));
     if (kept.length) result[event] = kept;
   }
   return result;

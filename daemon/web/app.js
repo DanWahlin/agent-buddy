@@ -6,11 +6,6 @@ const statePhrases = {
   idle: 'is idle', surprise: 'is surprised', working: 'is working', complete: 'just finished',
   attention: 'needs your attention',
 };
-const modeHints = {
-  auto: 'Uses USB when the cable is connected, otherwise Wi-Fi.',
-  wifi: 'Always uses Wi-Fi. A connected USB cable only provides power.',
-  usb: 'Only uses USB.',
-};
 
 // The session token arrives in the URL fragment, so it's never sent in a request line.
 function sessionToken() {
@@ -198,16 +193,15 @@ async function agentAction(id, action) {
 }
 
 function renderStatus() {
-  const pill = $('connection');
   if (!status) {
-    pill.textContent = 'Service offline';
-    pill.className = 'pill offline';
+    $('fact-connection').textContent = 'Service offline';
     $('summary').textContent = 'Waiting for the companion service…';
+    renderDesktopApp();
+    renderUsage();
+    renderFirmware();
     return;
   }
   const connected = status.connected;
-  pill.textContent = connected ? (status.transport === 'wifi' ? 'Wi-Fi' : 'USB') : 'Not connected';
-  pill.className = `pill ${connected ? status.transport : 'warning'}`;
   $('summary').textContent = connected
     ? (status.character === 'none' ? 'No character is installed yet.'
       : `${characterName(status.character)} ${statePhrases[status.state] ?? status.state}.`)
@@ -224,13 +218,20 @@ function renderStatus() {
     network.textContent = `Network: ${status.network.ssid}${status.network.connected ? '' : ' (not connected)'}`;
     connection.append(network);
   }
-  $('fact-character').textContent = connected
-    ? (status.character === 'none' ? 'None installed' : characterName(status.character)) : '—';
-  const driving = status.drivingAgents?.length
-    ? ` · ${status.drivingAgents.map(id => status.agents?.find(agent => agent.id === id)?.name ?? id).join(', ')}`
-    : '';
-  $('fact-state').textContent = `${stateNames[status.state] ?? status.state}${driving}`;
-  $('fact-sessions').textContent = String(status.sessions);
+  renderUsage();
+  const state = $('fact-state');
+  state.textContent = stateNames[status.state] ?? status.state;
+  const active = (status.agents ?? []).filter(agent => agent.activeSessions > 0 || agent.driving);
+  if (active.length) {
+    const list = document.createElement('ul');
+    list.className = 'fact-agents';
+    for (const agent of active) {
+      const item = document.createElement('li');
+      item.textContent = agent.activeSessions ? `${agent.name} (${agent.activeSessions})` : agent.name;
+      list.append(item);
+    }
+    state.append(list);
+  }
   const badgesToggle = $('badges-toggle');
   // Don't let an update that raced a click undo the switch the user just flipped.
   if (badgesToggle && !badgesPending) badgesToggle.checked = status.badges?.enabled !== false;
@@ -246,8 +247,11 @@ function renderStatus() {
     if (!desktopPending) frameToggle.checked = desktop.backdrop !== 'none';
     frameToggle.disabled = desktop.visible === false;
   }
+  renderDesktopApp();
 
-  $('mode-hint').textContent = modeHints[status.mode] ?? '';
+  for (const line of document.querySelectorAll('#mode-hint [data-mode]')) {
+    line.classList.toggle('current', line.dataset.mode === status.mode);
+  }
   // Wi-Fi credentials travel over USB, so the form needs an active USB connection.
   const usbReady = status.connected && status.transport === 'usb';
   $('wifi-form').querySelector('button[type="submit"]').disabled = !usbReady;
@@ -258,7 +262,7 @@ function renderStatus() {
   $('wifi-hint').textContent = usbReady
     ? 'Enter a 2.4 GHz network. The password goes straight to the device over USB and isn\'t stored on this computer.'
     : status.mode === 'wifi'
-      ? 'Changing the Wi-Fi network uses USB. Set Connection to Auto with the cable plugged in first.'
+      ? 'Changing the Wi-Fi network uses USB. Set Device connection to Auto with the cable plugged in first.'
       : 'Connect the device over USB to set up or change its Wi-Fi network.';
 
   const install = status.installing;
@@ -354,8 +358,20 @@ async function installCharacter(entry) {
   }
 }
 
+// An in-page dialog, because the desktop app's Settings window has no window.confirm().
+function confirmAction(message, action) {
+  const dialog = $('confirm');
+  $('confirm-message').textContent = message;
+  $('confirm-ok').textContent = action;
+  dialog.returnValue = '';
+  dialog.showModal();
+  return new Promise(resolve => {
+    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'ok'), {once: true});
+  });
+}
+
 async function removeCharacter(entry) {
-  if (!confirm(`Remove ${entry.name} from this computer?`)) return;
+  if (!await confirmAction(`Remove ${entry.name} from this computer?`, 'Remove')) return;
   try {
     await api(`/api/characters/${encodeURIComponent(entry.id)}`, {method: 'DELETE'});
     toast(`Removed ${entry.name}.`, 'success');
@@ -444,6 +460,14 @@ $('wifi-form').addEventListener('submit', async event => {
   }
 });
 
+// Escape closes the connection help until the pointer or focus leaves it.
+const modeHelp = $('mode-help');
+modeHelp.addEventListener('keydown', event => {
+  if (event.key === 'Escape') modeHelp.classList.add('dismissed');
+});
+modeHelp.addEventListener('mouseleave', () => modeHelp.classList.remove('dismissed'));
+modeHelp.addEventListener('focusout', () => modeHelp.classList.remove('dismissed'));
+
 for (const button of document.querySelectorAll('#modes button')) {
   button.addEventListener('click', async () => {
     try {
@@ -485,7 +509,318 @@ $('device-frame-toggle')?.addEventListener('change', event => {
     framed ? 'The device is shown around the character.' : 'Only the character is shown.');
 });
 
+const desktopAppViews = {
+  running: {pill: 'Running', kind: 'usb', hint: 'The desktop app is open. Stop closes it.'},
+  starting: {pill: 'Starting…', kind: 'warning', hint: 'Opening the desktop app…'},
+  stopping: {pill: 'Closing…', kind: 'warning', hint: 'Closing the desktop app…'},
+  stopped: {pill: 'Not running', kind: 'offline', hint: 'The desktop app is closed. Start opens it.'},
+};
+let desktopAppPending = false;
+
+function renderDesktopApp() {
+  const pill = $('desktop-app-state');
+  const hint = $('desktop-app-hint');
+  const start = $('desktop-app-start');
+  const stop = $('desktop-app-stop');
+  const app = status?.desktop?.app;
+  if (!app) {
+    pill.textContent = status ? 'Unknown' : 'Checking…';
+    pill.className = 'pill offline';
+    // A service that started before this feature existed sends no app status.
+    hint.textContent = status
+      ? 'Restart the companion service (run npm run setup) to start and stop the desktop app here.'
+      : 'Waiting for the companion service…';
+    start.disabled = true;
+    stop.disabled = true;
+    return;
+  }
+  const view = desktopAppViews[app.state] ?? desktopAppViews.stopped;
+  pill.textContent = view.pill;
+  pill.className = `pill ${view.kind}`;
+  start.disabled = desktopAppPending || app.state !== 'stopped' || !app.canStart;
+  stop.disabled = desktopAppPending || app.state !== 'running';
+  hint.textContent = app.state === 'stopped' && app.error ? app.error
+    : app.state === 'stopped' && !app.canStart
+      ? 'Download the desktop app from the Releases page, or run npm run desktop in the repository folder. '
+        + 'Open it one time. After that, you can start and stop it here.'
+      : view.hint;
+}
+
+async function desktopAppAction(action) {
+  desktopAppPending = true;
+  renderDesktopApp();
+  try {
+    const result = await api(`/api/desktop/${action}`, {method: 'POST'});
+    if (status?.desktop && result?.desktop?.app) status.desktop.app = result.desktop.app;
+    toast(action === 'stop' ? 'Closing the desktop app.' : 'Opening the desktop app.', 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    desktopAppPending = false;
+    renderDesktopApp();
+  }
+}
+
+$('desktop-app-start').addEventListener('click', () => desktopAppAction('start'));
+$('desktop-app-stop').addEventListener('click', () => desktopAppAction('stop'));
+
+// A firmware update restarts the device; this long after the upload, it should run the new firmware.
+const firmwareRestartMs = 120_000;
+let firmwarePending = false;
+let firmwareTimer;
+
+function firmwareView(firmware) {
+  if (!firmware) return status
+    ? {pill: 'Unknown', kind: 'offline', hint: 'Restart the companion service (run npm run setup) to update firmware here.'}
+    : {pill: 'Checking…', kind: 'offline', hint: 'Waiting for the companion service…'};
+  if (firmware.updating?.button) return {pill: 'Press BOOT', kind: 'warning',
+    hint: 'Press the BOOT button on the device to allow the update. The device shows the same request. '
+      + 'The request stops after 60 seconds.'};
+  if (firmware.updating) return {pill: `Updating ${firmware.updating.percent}%`, kind: 'warning',
+    hint: 'Sending the firmware over Wi-Fi. Keep the device powered. It restarts when the update finishes.'};
+  const last = firmware.last;
+  if (last?.ok && firmware.device !== last.id) {
+    return Date.now() - last.at < firmwareRestartMs
+      ? {pill: 'Restarting…', kind: 'warning', hint: 'The device is restarting into the new firmware.'}
+      : {pill: 'Went back', kind: 'warning', hint: 'The device went back to its old firmware, because the new '
+        + 'firmware did not connect to Wi-Fi. Install the firmware over USB below.'};
+  }
+  if (!status.connected) return {pill: 'Not connected', kind: 'offline', hint: 'Connect the device to see its firmware.'};
+  if (!firmware.device) return {pill: 'Old firmware', kind: 'warning', hint: 'This firmware is older and does not '
+    + 'report its version, so it cannot update over Wi-Fi. A newer release installs over USB below.'};
+  if (!firmware.built) return {pill: 'Installed', kind: 'usb', hint: `Firmware ${firmware.device}.`};
+  if (firmware.built === firmware.device)
+    return {pill: 'Up to date', kind: 'usb', hint: `The device runs the latest built firmware (${firmware.device}).`};
+  return {pill: 'Update available', kind: 'warning', hint: firmware.canUpdate
+    ? `The device runs ${firmware.device}. Update sends the built firmware (${firmware.built}) over Wi-Fi. `
+      + 'You press the BOOT button on the device to allow it. '
+      + 'If the new firmware does not connect to Wi-Fi, the device goes back to the old firmware.'
+    : `The built firmware (${firmware.built}) is different from the device's (${firmware.device}). `
+      + 'Updates go over Wi-Fi: connect the device to Wi-Fi first.'};
+}
+
+function renderFirmware() {
+  const firmware = status?.firmware;
+  const view = firmwareView(firmware);
+  const pill = $('firmware-state');
+  pill.textContent = view.pill;
+  pill.className = `pill ${view.kind}`;
+  $('firmware-hint').textContent = view.hint;
+  $('firmware-update').disabled = firmwarePending || !firmware?.canUpdate;
+  // Wi-Fi updates send firmware you built yourself; the release firmware goes over USB.
+  $('firmware-update').hidden = !firmware?.built;
+  // Show "Went back" on time, even when no new status arrives.
+  clearTimeout(firmwareTimer);
+  if (view.pill === 'Restarting…')
+    firmwareTimer = setTimeout(renderFirmware, firmware.last.at + firmwareRestartMs - Date.now() + 500);
+  renderUsbFirmware();
+}
+
+let usbFirmwarePending = false;
+let usbFirmwareTimer;
+const usbStages = {downloading: 'Downloading', checking: 'Checking', connecting: 'Connecting', writing: 'Writing'};
+
+function usbFirmwareView(usb) {
+  if (!usb) return status
+    ? {pill: 'Unknown', kind: 'offline', hint: 'Update the companion service to install firmware here.'}
+    : {pill: 'Checking…', kind: 'offline', hint: 'Waiting for the companion service…'};
+  const release = usb.release ? `v${usb.release}` : null;
+  if (usb.installing) {
+    const percent = usb.installing.percent;
+    return {pill: `${usbStages[usb.installing.stage]}${percent === null ? '…' : ` ${percent}%`}`, kind: 'warning',
+      percent: usb.installing.stage === 'writing' ? percent : null,
+      hint: usb.installing.stage === 'downloading'
+        ? `Downloading the ${release} firmware from GitHub.`
+        : 'Writing the firmware over USB. Keep the USB cable connected until it finishes.'};
+  }
+  const last = usb.last;
+  if (last?.ok && status.firmware?.device !== last.id && Date.now() - last.at < firmwareRestartMs)
+    return {pill: 'Restarting…', kind: 'warning', hint: `Release v${last.version} is installed. The device is restarting.`};
+  if (!release) return {pill: 'Unknown', kind: 'offline',
+    hint: 'The companion service has no VERSION file, so it cannot choose a release.'};
+  if (!usb.flasher) return {pill: 'Needs the desktop app', kind: 'offline',
+    hint: `The desktop app writes the ${release} firmware from GitHub to the device over USB. Open the desktop app, `
+      + 'then come back here.'};
+  const about = `Install ${release} downloads release ${release} from GitHub and writes it to the device over USB. `
+    + 'Wi-Fi settings stay; the character goes back to Copilot.';
+  if (last && !last.ok) return {pill: 'Failed', kind: 'warning', hint: `${last.error} ${about}`};
+  if (usb.unanswered) return {pill: 'No companion firmware', kind: 'warning',
+    hint: `An ESP32 on ${usb.port} does not answer as an Agent Companion. Install ${release} to set it up. ${about}`};
+  const device = status.firmware?.device;
+  if (usb.releaseId && device === usb.releaseId)
+    return {pill: `${release} installed`, kind: 'usb', hint: `The device runs release ${release}. Install it again to repair it.`};
+  if (!usb.port) return {pill: 'No USB device', kind: 'offline',
+    hint: `Connect the device with a USB data cable to install ${release}. ${about}`};
+  if (usb.releaseId && device && device === status.firmware?.built)
+    return {pill: 'Your own build', kind: 'warning',
+      hint: `The device runs firmware that you built on this computer (ID ${device}), not release ${release}. ${about}`};
+  if (usb.releaseId && device) return {pill: `Not ${release}`, kind: 'warning',
+    hint: `The device runs other firmware (ID ${device}), not release ${release}. ${about}`};
+  return {pill: `Release ${release}`, kind: 'offline', hint: about};
+}
+
+function renderUsbFirmware() {
+  const usb = status?.firmware?.usb;
+  const view = usbFirmwareView(usb);
+  const pill = $('usb-firmware-state');
+  pill.textContent = view.pill;
+  pill.className = `pill ${view.kind}`;
+  $('usb-firmware-hint').textContent = view.hint;
+  const bar = $('usb-firmware-bar');
+  bar.hidden = view.percent === null || view.percent === undefined;
+  if (!bar.hidden) {
+    bar.setAttribute('aria-valuenow', String(view.percent));
+    bar.firstElementChild.style.width = `${view.percent}%`;
+  }
+  const button = $('usb-firmware-install');
+  button.textContent = usb?.release ? `Install v${usb.release}` : 'Install';
+  button.disabled = usbFirmwarePending || !usb?.flasher || !usb.release || Boolean(usb.installing)
+    || Boolean(status?.installing) || Boolean(status?.firmware?.updating);
+  clearTimeout(usbFirmwareTimer);
+  if (view.pill === 'Restarting…')
+    usbFirmwareTimer = setTimeout(renderUsbFirmware, usb.last.at + firmwareRestartMs - Date.now() + 500);
+}
+
+$('usb-firmware-install').addEventListener('click', async () => {
+  usbFirmwarePending = true;
+  renderUsbFirmware();
+  try {
+    await api('/api/firmware/usb', {method: 'POST'});
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    usbFirmwarePending = false;
+    renderUsbFirmware();
+  }
+});
+
+$('firmware-update').addEventListener('click', async () => {
+  firmwarePending = true;
+  renderFirmware();
+  try {
+    await api('/api/firmware/update', {method: 'POST'});
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    firmwarePending = false;
+    renderFirmware();
+  }
+});
+
+// Tabs follow the ARIA tabs pattern: arrow keys, Home and End move between them.
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+
+function selectTab(selected, focus = false) {
+  for (const tab of tabs) {
+    const active = tab === selected;
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    $(tab.getAttribute('aria-controls')).hidden = !active;
+  }
+  if (focus) selected.focus();
+}
+
+for (const tab of tabs) {
+  tab.addEventListener('click', () => selectTab(tab));
+  tab.addEventListener('keydown', event => {
+    const index = tabs.indexOf(tab);
+    const next = {
+      ArrowRight: tabs[(index + 1) % tabs.length],
+      ArrowLeft: tabs[(index - 1 + tabs.length) % tabs.length],
+      Home: tabs[0],
+      End: tabs[tabs.length - 1],
+    }[event.key];
+    if (!next) return;
+    event.preventDefault();
+    selectTab(next, true);
+  });
+}
+
+// The theme follows the system until the user chooses one here; theme.js applies the saved choice early.
+const darkScheme = matchMedia('(prefers-color-scheme: dark)');
+
+function currentTheme() {
+  return document.documentElement.dataset.theme ?? (darkScheme.matches ? 'dark' : 'light');
+}
+
+function renderTheme() {
+  $('theme-toggle').checked = currentTheme() === 'dark';
+}
+
+$('theme-toggle').addEventListener('change', event => {
+  const theme = event.target.checked ? 'dark' : 'light';
+  document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem('companion-theme', theme);
+  } catch {
+    // The choice lasts for this page only.
+  }
+});
+darkScheme.addEventListener('change', renderTheme);
+renderTheme();
+
 let badgesPending = false;
+let usagePending = false;
+const usageWindowNames = {today: 'Today', month: 'This month', active: 'Active sessions'};
+
+function renderUsage() {
+  const usage = status?.usage;
+  const fact = $('fact-usage');
+  // The status box shows both values; the device shows only the one for what is running.
+  const summary = usage?.summary ?? usage?.lines ?? [];
+  fact.textContent = !usage ? '—' : !usage.enabled ? 'Off' : summary.length ? '' : 'No usage yet';
+  if (usage?.enabled) {
+    for (const line of summary) {
+      const row = document.createElement('span');
+      row.className = 'fact-line';
+      row.textContent = line;
+      fact.append(row);
+    }
+    const period = document.createElement('span');
+    period.className = 'fact-detail';
+    period.textContent = usageWindowNames[usage.window] ?? usage.window;
+    fact.append(period);
+  }
+  const preview = $('usage-preview');
+  preview.classList.toggle('off', !usage?.enabled || !usage.lines.length);
+  preview.textContent = !usage ? 'Not available'
+    : !usage.enabled ? 'Hidden'
+    : usage.lines.length ? usage.lines.join(' · ')
+    : summary.length ? 'No agent running' : 'No usage yet';
+  if (usagePending) return;
+  const toggle = $('usage-toggle');
+  const select = $('usage-window');
+  toggle.disabled = !usage;
+  select.disabled = !usage || !usage.enabled;
+  if (!usage) return;
+  toggle.checked = usage.enabled;
+  select.value = usage.window;
+}
+
+async function updateUsage(change, message) {
+  usagePending = true;
+  try {
+    const result = await api('/api/usage', {
+      method: 'POST', type: 'application/json', body: JSON.stringify(change)});
+    if (status && result?.usage) status.usage = result.usage;
+    toast(message, 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    usagePending = false;
+    renderUsage();
+  }
+}
+
+$('usage-toggle').addEventListener('change', event => {
+  const enabled = event.target.checked;
+  void updateUsage({enabled}, enabled ? 'Usage is shown.' : 'Usage is hidden.');
+});
+
+$('usage-window').addEventListener('change', event => {
+  const window = event.target.value;
+  void updateUsage({window}, `Usage now shows ${usageWindowNames[window].toLowerCase()}.`);
+});
 
 $('badges-toggle')?.addEventListener('change', async event => {
   const enabled = event.target.checked;
@@ -546,9 +881,20 @@ function onStatus(next) {
       : `Couldn't install ${result.name}: ${result.error}`, result.ok ? 'success' : 'error');
   }
   lastResult = result;
+  const firmwareResult = next.firmware?.last;
+  if (firmwareResult && previous && JSON.stringify(firmwareResult) !== JSON.stringify(previous.firmware?.last)) {
+    toast(firmwareResult.ok ? 'Firmware sent. The device is restarting.'
+      : `Couldn't update the firmware: ${firmwareResult.error}`, firmwareResult.ok ? 'success' : 'error');
+  }
+  const usbResult = next.firmware?.usb?.last;
+  if (usbResult && previous && JSON.stringify(usbResult) !== JSON.stringify(previous.firmware?.usb?.last)) {
+    toast(usbResult.ok ? `Firmware v${usbResult.version} installed. The device is restarting.`
+      : `Couldn't install the firmware: ${usbResult.error}`, usbResult.ok ? 'success' : 'error');
+  }
   const refresh = !previous || previous.character !== next.character
     || Boolean(previous.installing) !== Boolean(next.installing) || previous.connected !== next.connected;
   renderStatus();
+  renderFirmware();
   renderAgents();
   renderSetup();
   if (refresh) loadCharacters();
@@ -559,7 +905,7 @@ function showLinkRequired(expired) {
   $('token-error-title').textContent = expired
     ? 'This settings link has expired.' : 'This page needs its private link.';
   $('token-error').hidden = false;
-  for (const section of document.querySelectorAll('main > section')) section.hidden = true;
+  for (const section of document.querySelectorAll('main > section, main > .tabs')) section.hidden = true;
   sessionStorage.removeItem('companion-token');
 }
 

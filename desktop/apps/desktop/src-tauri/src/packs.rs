@@ -6,7 +6,6 @@
 //! back to the packs built in this repository (`build/characters`).
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// The character shown when nothing says otherwise.
 pub const DEFAULT: &str = "copilot";
@@ -104,20 +103,6 @@ pub fn remember(window: &tauri::WebviewWindow, id: &str) {
 fn choice_file(window: &tauri::WebviewWindow) -> Option<PathBuf> {
     use tauri::Manager;
     Some(window.app_handle().path().app_data_dir().ok()?.join("character"))
-}
-
-/// Open a URL or folder in whatever the system uses for the job.
-pub fn open(target: &str) {
-    let mut command = if cfg!(target_os = "windows") {
-        let mut command = Command::new("cmd");
-        command.args(["/C", "start", ""]);
-        command
-    } else if cfg!(target_os = "macos") {
-        Command::new("open")
-    } else {
-        Command::new("xdg-open")
-    };
-    let _ = command.arg(target).spawn();
 }
 
 #[cfg(test)]

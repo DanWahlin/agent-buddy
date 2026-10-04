@@ -2,6 +2,7 @@ import {mkdir, rename, writeFile} from 'node:fs/promises';
 import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {displaySettingsPath} from './paths.js';
+import {isUsageWindow, type UsageWindow} from './usage-tracker.js';
 
 // How the desktop character is framed: as the device itself, or on its own.
 export const desktopBackdrops = ['device', 'none'] as const;
@@ -12,12 +13,17 @@ export interface DisplaySettings {
   // Whether the desktop app shows its character; the device is unaffected.
   showDesktopCompanion: boolean;
   desktopBackdrop: DesktopBackdrop;
+  // AI credits and tokens at the bottom of the screen, on the device and the desktop.
+  showUsage: boolean;
+  usageWindow: UsageWindow;
 }
 
 export const defaultDisplaySettings: DisplaySettings = {
   showAgentBadges: true,
   showDesktopCompanion: true,
   desktopBackdrop: 'device',
+  showUsage: true,
+  usageWindow: 'today',
 };
 
 export function isDesktopBackdrop(value: unknown): value is DesktopBackdrop {
@@ -33,6 +39,8 @@ export function loadDisplaySettingsSync(path = displaySettingsPath()): DisplaySe
       showDesktopCompanion: parsed.showDesktopCompanion !== false,
       desktopBackdrop: isDesktopBackdrop(parsed.desktopBackdrop)
         ? parsed.desktopBackdrop : defaultDisplaySettings.desktopBackdrop,
+      showUsage: parsed.showUsage !== false,
+      usageWindow: isUsageWindow(parsed.usageWindow) ? parsed.usageWindow : defaultDisplaySettings.usageWindow,
     };
   } catch {
     return {...defaultDisplaySettings};

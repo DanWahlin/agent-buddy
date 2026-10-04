@@ -22,6 +22,7 @@
 #include "src/CharacterFrame.h"
 #include "src/DeviceCommands.h"
 #include "src/TouchInput.h"
+#include "src/ButtonInput.h"
 #include "src/SettingsMenu.h"
 #include "src/Motion.h"
 
@@ -61,6 +62,8 @@ size_t startupFreeInternal = 0;
 bool captureInterrupted = false;
 SettingsMenu settings(kBrightness);
 NetworkManager network;
+ButtonPressTracker bootButton;
+uint32_t buttonPresses = 0;
 constexpr char kPreferencesNamespace[] = "agent-companion";
 constexpr char kSoundPreference[] = "sound";
 constexpr char kSoundVolumePreference[] = "volume";
@@ -833,6 +836,14 @@ bool handleBadgePacket(const char* packet, char* response, size_t responseSize) 
     snprintf(response, responseSize, "AGENTS accepted=%u", static_cast<unsigned>(agentBadges.activeCount()));
     return true;
   }
+  if (packet[0] == '$') {
+    if (!agentBadges.setUsagePacket(packet + 1)) {
+      snprintf(response, responseSize, "COMMAND_ERROR %s", agentBadges.error());
+      return false;
+    }
+    snprintf(response, responseSize, "USAGE accepted=%u", static_cast<unsigned>(agentBadges.usage().count));
+    return true;
+  }
   snprintf(response, responseSize, "COMMAND_ERROR invalid badge packet");
   return false;
 }
@@ -895,7 +906,7 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       network.encodedSsid(ssid, sizeof(ssid));
       logMessage("INFO protocol=%u uptime_ms=%llu reset_reason=%u mode=%s requested=%s assets=%u "
                  "max_gap_us=%u dropped_logs=%u audio_ready=%u sound_volume=%u character=%s "
-                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s\n",
+                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s firmware=%s\n",
                     kDeviceProtocol, static_cast<unsigned long long>(esp_timer_get_time() / 1000),
                     static_cast<unsigned>(esp_reset_reason()),
                     frame ? modeName(frame->state.mode) : "none",
@@ -904,7 +915,7 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
                     droppedLogs.load(std::memory_order_relaxed), static_cast<unsigned>(audioReady()),
                     static_cast<unsigned>(soundVolume()), installedCharacterId(),
                     patchBuffersInternal, static_cast<unsigned>(startupFreeInternal),
-                    static_cast<unsigned>(network.connected()), ssid);
+                    static_cast<unsigned>(network.connected()), ssid, network.firmwareId());
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",
@@ -939,6 +950,14 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       char response[96];
       char packet[196];
       snprintf(packet, sizeof(packet), "&%s", parser.payload());
+      handleBadgePacket(packet, response, sizeof(response));
+      logMessage("%s\n", response);
+      break;
+    }
+    case DeviceCommand::SetUsage: {
+      char response[96];
+      char packet[196];
+      snprintf(packet, sizeof(packet), "$%s", parser.payload());
       handleBadgePacket(packet, response, sizeof(response));
       logMessage("%s\n", response);
       break;
@@ -1027,6 +1046,7 @@ void setup() {
   characterReady = initializeSpriteStorage();
   if (!characterReady) logMessage("CHARACTER id=none reason=%s\n", spriteStorageError());
   if (!initializeTouchInput()) fatal(touchInputError());
+  pinMode(kBootButtonPin, INPUT_PULLUP);
   const uint8_t storedSoundVolume = loadSoundVolume();
   settings.setSoundVolume(storedSoundVolume);
   setSoundVolume(storedSoundVolume);
@@ -1049,16 +1069,63 @@ void setup() {
              static_cast<unsigned>(characterReady ? characterPack()->header.totalBytes : 0));
 }
 
+// A BOOT button press asks the computer to open Settings. USB gets a line now; over Wi-Fi the
+// daemon sees the count go up in GET /status. While a Wi-Fi firmware update waits, the press
+// allows the update instead.
+void pollBootButton() {
+  if (!bootButton.sample(digitalRead(kBootButtonPin) == LOW, millis())) return;
+  if (network.approveFirmware()) {
+    logMessage("BUTTON firmware allowed\n");
+    return;
+  }
+  network.setButtonPresses(++buttonPresses);
+  logMessage("BUTTON settings presses=%u\n", static_cast<unsigned>(buttonPresses));
+}
+
+// The prompt replaces the character while a Wi-Fi firmware update waits for the BOOT press, and
+// stays until the device restarts into the new firmware. Returns true while it shows.
+bool showFirmwarePrompt(bool shell) {
+  enum class Prompt : uint8_t { None, Waiting, Allowed, Restarting };
+  static Prompt shown = Prompt::None;
+  Prompt prompt = Prompt::None;
+  if (network.firmwareRestarting()) prompt = Prompt::Restarting;
+  else if (network.firmwareApproval() == NetworkManager::FirmwareApproval::Waiting) prompt = Prompt::Waiting;
+  else if (network.firmwareApproval() == NetworkManager::FirmwareApproval::Allowed) prompt = Prompt::Allowed;
+  if (prompt == shown) return prompt != Prompt::None;
+  shown = prompt;
+  if (prompt == Prompt::None) {
+    if (shell) drawShellScreen();
+    else clearCharacterMargins();
+    return false;
+  }
+  if (settings.isOpen()) closeSettings("firmware");
+  display.fillScreen(0);
+  display.setBrightness(settings.brightness());
+  drawCenteredText("Firmware update", 150, 3, 0xE73F);
+  if (prompt == Prompt::Waiting) {
+    drawCenteredText("Press BOOT to allow it", 206, 2, 0x867F);
+    drawCenteredText("Did not start an update? Do nothing.", 246, 1, 0x8C71);
+    drawCenteredText("The request stops in 60 seconds.", 266, 1, 0x8C71);
+  } else if (prompt == Prompt::Allowed) {
+    drawCenteredText("Allowed. Receiving...", 206, 2, 0x47E9);
+  } else {
+    drawCenteredText("Installed. Restarting...", 206, 2, 0x47E9);
+  }
+  return true;
+}
+
 // Without a pack the shell keeps USB, Wi-Fi setup, and installation available.
 void shellLoop() {
   static DeviceCommands parser;
   static uint32_t networkRevision = UINT32_MAX;
   network.update();
   if (restartAt || installStarted) return;
+  const bool prompt = showFirmwarePrompt(true);
   if (network.revision() != networkRevision) {
-    drawShellScreen();
+    if (!prompt) drawShellScreen();
     networkRevision = network.revision();
   }
+  pollBootButton();
   processCommand(parser.expire(esp_timer_get_time() / 1000), parser, nullptr);
   for (unsigned read = 0; read < 64 && Serial.available(); ++read)
     processCommand(parser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
@@ -1090,6 +1157,7 @@ void loop() {
   if (installStarted) return;
   Frame* frame;
   if (xQueueReceive(readyFrames, &frame, pdMS_TO_TICKS(3000)) != pdTRUE) fatal("Renderer stalled.");
+  const bool prompt = showFirmwarePrompt(false);
   if (settings.isOpen() && network.revision() != networkRevision) {
     if (settings.networkPage()) drawNetworkSettings();
     else drawSettingsMenu(frame->state.requestedMode);
@@ -1107,7 +1175,7 @@ void loop() {
   }
   previousPresentation = start;
   uint32_t transferUs = 0;
-  if (!settings.isOpen()) {
+  if (!settings.isOpen() && !prompt) {
     display.startWrite();
     display.writeAddrWindow(kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight);
     const auto* bytes = reinterpret_cast<const uint8_t*>(frame->pixels);
@@ -1125,8 +1193,9 @@ void loop() {
     ++fadeFrame;
   }
   TouchGesture gesture;
-  if (pollTouchGesture(gesture)) handleTouchGesture(gesture, *frame);
+  if (pollTouchGesture(gesture) && !prompt) handleTouchGesture(gesture, *frame);
   if (touchInputError()) fatal(touchInputError());
+  pollBootButton();
   closeIdleSettings();
   processCommand(commandParser.expire(esp_timer_get_time() / 1000), commandParser, frame);
   for (unsigned read = 0; read < 8 && Serial.available(); ++read) {

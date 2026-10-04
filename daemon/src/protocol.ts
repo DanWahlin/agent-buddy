@@ -42,7 +42,8 @@ export interface HookPayload {
 export type DaemonRequest =
   | {type: 'hook'; agent?: AgentId; event?: HookEvent | string; nativeEvent?: string; payload: HookPayload}
   | {type: 'send'; state: CharacterState}
-  | {type: 'status'}
+  // The desktop app names itself, so the service knows it runs and where to start it from.
+  | {type: 'status'; client?: 'desktop'; executable?: string; environment?: Record<string, string>; flasher?: number}
   | {type: 'agents'}
   | {type: 'agentEnable'; agent: AgentId; enabled: boolean}
   | {type: 'agentInstall'; agent: AgentId}
@@ -53,6 +54,7 @@ export type DaemonRequest =
   | {type: 'setConnection'; mode: ConnectionMode}
   | {type: 'badges'; enabled: boolean}
   | {type: 'desktop'; visible?: boolean; backdrop?: string; character?: string}
+  | {type: 'usage'; enabled?: boolean; window?: string}
   | {type: 'listCharacters'}
   | {type: 'settings'};
 

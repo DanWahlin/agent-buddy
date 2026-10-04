@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
   defaultDataDirectory,
   defaultSocketPath,
+  serviceInfo,
   socketPath,
   statePath,
   wifiConfigPath,
@@ -43,4 +46,17 @@ test('uses native macOS and Linux runtime paths', () => {
   assert.equal(defaultDataDirectory('linux', '/home/example',
                                     {XDG_STATE_HOME: '/home/example/state'}),
                '/home/example/state/esp32-agent-companion');
+});
+
+test('reports the folder the daemon runs from and its version', () => {
+  const root = mkdtempSync(join(tmpdir(), 'companion-root-'));
+  try {
+    assert.deepEqual(serviceInfo(`${root}/`), {root, version: null});
+    writeFileSync(join(root, 'VERSION'), '0.8.0\n');
+    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0'});
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
+  const own = serviceInfo();
+  assert.ok(!own.root.endsWith('/') && own.root.length > 1);
 });

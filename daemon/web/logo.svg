@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Agent Companion">
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5ee7ff"/>
+      <stop offset="1" stop-color="#3d7ef7"/>
+    </linearGradient>
+    <radialGradient id="badge" cx=".5" cy=".42" r=".6">
+      <stop offset="0" stop-color="#1546c4"/>
+      <stop offset="1" stop-color="#06164a"/>
+    </radialGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#03050c"/>
+      <stop offset="1" stop-color="#0c1230"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.1" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path d="M32 3.5 56.7 17.75v28.5L32 60.5 7.3 46.25v-28.5z" fill="url(#badge)" stroke="#0b1747"
+        stroke-width="5" stroke-linejoin="round"/>
+  <path d="M32 3.5 56.7 17.75v28.5L32 60.5 7.3 46.25v-28.5z" fill="none" stroke="url(#edge)"
+        stroke-width="2.2" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="16.5" fill="#3f8cff" opacity=".35" filter="url(#glow)"/>
+  <circle cx="32" cy="32" r="15" fill="url(#screen)" stroke="#2b3247" stroke-width="2.6"/>
+  <circle cx="32" cy="32" r="16.4" fill="none" stroke="#5ee7ff" stroke-width=".7" opacity=".7"/>
+  <g filter="url(#glow)">
+    <ellipse cx="26.2" cy="29.5" rx="2.8" ry="4.2" fill="#8ff3ff"/>
+    <ellipse cx="37.8" cy="29.5" rx="2.8" ry="4.2" fill="#8ff3ff"/>
+    <path d="M27.4 36.6q4.6 3.6 9.2 0" fill="none" stroke="#c8ecff" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M47.5 12.3Q48.436 16.564 52.7 17.5Q48.436 18.436 47.5 22.7Q46.564 18.436 42.3 17.5Q46.564 16.564 47.5 12.3z" fill="#5ee7ff"/>
+    <path d="M51.5 23.6Q51.932 25.568 53.9 26Q51.932 26.432 51.5 28.4Q51.068 26.432 49.1 26Q51.068 25.568 51.5 23.6z" fill="#9fd0ff"/>
+  </g>
+</svg>

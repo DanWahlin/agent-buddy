@@ -33,6 +33,9 @@ pub struct Snapshot {
     /// Already filtered by the badge setting and cut to four, as the device gets them.
     pub badges: Vec<(String, String)>,
     pub icons: Vec<(String, String, String)>,
+    /// "AIC: 902", "Tokens: 1.2M": the lines the device shows at the bottom of
+    /// its screen. Empty when usage is off in Settings.
+    pub usage: Vec<String>,
     /// A character being installed on the device (name, percent), and the
     /// result of the last install, so the desktop can show what the device does.
     pub installing: Value,
@@ -40,7 +43,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// What the page needs: the state, backdrop and badges.
+    /// What the page needs: the state, backdrop, badges and usage.
     pub fn for_page(&self) -> Value {
         json!({
             "state": self.state,
@@ -52,6 +55,7 @@ impl Snapshot {
             "icons": self.icons.iter()
                 .map(|(id, color, mask)| json!({ "id": id, "color": color, "mask": mask }))
                 .collect::<Vec<_>>(),
+            "usage": self.usage,
             "installing": self.installing,
             "lastInstall": self.last_install,
             "connected": self.connected,
@@ -182,22 +186,49 @@ pub fn parse(status: &Value) -> Option<Snapshot> {
             .to_string(),
         badges: active,
         icons,
+        usage: status
+            .get("usage")
+            .and_then(|it| it.get("lines"))
+            .and_then(Value::as_array)
+            .map(|lines| lines.iter().filter_map(|line| Some(line.as_str()?.to_string())).collect())
+            .unwrap_or_default(),
         installing: status.get("installing").cloned().unwrap_or(Value::Null),
         last_install: status.get("lastInstall").cloned().unwrap_or(Value::Null),
     })
 }
 
 /// Poll the daemon for as long as the app runs, calling back on every change,
-/// with `None` while it cannot be reached.
-pub fn follow(on_change: impl Fn(Option<&Snapshot>) + Send + 'static) {
+/// with `None` while it cannot be reached. Settings can stop the app: the
+/// daemon then answers with `desktopCommand: "quit"`, and `on_quit` runs.
+/// The device's BOOT button sends `desktopCommand: "settings"`, and
+/// `on_settings` runs.
+pub fn follow(
+    on_change: impl Fn(Option<&Snapshot>) + Send + 'static,
+    on_quit: impl FnOnce() + Send + 'static,
+    on_settings: impl Fn() + Send + 'static,
+) {
     let Some(path) = socket_path() else {
         on_change(None);
         return;
     };
+    let ask = status_request();
     std::thread::spawn(move || {
         let mut last: Option<Option<Snapshot>> = None;
         loop {
-            let snapshot = request(&path, &json!({ "type": "status" })).and_then(|it| parse(&it));
+            let reply = request(&path, &ask);
+            match reply.as_ref().and_then(command) {
+                Some("quit") => {
+                    println!("[daemon] Settings closed the app");
+                    on_quit();
+                    return;
+                }
+                Some("settings") => {
+                    println!("[daemon] the device asked for Settings");
+                    on_settings();
+                }
+                _ => {}
+            }
+            let snapshot = reply.and_then(|it| parse(&it));
             if last.as_ref() != Some(&snapshot) {
                 match (&last, &snapshot) {
                     (Some(None) | None, Some(_)) => {
@@ -212,6 +243,62 @@ pub fn follow(on_change: impl Fn(Option<&Snapshot>) + Send + 'static) {
             std::thread::sleep(POLL);
         }
     });
+}
+
+/// The display variables the app sends with each status request. Settings
+/// sees that the app runs, and the daemon can start it again after it closes.
+const DISPLAY_VARIABLES: [&str; 8] = [
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
+    "XDG_SESSION_TYPE",
+    "XDG_CURRENT_DESKTOP",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "HYPRLAND_INSTANCE_SIGNATURE",
+];
+
+fn status_request() -> Value {
+    // flasher: this app installs firmware over USB when run with --flash-firmware.
+    let mut body = json!({ "type": "status", "client": "desktop", "flasher": 1 });
+    if let Some(path) = launch_path() {
+        body["executable"] = json!(path.to_string_lossy());
+    }
+    // A service manager does not always give the daemon the display, and the
+    // app needs it when the daemon starts it.
+    let environment: serde_json::Map<String, Value> = DISPLAY_VARIABLES
+        .iter()
+        .filter_map(|name| Some((name.to_string(), json!(std::env::var(name).ok()?))))
+        .collect();
+    body["environment"] = Value::Object(environment);
+    body
+}
+
+fn command(reply: &Value) -> Option<&str> {
+    reply.get("desktopCommand").and_then(Value::as_str)
+}
+
+/// What to run to start this app again: the AppImage rather than its
+/// temporary mount, and the `.app` bundle rather than the binary inside it.
+fn launch_path() -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        if let Some(image) = std::env::var_os("APPIMAGE") {
+            return Some(PathBuf::from(image));
+        }
+    }
+    let executable = std::env::current_exe().ok()?;
+    Some(app_bundle(&executable).unwrap_or(executable))
+}
+
+/// `/Applications/X.app/Contents/MacOS/x` -> `/Applications/X.app`.
+fn app_bundle(executable: &std::path::Path) -> Option<PathBuf> {
+    let macos = executable.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+    let is_bundle = macos.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && bundle.extension()? == "app";
+    is_bundle.then(|| bundle.to_path_buf())
 }
 
 /// Choose the desktop's character, for when no device is connected to choose it.
@@ -268,12 +355,48 @@ mod tests {
     }
 
     #[test]
+    fn the_app_names_its_bundle_and_obeys_a_quit() {
+        assert_eq!(
+            app_bundle(std::path::Path::new("/Applications/Agent Companion.app/Contents/MacOS/agent-companion")),
+            Some(PathBuf::from("/Applications/Agent Companion.app"))
+        );
+        assert_eq!(app_bundle(std::path::Path::new("/repo/target/release/agent-companion")), None);
+        let body = status_request();
+        assert_eq!(body["type"], "status");
+        assert_eq!(body["client"], "desktop");
+        assert!(body["executable"].as_str().is_some_and(|it| std::path::Path::new(it).is_absolute()));
+        assert!(body["environment"].as_object().unwrap().keys().all(|it| DISPLAY_VARIABLES.contains(&it.as_str())));
+        assert_eq!(
+            command(&json!({ "state": "idle", "desktopCommand": "quit" })),
+            Some("quit")
+        );
+        assert_eq!(
+            command(&json!({ "state": "idle", "desktopCommand": "settings" })),
+            Some("settings")
+        );
+        assert_eq!(command(&json!({ "state": "idle" })), None);
+    }
+
+    #[test]
     fn badges_switched_off_show_none_as_on_the_device() {
         let status = json!({
             "state": "working",
             "badges": { "enabled": false, "active": [{ "id": "copilot", "role": "working" }], "icons": [] }
         });
         assert!(parse(&status).unwrap().badges.is_empty());
+    }
+
+    #[test]
+    fn usage_lines_pass_through_to_the_page() {
+        let status = json!({
+            "state": "idle",
+            "usage": { "enabled": true, "window": "today", "aic": 902, "tokens": 1200000,
+                       "lines": ["AIC: 902", "Tokens: 1.2M"] }
+        });
+        let snapshot = parse(&status).unwrap();
+        assert_eq!(snapshot.usage, vec!["AIC: 902", "Tokens: 1.2M"]);
+        assert_eq!(snapshot.for_page()["usage"][1], "Tokens: 1.2M");
+        assert!(parse(&json!({ "state": "idle" })).unwrap().usage.is_empty());
     }
 
     #[test]

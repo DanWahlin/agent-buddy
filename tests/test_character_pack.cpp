@@ -13,7 +13,7 @@ extern "C" const uint8_t kOpenClawPack[], kOpenClawPackEnd[];
 
 namespace {
 using namespace copilot;
-constexpr size_t kPartitionBytes = 0xDE0000;
+constexpr size_t kPartitionBytes = 0xBE0000;
 
 struct Pack {
   std::vector<uint32_t> words;

@@ -39,6 +39,7 @@ interface Engine {
   _ac_mode(mode: number, touch: number): number;
   _ac_badge_icon(packet: number): number;
   _ac_badge_active(packet: number): number;
+  _ac_usage(packet: number): number;
   _ac_frame(seconds: number, key: number): number;
 }
 
@@ -50,6 +51,8 @@ interface DaemonSnapshot {
   backdrop: string;
   badges: Array<{ id: string; role: 'working' | 'attention' | 'complete' }>;
   icons: Array<{ id: string; color: string; mask: string }>;
+  /** "AIC: 902", "Tokens: 1.2M"; an older app or daemon may send none. */
+  usage?: string[];
 }
 
 type HostMessage =
@@ -72,6 +75,8 @@ const ROLE_LETTER = { working: 'w', attention: 'a', complete: 'c' } as const;
 let SCREEN = 466;
 const CASE_RADIUS = 269;
 const BUTTON_REACH = 7;
+/** Where the buttons sit on the case's edge, in degrees below the right-hand side. */
+const BUTTON_DEGREES = [-24, 24];
 const UNITS = 2 * (CASE_RADIUS + BUTTON_REACH + 4);
 /** How strongly the case's rim catches the light. */
 const RIM_GAIN = 1.8;
@@ -93,6 +98,7 @@ let backdrop = 'device';
 let wantedMode = 0;
 let iconsKey = '';
 let activeKey = '';
+let usageKey: string | null = null;
 let loaded = false;
 let pendingDaemon: DaemonSnapshot | null = null;
 let last = performance.now();
@@ -129,14 +135,26 @@ async function loadPack(url: string): Promise<void> {
   if (!ok) throw new Error(e.UTF8ToString(e._ac_error()) || 'The character pack is invalid.');
   iconsKey = '';
   activeKey = '';
+  usageKey = null;
   loaded = true;
   if (wantedMode !== 0) e._ac_mode(wantedMode, 0);
   applyBadges(pendingDaemon);
+  applyUsage(pendingDaemon);
   message.classList.remove('visible');
   device.classList.remove('hidden');
   dirty = true;
   resize();
   sendTrayIcon();
+}
+
+/** The usage lines, as the device's '$' packet carries them: joined by '|'. */
+function applyUsage(daemon: DaemonSnapshot | null): void {
+  if (!engine || !loaded) return;
+  const packet = (daemon?.usage ?? []).join('|');
+  if (packet === usageKey) return;
+  call('_ac_usage', packet);
+  usageKey = packet;
+  dirty = true;
 }
 
 function setState(state: string): void {
@@ -174,8 +192,10 @@ function receive(incoming: HostMessage): void {
         drawCase();
         drawInstall();
         dirty = true;
+        reportRegion();
       }
       applyBadges(incoming.daemon);
+      applyUsage(incoming.daemon);
       followInstall(incoming.daemon);
       break;
     case 'showing':
@@ -239,7 +259,7 @@ function drawDevice(size: number, context: CanvasRenderingContext2D): void {
 
   // The two buttons on the right edge, behind the case so it overlaps them,
   // lit along their top like the rim.
-  for (const degrees of [-24, 24]) {
+  for (const degrees of BUTTON_DEGREES) {
     const angle = degrees * Math.PI / 180;
     context.save();
     context.translate(centre + at(CASE_RADIUS - 2) * Math.cos(angle), centre + at(CASE_RADIUS - 2) * Math.sin(angle));
@@ -522,8 +542,46 @@ function reportRegion(): void {
   if (box.width < 1) return;
   const unit = box.width / UNITS;
   void tauri.core.invoke('set_region', {
-    region: { cx: box.left + box.width / 2, cy: box.top + box.height / 2, rx: 160 * unit, ry: 135 * unit },
+    region: {
+      cx: box.left + box.width / 2, cy: box.top + box.height / 2, rx: 160 * unit, ry: 135 * unit,
+      // Always two, empty when the case is hidden: the shell keeps a fixed pair.
+      buttons: [...buttonBoxes(), ...Array(2).fill({ x: 0, y: 0, width: 0, height: 0 })].slice(0, 2),
+    },
   });
+}
+
+interface Box { x: number; y: number; width: number; height: number }
+
+/**
+ * The case's buttons, in CSS pixels within the window: each one's upright
+ * bounding box, a little larger than the button so it is easy to hit. Both
+ * open Settings. Without the case there are no buttons to press.
+ */
+function buttonBoxes(): Box[] {
+  const box = device.getBoundingClientRect();
+  if (backdrop !== 'device' || box.width < 1) return [];
+  const unit = box.width / UNITS;
+  const cx = box.left + box.width / 2;
+  const cy = box.top + box.height / 2;
+  return BUTTON_DEGREES.map(degrees => {
+    const angle = degrees * Math.PI / 180;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const xs: number[] = [], ys: number[] = [];
+    // The button's corners as drawDevice places them, with 4 units of slack all round.
+    for (const along of [-4, BUTTON_REACH + 6]) {
+      for (const across of [-21, 21]) {
+        const radial = CASE_RADIUS - 2 + along;
+        xs.push(cx + (radial * cos - across * sin) * unit);
+        ys.push(cy + (radial * sin + across * cos) * unit);
+      }
+    }
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+  });
+}
+
+function onButton(x: number, y: number): boolean {
+  return buttonBoxes().some(box => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height);
 }
 
 /** The tray shows the character it is showing, cut from a real frame. */
@@ -557,29 +615,43 @@ function sendTrayIcon(tries = 30): void {
 
 /**
  * Dragging the character moves the window; a click is a poke, the same as a
- * tap on the device's screen. Only the page sees whether the pointer moved
- * before it came up, so it decides which.
+ * tap on the device's screen, and a click on either of the case's buttons opens
+ * Settings. Only the page sees whether the pointer moved before it came up, so
+ * it decides which: a drag that starts on a button only moves the window.
  */
 const DRAG_THRESHOLD_PX = 4;
-let pressedAt: { x: number; y: number } | null = null;
+let pressedAt: { x: number; y: number; button: boolean } | null = null;
+
+function hoverButton(over: boolean): void {
+  device.classList.toggle('over-button', over);
+  device.title = over ? 'Open Settings' : '';
+}
 
 device.addEventListener('pointerdown', event => {
   // Only the main button pokes or drags; the right one opens the menu.
   if (event.button !== 0) return;
-  pressedAt = { x: event.clientX, y: event.clientY };
+  pressedAt = { x: event.clientX, y: event.clientY, button: onButton(event.clientX, event.clientY) };
 });
 device.addEventListener('pointermove', event => {
-  if (!pressedAt) return;
+  if (!pressedAt) {
+    hoverButton(onButton(event.clientX, event.clientY));
+    return;
+  }
   if (Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) < DRAG_THRESHOLD_PX) return;
   pressedAt = null;
+  hoverButton(false);
   void tauri.core.invoke('start_drag');
 });
 device.addEventListener('pointerup', () => {
-  if (pressedAt && engine && loaded) engine._ac_mode(MODES.surprise, 1);
+  if (pressedAt?.button) void tauri.core.invoke('open_settings');
+  else if (pressedAt && engine && loaded) engine._ac_mode(MODES.surprise, 1);
   pressedAt = null;
 });
 for (const done of ['pointercancel', 'pointerleave']) {
-  device.addEventListener(done, () => { pressedAt = null; });
+  device.addEventListener(done, () => {
+    pressedAt = null;
+    hoverButton(false);
+  });
 }
 window.addEventListener('resize', resize);
 

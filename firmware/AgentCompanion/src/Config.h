@@ -35,6 +35,9 @@ constexpr unsigned kTouchTapMaxMs = 650;
 constexpr int kTouchSwipePixels = 72;
 constexpr unsigned kTouchSwipeMaxMs = 1200;
 constexpr unsigned kTouchSweepMs = 250;
+// The BOOT button. Held at power-on it starts the ROM downloader; after that it is free to read.
+constexpr int kBootButtonPin = 0;
+constexpr unsigned kButtonDebounceMs = 30;
 constexpr unsigned kSettingsIdleTimeoutMs = 30000;
 constexpr unsigned kCharacterUploadStallMs = 500;
 constexpr unsigned kCharacterUploadKicks = 3;

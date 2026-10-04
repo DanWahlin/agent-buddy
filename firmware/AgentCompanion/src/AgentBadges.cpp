@@ -80,6 +80,11 @@ bool decodeBase64(const char* input, uint8_t* output, size_t outputSize) {
   return out == outputSize;
 }
 
+bool validUsageChar(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+      || c == ' ' || c == ',' || c == '.' || c == ':';
+}
+
 bool parseRole(char c, AgentBadgeRole& role) {
   if (c == 'w') { role = AgentBadgeRole::Working; return true; }
   if (c == 'a') { role = AgentBadgeRole::Attention; return true; }
@@ -180,6 +185,57 @@ void AgentBadges::clearActive() {
 #if defined(ARDUINO)
   portEXIT_CRITICAL(&lock_);
 #endif
+}
+
+bool AgentBadges::setUsagePacket(const char* payload) {
+  error_ = nullptr;
+  if (!payload) {
+    setError("missing usage packet");
+    return false;
+  }
+  UsageLines parsed;
+  if (*payload) {
+    for (const char* cursor = payload;; ++cursor) {
+      if (parsed.count == kMaxUsageLines) {
+        setError("too many usage lines");
+        return false;
+      }
+      char* line = parsed.text[parsed.count];
+      size_t length = 0;
+      for (; *cursor && *cursor != '|'; ++cursor) {
+        if (!validUsageChar(*cursor) || length == kUsageLineMax) {
+          setError("invalid usage line");
+          return false;
+        }
+        line[length++] = *cursor;
+      }
+      if (length == 0) {
+        setError("empty usage line");
+        return false;
+      }
+      ++parsed.count;
+      if (*cursor == '\0') break;
+    }
+  }
+#if defined(ARDUINO)
+  portENTER_CRITICAL(&lock_);
+#endif
+  usage_ = parsed;
+#if defined(ARDUINO)
+  portEXIT_CRITICAL(&lock_);
+#endif
+  return true;
+}
+
+UsageLines AgentBadges::usage() const {
+#if defined(ARDUINO)
+  portENTER_CRITICAL(&lock_);
+#endif
+  const UsageLines result = usage_;
+#if defined(ARDUINO)
+  portEXIT_CRITICAL(&lock_);
+#endif
+  return result;
 }
 
 AgentBadgesSnapshot AgentBadges::snapshot() const {

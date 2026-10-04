@@ -2,7 +2,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {updateJsonFile} from './file-utils.js';
 import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
-import {versionOf} from './commands.js';
+import {isCompanionCli, versionOf} from './commands.js';
 import type {AgentAdapter, AgentContext, NormalizedHook} from './types.js';
 import type {HookPayload} from '../protocol.js';
 
@@ -83,19 +83,21 @@ function removeOurGroups(groups: unknown[], ctx: AgentContext): unknown[] {
   return groups.map(group => {
     if (!group || typeof group !== 'object') return group;
     const copy = {...group as Record<string, unknown>};
-    const hooks = array(copy.hooks).filter(hook => !isOurHook(hook, ctx));
+    const hooks = array(copy.hooks).filter(hook => !isOurHook(hook, ctx, true));
     if (!hooks.length) return null;
     copy.hooks = hooks;
     return copy;
   }).filter(Boolean);
 }
 
-function isOurHook(value: unknown, ctx: AgentContext): boolean {
+// `anyInstall` also matches the hooks of another companion install, to replace them.
+function isOurHook(value: unknown, ctx: AgentContext, anyInstall = false): boolean {
   if (!value || typeof value !== 'object') return false;
   const hook = value as Record<string, unknown>;
   const args = Array.isArray(hook.args) ? hook.args : [];
   // Ignore `command`: the Node path changes with every Node upgrade or version manager switch.
-  return hook.type === 'command' && args[0] === ctx.cli && args[1] === 'hook' && args[2] === 'claude';
+  const cli = anyInstall ? isCompanionCli(args[0], ctx) : args[0] === ctx.cli;
+  return hook.type === 'command' && cli && args[1] === 'hook' && args[2] === 'claude';
 }
 
 function fileContainsOurHook(ctx: AgentContext): boolean {

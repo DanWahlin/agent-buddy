@@ -120,6 +120,8 @@ jobs:
     # The desktop app, ready to run: no Rust or Emscripten needed to use it.
     # Built on tags (and by hand), as the release is the only place it ships.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    # On macOS and Linux the app carries the daemon, with the release's own character packs.
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -144,9 +146,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: '24.21.0'
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: |
+            desktop/package-lock.json
+            daemon/package-lock.json
       - name: Add Rust targets
         run: |
           if [ "${{ matrix.target }}" = universal-apple-darwin ]; then
@@ -161,10 +165,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - run: npm ci
+      - name: Download the character packs
+        if: runner.os != 'Windows'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-bundles
+          path: ${{ runner.temp }}/release-bundles
+      - name: Bundle the daemon
+        if: runner.os != 'Windows'
+        working-directory: .
+        run: |
+          mkdir -p build/characters
+          unzip -o -j "$RUNNER_TEMP"/release-bundles/*-characters.zip '*.acpk' -d build/characters
+          node desktop/apps/desktop/scripts/bundle-daemon.mjs --target ${{ matrix.target }}
       - name: Build the app
         working-directory: desktop/apps/desktop
         run: |
-          npm run bundle -- --target ${{ matrix.target }} \
+          # Windows has no daemon to carry: it runs in WSL 2.
+          daemon=()
+          [ "${{ runner.os }}" = Windows ] || daemon=(--config src-tauri/tauri.daemon.conf.json)
+          npm run bundle -- --target ${{ matrix.target }} "${daemon[@]}" \
             --config "{\"version\":\"$(cat ../../../VERSION)\"}"
       - name: Package
         run: |
@@ -228,16 +248,20 @@ jobs:
 
             ### The device
 
-            Download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
+            On macOS and Linux, download the desktop app (below) and open it. It installs the companion service and opens Settings.
+            Connect the device over USB, and click **Install** on the **Device** tab: the app downloads this release's firmware, checks it, and writes it to the device.
+
+            Without the desktop app, download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
             It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
-            Then run `npm run setup` from a clone of the repository to start the companion service and open the Settings page.
+            Then run `npm run setup` from a clone of the repository.
 
             The **characters.zip** asset holds every built-in character pack. Install one from a source checkout with `npm run character path/to/openclaw.acpk`.
 
-            ### The desktop app (optional)
+            ### The desktop app
 
-            The same character, with the same animation, in a small window on your desktop. It needs the companion
-            service (`npm run setup`, above) running, and Settings > **Desktop companion** turns it on or off.
+            The same character, with the same animation, in a small window on your desktop. On macOS and Linux it
+            carries the companion service: when no service runs, it installs it with your agents' hooks, so you need
+            no clone of the repository and no Node.js. If a service from a clone runs, the app follows that one.
 
             > [!TIP]
             > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:

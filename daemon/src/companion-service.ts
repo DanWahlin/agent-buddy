@@ -26,6 +26,10 @@ import {
   type CharacterEntry,
 } from './character-pack.js';
 import {CharacterPackBuilder} from './character-build.js';
+import {DesktopApp, type DesktopAppReport, type DesktopAppStatus, type DesktopCommand} from './desktop-app.js';
+import {openBrowser} from './browser.js';
+import {FirmwareReleases, type ReleaseFirmware} from './firmware-release.js';
+import {runUsbFlasher, type UsbFlasher, type UsbFlashStage} from './usb-flasher.js';
 import {saveConnectionMode, type ConnectionMode} from './connection-mode.js';
 import type {DeviceTransport} from './device-transport.js';
 import {
@@ -38,8 +42,11 @@ import {
 import {
   loadDisplaySettingsSync, saveDisplaySettings, type DesktopBackdrop, type DisplaySettings,
 } from './display-settings.js';
+import {serviceInfo, type ServiceInfo} from './paths.js';
 import type {DaemonStatus, HookEvent, HookPayload, InstallProgress, WifiNetwork} from './protocol.js';
 import type {StateCoordinator} from './state-coordinator.js';
+import {builtFirmwareReader, type FirmwareImage} from './firmware-image.js';
+import {deviceUsageLines, UsageTracker, usageLines, type UsageTotals, type UsageWindow} from './usage-tracker.js';
 import {loadWifiConfig, saveWifiConfig, validateWifiCredentials} from './wifi-config.js';
 
 export interface InstallState {
@@ -56,8 +63,44 @@ export interface InstallResult {
   error?: string;
 }
 
+export interface FirmwareStatus {
+  // What the device runs and what the last `bash tools/arduino.sh build` made (16 hex digits).
+  device: string | null;
+  built: string | null;
+  // The device can take an update over Wi-Fi now, and the built firmware is different.
+  canUpdate: boolean;
+  // `button` is true while the device waits for a BOOT press that allows the update.
+  updating: {percent: number; button: boolean} | null;
+  // `at` is when the upload ended, in ms; the device then restarts.
+  last: {ok: boolean; id: string; at: number; error?: string} | null;
+  usb: UsbFirmwareStatus;
+}
+
+// Installing the release firmware over USB, which the desktop app writes. It works on any ESP32-S3
+// board, also one that has no Agent Companion firmware yet.
+export interface UsbFirmwareStatus {
+  // The release with this service's version, and its firmware ID once it is downloaded.
+  release: string | null;
+  releaseId: string | null;
+  // The desktop app that ran last can write firmware.
+  flasher: boolean;
+  // The USB port with the device: connected, or an ESP32 that does not answer as an Agent Companion.
+  port: string | null;
+  unanswered: boolean;
+  installing: {stage: 'downloading' | UsbFlashStage; percent: number | null} | null;
+  // `at` is when the install ended; the device then restarts into `id`.
+  last: {ok: boolean; version: string; id: string | null; at: number; error?: string} | null;
+}
+
+export interface UsbFirmwareInstaller {
+  releases: Pick<FirmwareReleases, 'saved' | 'prepare'>;
+  flash: UsbFlasher;
+}
+
 export interface CompanionStatus extends DaemonStatus {
+  service: ServiceInfo;
   wifiPaired: boolean;
+  firmware: FirmwareStatus;
   installing: InstallState | null;
   lastInstall: InstallResult | null;
   agents: AgentStatus[];
@@ -74,8 +117,26 @@ export interface CompanionStatus extends DaemonStatus {
     character: string;
     // The .acpk the desktop renders, the same file the device installs; null if it is missing.
     pack: string | null;
+    // Whether the desktop app runs, which is apart from whether it shows the character.
+    app: DesktopAppStatus;
+  };
+  // AI credits (GitHub Copilot) and tokens (all agents) for the chosen window.
+  usage: UsageTotals & {
+    enabled: boolean;
+    window: UsageWindow;
+    // What the device and desktop show now: AIC while Copilot runs, else Tokens while
+    // another agent runs. Empty when usage is off or no agent runs.
+    lines: string[];
+    // Both values, for the settings page.
+    summary: string[];
   };
 }
+
+// How often the agents' session logs are checked for new usage.
+const USAGE_REFRESH_MS = 30_000;
+// After a hook, wait this long so the agent has written its usage first.
+const USAGE_HOOK_DELAY_MS = 3_000;
+const settingsRepeatMs = 3_000;
 
 // Actions shared by the CLI socket and the settings page; 'change' fires when status may differ.
 export class CompanionService extends EventEmitter {
@@ -84,25 +145,114 @@ export class CompanionService extends EventEmitter {
   #installBusy = false;
   #lastInstall: InstallResult | null = null;
   #wifiPaired = false;
+  readonly #service = serviceInfo();
   readonly #transport: DeviceTransport;
   readonly #coordinator: StateCoordinator;
   readonly #agentContext: AgentContext;
   readonly #lastAgentEvents = new Map<AgentId, number>();
   readonly #badgeIcons: AgentBadgeIconDefinition[];
   readonly #characterBuilder: Pick<CharacterPackBuilder, 'refresh'>;
+  readonly #desktopApp: DesktopApp;
+  #settingsOpenedAt = 0;
   #display: DisplaySettings;
   #characterPreference = 'copilot';
+  readonly #usageTracker: Pick<UsageTracker, 'refresh' | 'totals'>;
+  #usageTotals: UsageTotals = {aic: null, tokens: null};
+  #usageTimer: NodeJS.Timeout | null = null;
+  #usageSoon: NodeJS.Timeout | null = null;
+  readonly #firmwareImage: () => FirmwareImage | null;
+  #firmwareUpdating: FirmwareStatus['updating'] = null;
+  #lastFirmware: FirmwareStatus['last'] = null;
+  readonly #usbInstaller: UsbFirmwareInstaller;
+  #release: ReleaseFirmware | null = null;
+  #usbInstalling: UsbFirmwareStatus['installing'] = null;
+  #lastUsbFirmware: UsbFirmwareStatus['last'] = null;
 
   constructor(transport: DeviceTransport, coordinator: StateCoordinator, agentContext = defaultAgentContext(),
               badgeIcons: AgentBadgeIconDefinition[] = [],
-              characterBuilder: Pick<CharacterPackBuilder, 'refresh'> = new CharacterPackBuilder()) {
+              characterBuilder: Pick<CharacterPackBuilder, 'refresh'> = new CharacterPackBuilder(),
+              desktopApp = new DesktopApp(),
+              usageTracker: Pick<UsageTracker, 'refresh' | 'totals'> = new UsageTracker(),
+              firmwareImage: () => FirmwareImage | null = builtFirmwareReader(),
+              usbInstaller: UsbFirmwareInstaller = {releases: new FirmwareReleases(), flash: runUsbFlasher}) {
     super();
     this.#transport = transport;
     this.#coordinator = coordinator;
     this.#agentContext = agentContext;
     this.#badgeIcons = badgeIcons;
     this.#characterBuilder = characterBuilder;
+    this.#desktopApp = desktopApp;
     this.#display = loadDisplaySettingsSync();
+    this.#usageTracker = usageTracker;
+    this.#firmwareImage = firmwareImage;
+    this.#usbInstaller = usbInstaller;
+  }
+
+  // Finds a release firmware that an earlier install downloaded, so status can say if it is current.
+  async loadSavedRelease(): Promise<void> {
+    const version = this.#service.version;
+    this.#release = version ? await this.#usbInstaller.releases.saved(version).catch(() => null) : null;
+    if (this.#release) this.emit('change');
+  }
+
+  // Reads usage now and then every USAGE_REFRESH_MS; the first read of a large log takes seconds.
+  startUsage(): void {
+    if (this.#usageTimer) return;
+    this.#usageTimer = setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS);
+    this.#usageTimer.unref();
+    void this.refreshUsage();
+  }
+
+  stopUsage(): void {
+    if (this.#usageTimer) clearInterval(this.#usageTimer);
+    if (this.#usageSoon) clearTimeout(this.#usageSoon);
+    this.#usageTimer = this.#usageSoon = null;
+  }
+
+  async refreshUsage(): Promise<void> {
+    if (!this.#display.showUsage) return;
+    try {
+      await this.#usageTracker.refresh(this.#coordinator.activeSessionIds());
+    } catch (error) {
+      console.error(`[usage] ${error instanceof Error ? error.message : String(error)}`);
+    }
+    this.#updateUsage();
+  }
+
+  #updateUsage(): void {
+    const totals = this.#display.showUsage
+      ? this.#usageTracker.totals(this.#display.usageWindow, this.#coordinator.activeSessionIds())
+      : {aic: null, tokens: null};
+    const changed = totals.aic !== this.#usageTotals.aic || totals.tokens !== this.#usageTotals.tokens;
+    this.#usageTotals = totals;
+    this.syncUsage();
+    if (changed) this.emit('change');
+  }
+
+  // Also called when sessions start and stop, since the line follows what is running.
+  syncUsage(): void {
+    this.#transport.setUsage(this.#deviceUsageLines());
+  }
+
+  #deviceUsageLines(): string[] {
+    if (!this.#display.showUsage) return [];
+    const agents = [...this.#coordinator.agentActivity().keys()];
+    return deviceUsageLines(this.#usageTotals, {
+      copilot: agents.includes('copilot'),
+      others: agents.some(agent => agent !== 'copilot'),
+    });
+  }
+
+  async setUsage(change: {enabled?: boolean; window?: UsageWindow}): Promise<void> {
+    this.#display = {
+      ...this.#display,
+      ...(change.enabled === undefined ? {} : {showUsage: change.enabled}),
+      ...(change.window === undefined ? {} : {usageWindow: change.window}),
+    };
+    await saveDisplaySettings(this.#display);
+    this.#updateUsage();
+    this.emit('change');
+    if (this.#display.showUsage) await this.refreshUsage();
   }
 
   async refreshWifiPairing(): Promise<void> {
@@ -135,8 +285,18 @@ export class CompanionService extends EventEmitter {
         backdrop: this.#display.desktopBackdrop,
         character: this.desktopCharacter(),
         pack: desktopPackPath(this.desktopCharacter()),
+        app: this.#desktopApp.status(),
       },
+      usage: {
+        enabled: this.#display.showUsage,
+        window: this.#display.usageWindow,
+        ...this.#usageTotals,
+        lines: this.#deviceUsageLines(),
+        summary: this.#display.showUsage ? usageLines(this.#usageTotals) : [],
+      },
+      service: this.#service,
       wifiPaired: this.#wifiPaired,
+      firmware: this.#firmwareStatus(),
       installing: this.#installing,
       lastInstall: this.#lastInstall,
     };
@@ -169,9 +329,21 @@ export class CompanionService extends EventEmitter {
         void markAgentSeen(agent).catch(error => console.error(`[agents] ${error instanceof Error ? error.message : String(error)}`));
       this.#lastAgentEvents.set(agent, Date.now());
       this.syncBadges();
+      this.#usageAfterHook();
       this.emit('change');
     }
     return accepted;
+  }
+
+  // Hooks come in bursts; read usage once, shortly after the last one.
+  #usageAfterHook(): void {
+    if (!this.#usageTimer || !this.#display.showUsage) return;
+    if (this.#usageSoon) clearTimeout(this.#usageSoon);
+    this.#usageSoon = setTimeout(() => {
+      this.#usageSoon = null;
+      void this.refreshUsage();
+    }, USAGE_HOOK_DELAY_MS);
+    this.#usageSoon.unref();
   }
 
   async setAgentEnabled(id: AgentId, enabled: boolean): Promise<AgentStatus[]> {
@@ -251,6 +423,45 @@ export class CompanionService extends EventEmitter {
     this.emit('change');
   }
 
+  // The desktop app asks for status often; the reply tells it when to close or open Settings.
+  desktopSeen(report: DesktopAppReport): DesktopCommand | null {
+    const {command, changed} = this.#desktopApp.seen(report);
+    if (changed) this.emit('change');
+    return command;
+  }
+
+  // For the device's BOOT button: the desktop app opens its Settings window if it runs, else the
+  // browser opens the settings page. Quick repeat presses do not open more browser tabs.
+  async openSettings(url: string | null, open = openBrowser): Promise<'desktop' | 'browser' | null> {
+    const now = Date.now();
+    if (now - this.#settingsOpenedAt < settingsRepeatMs) return null;
+    this.#settingsOpenedAt = now;
+    if (this.#desktopApp.openSettings()) {
+      console.log('[settings] the desktop app opens Settings');
+      return 'desktop';
+    }
+    if (!url) {
+      console.error('[settings] the settings page is not available');
+      return null;
+    }
+    if (!await open(url, this.#desktopApp.environment)) {
+      console.error('[settings] could not open the settings page in a browser');
+      return null;
+    }
+    console.log('[settings] opened the settings page in the browser');
+    return 'browser';
+  }
+
+  async startDesktop(): Promise<void> {
+    await this.#desktopApp.start();
+    this.emit('change');
+  }
+
+  stopDesktop(): void {
+    this.#desktopApp.stop();
+    this.emit('change');
+  }
+
   get installBusy(): boolean {
     return this.#installBusy;
   }
@@ -298,6 +509,114 @@ export class CompanionService extends EventEmitter {
       throw error;
     } finally {
       this.#installing = null;
+      this.#installBusy = false;
+      this.emit('change');
+    }
+  }
+
+  #firmwareStatus(): FirmwareStatus {
+    const device = this.#transport.firmware ?? null;
+    const built = this.#firmwareImage()?.id ?? null;
+    return {
+      device,
+      built,
+      canUpdate: !this.#firmwareUpdating && !this.#installBusy && !this.#usbInstalling && built !== null && device !== null
+        && built !== device && this.#transport.firmwareOverWifi === true,
+      updating: this.#firmwareUpdating,
+      last: this.#lastFirmware,
+      usb: this.#usbFirmwareStatus(),
+    };
+  }
+
+  #usbFirmwareStatus(): UsbFirmwareStatus {
+    const unanswered = this.#transport.usbUnanswered;
+    return {
+      release: this.#service.version,
+      releaseId: this.#release?.id ?? null,
+      flasher: this.#desktopApp.flasher() !== null,
+      port: this.#transport.transport === 'usb' ? this.#transport.address : unanswered?.path ?? null,
+      unanswered: unanswered !== null,
+      installing: this.#usbInstalling,
+      last: this.#lastUsbFirmware,
+    };
+  }
+
+  // Downloads this service's release firmware from GitHub and has the desktop app write it over
+  // USB: bootloader, partition table, app and the Copilot character. Wi-Fi settings stay.
+  async installFirmwareOverUsb(): Promise<void> {
+    if (this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
+      throw new Error('Wait for the current installation to finish.');
+    const version = this.#service.version;
+    if (!version) throw new Error('The companion service has no VERSION file, so it cannot choose a release.');
+    const program = this.#desktopApp.flasher();
+    if (!program) throw new Error('Installing firmware over USB needs the desktop app. Open the desktop app, '
+      + 'then try again.');
+    this.#installBusy = true;
+    this.#usbInstalling = {stage: 'downloading', percent: null};
+    this.#lastUsbFirmware = null;
+    this.emit('change');
+    const set = (next: NonNullable<UsbFirmwareStatus['installing']>) => {
+      if (JSON.stringify(next) === JSON.stringify(this.#usbInstalling)) return;
+      this.#usbInstalling = next;
+      this.emit('change');
+    };
+    let id: string | null = null;
+    try {
+      const release = await this.#usbInstaller.releases.prepare(version, (received, total) =>
+        set({stage: 'downloading', percent: total ? Math.floor(received * 100 / total) : null}));
+      this.#release = release;
+      id = release.id;
+      const port = await this.#transport.findUsbPort();
+      if (!port) throw new Error('No device is on USB. Connect the device with a USB data cable, then try again.');
+      console.log(`[firmware] installing release v${version} (${release.id}) over USB on ${port.path}`);
+      await this.#transport.withUsbReleased(() => this.#usbInstaller.flash(program, release.dir, port, {
+        stage: stage => set({stage, percent: stage === 'writing' ? 0 : null}),
+        progress: percent => set({stage: 'writing', percent}),
+      }));
+      console.log(`[firmware] installed release v${version} over USB; the device restarts`);
+      this.#lastUsbFirmware = {ok: true, version, id, at: Date.now()};
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[firmware] USB install failed: ${message}`);
+      this.#lastUsbFirmware = {ok: false, version, id, at: Date.now(), error: message};
+      throw error;
+    } finally {
+      this.#usbInstalling = null;
+      this.#installBusy = false;
+      this.emit('change');
+    }
+  }
+
+  // Sends the built firmware over Wi-Fi. The device restarts into it, and goes back to its old
+  // firmware if the new one does not reach Wi-Fi within 90 seconds.
+  async updateFirmware(): Promise<void> {
+    if (this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
+      throw new Error('Wait for the current installation to finish.');
+    const image = this.#firmwareImage();
+    if (!image) throw new Error('No firmware is built. Run: bash tools/arduino.sh build');
+    if (image.id === this.#transport.firmware) throw new Error('The device already runs this firmware.');
+    this.#installBusy = true;
+    this.#firmwareUpdating = {percent: 0, button: false};
+    this.#lastFirmware = null;
+    this.emit('change');
+    try {
+      await this.#transport.installFirmware(image.data, image.md5, (sent, total) => {
+        const percent = Math.floor(sent * 100 / total);
+        if (this.#firmwareUpdating && (percent !== this.#firmwareUpdating.percent || this.#firmwareUpdating.button)) {
+          this.#firmwareUpdating = {percent, button: false};
+          this.emit('change');
+        }
+      }, () => {
+        this.#firmwareUpdating = {percent: 0, button: true};
+        this.emit('change');
+      });
+      console.log(`[firmware] sent ${image.id}; the device restarts`);
+      this.#lastFirmware = {ok: true, id: image.id, at: Date.now()};
+    } catch (error) {
+      this.#lastFirmware = {ok: false, id: image.id, at: Date.now(), error: error instanceof Error ? error.message : String(error)};
+      throw error;
+    } finally {
+      this.#firmwareUpdating = null;
       this.#installBusy = false;
       this.emit('change');
     }

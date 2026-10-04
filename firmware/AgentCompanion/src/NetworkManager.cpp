@@ -6,15 +6,28 @@
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <cstring>
+#include <esp_app_desc.h>
+#include <esp_ota_ops.h>
 #include <mbedtls/base64.h>
+
+// Firmware that arrives over Wi-Fi starts on probation: NetworkManager confirms it
+// once it reaches Wi-Fi again, and if it never does, or crashes first, the device
+// goes back to the firmware it had. Without this the core would confirm it at boot.
+extern "C" bool verifyRollbackLater() { return true; }
 
 namespace {
 constexpr uint32_t kSetupDurationMs = 10 * 60 * 1000;
 constexpr uint32_t kReconnectDelayMs = 15 * 1000;
+// How long new firmware has to reach Wi-Fi before the device goes back to the old one.
+constexpr uint32_t kConfirmFirmwareMs = 90 * 1000;
+// Time for the update's response to reach the daemon before the restart.
+constexpr uint32_t kRestartDelayMs = 1000;
+constexpr uint32_t kFirmwareApprovalMs = 60 * 1000;
 constexpr char kDiscoveryRequest[] = "ESP32_AGENT_COMPANION_DISCOVER_V1";
 constexpr char kPreferencesNamespace[] = "agent-network";
 
@@ -53,6 +66,14 @@ void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload*
   upload_ = upload;
   badgeHandler_ = badgeHandler;
   bootId_ = esp_random();
+  // esp_app_get_elf_sha256() stops at CONFIG_APP_RETRIEVE_LEN_ELF_SHA (9) digits, so format the
+  // first 8 bytes here; the daemon reads the same bytes from the .bin.
+  const uint8_t* elfSha = esp_app_get_description()->app_elf_sha256;
+  for (size_t i = 0; i < (sizeof(firmwareId_) - 1) / 2; ++i)
+    snprintf(firmwareId_ + i * 2, 3, "%02x", elfSha[i]);
+  esp_ota_img_states_t otaState;
+  firmwarePending_ = esp_ota_get_state_partition(esp_ota_get_running_partition(), &otaState) == ESP_OK
+      && otaState == ESP_OTA_IMG_PENDING_VERIFY;
   ensureIdentity();
   Preferences preferences;
   if (preferences.begin(kPreferencesNamespace, true)) {
@@ -61,6 +82,8 @@ void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload*
     preferences.end();
   }
   configured_ = ssid_[0] != '\0';
+  // Without a network to prove itself on, new firmware has nothing to wait for.
+  if (firmwarePending_ && !configured_) confirmFirmware();
   configureRoutes();
   if (configured_) connect();
 }
@@ -95,16 +118,20 @@ void NetworkManager::ensureIdentity() {
 }
 
 void NetworkManager::configureRoutes() {
-  const char* headers[] = {"Authorization"};
-  server.collectHeaders(headers, 1);
+  const char* headers[] = {"Authorization", "X-Firmware-MD5"};
+  server.collectHeaders(headers, 2);
   server.on("/", HTTP_GET, [] { server.send(200, "text/html", kSetupPage); });
   server.on("/configure", HTTP_POST, [this] { handleConfigure(); });
   server.on("/pair", HTTP_POST, [this] { handlePair(); });
   server.on("/state", HTTP_POST, [this] { handleState(); });
   server.on("/icon", HTTP_POST, [this] { handleIcon(); });
-  server.on("/agents", HTTP_POST, [this] { handleAgents(); });
+  server.on("/agents", HTTP_POST, [this] { handleBadge("Invalid agents"); });
+  server.on("/usage", HTTP_POST, [this] { handleBadge("Invalid usage"); });
   server.on("/character", HTTP_POST, [this] { handleCharacterResponse(); },
             [this] { handleCharacterBody(); });
+  server.on("/firmware/approval", HTTP_POST, [this] { handleFirmwareApproval(); });
+  server.on("/firmware", HTTP_POST, [this] { handleFirmwareResponse(); },
+            [this] { handleFirmwareBody(); });
   server.on("/status", HTTP_GET, [this] {
     if (!authorized()) {
       server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
@@ -112,13 +139,17 @@ void NetworkManager::configureRoutes() {
     }
     char ssid[48];
     encodedSsid(ssid, sizeof(ssid));
-    char response[320];
+    char response[480];
     snprintf(response, sizeof(response),
              "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
-             "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\"}",
+             "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
+             "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\"}",
              deviceId_, hostname_, connected_ ? "true" : "false",
              static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
-             upload_ ? upload_->installedId() : "none", ssid);
+             upload_ ? upload_->installedId() : "none", ssid, firmwareId_,
+             static_cast<unsigned>(buttonPresses_),
+             firmwareApproval() == FirmwareApproval::Waiting ? "waiting"
+                 : firmwareApproval() == FirmwareApproval::Allowed ? "allowed" : "none");
     server.send(200, "application/json", response);
   });
   server.onNotFound([] {
@@ -261,7 +292,7 @@ void NetworkManager::handleIcon() {
   server.send(200, "application/json", json);
 }
 
-void NetworkManager::handleAgents() {
+void NetworkManager::handleBadge(const char* fallback) {
   if (!authorized()) {
     server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
     return;
@@ -271,7 +302,7 @@ void NetworkManager::handleAgents() {
   body.trim();
   if (!badgeHandler_ || !badgeHandler_(body.c_str(), response, sizeof(response))) {
     char error[144];
-    snprintf(error, sizeof(error), "{\"error\":\"%s\"}", response[0] ? response : "Invalid agents");
+    snprintf(error, sizeof(error), "{\"error\":\"%s\"}", response[0] ? response : fallback);
     server.send(400, "application/json", error);
     return;
   }
@@ -325,6 +356,99 @@ void NetworkManager::handleCharacterResponse() {
   snprintf(response, sizeof(response), "{\"ok\":true,\"character\":\"%s\"}",
            upload_->installedId());
   server.send(200, "application/json", response);
+}
+
+// Streams new firmware into the app slot that isn't running. The daemon sends its MD5
+// first, and Update checks the image header and that MD5 before it switches slots.
+void NetworkManager::handleFirmwareBody() {
+  HTTPRaw& raw = server.raw();
+  if (raw.status == RAW_START) {
+    firmwareAuthorized_ = authorized();
+    firmwareStarted_ = false;
+    firmwareError_ = nullptr;
+    if (!firmwareAuthorized_) return;
+    firmwareStarted_ = true;
+    // The token alone travels over plain HTTP, so a person at the device must allow each update.
+    const bool allowed = firmwareApproval() == FirmwareApproval::Allowed;
+    firmwareApproval_ = FirmwareApproval::None;
+    const String md5 = server.header("X-Firmware-MD5");
+    if (!allowed) {
+      firmwareError_ = "Press the BOOT button on the device to allow the update.";
+    } else if (md5.length() != 32) {
+      firmwareError_ = "Missing the firmware's MD5.";
+    } else if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      firmwareError_ = "No app slot is free for the new firmware.";
+    } else if (!Update.setMD5(md5.c_str())) {
+      firmwareError_ = "Invalid firmware MD5.";
+      Update.abort();
+    }
+    return;
+  }
+  if (!firmwareStarted_) return;
+  if (raw.status == RAW_WRITE) {
+    if (!firmwareError_ && Update.write(raw.buf, raw.currentSize) != raw.currentSize) {
+      firmwareError_ = Update.errorString();
+      Update.abort();
+    }
+  } else if (raw.status == RAW_END) {
+    if (!firmwareError_ && !Update.end(true)) firmwareError_ = Update.errorString();
+  } else if (raw.status == RAW_ABORTED) {
+    if (!firmwareError_) Update.abort();
+    // Keep firmwareStarted_, so the response reports the interruption, not a missing body.
+    firmwareError_ = "Firmware upload was interrupted.";
+  }
+}
+
+void NetworkManager::handleFirmwareResponse() {
+  const bool authorizedUpload = firmwareAuthorized_;
+  firmwareAuthorized_ = false;
+  if (!authorizedUpload) {
+    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    return;
+  }
+  if (!firmwareStarted_) {
+    server.send(400, "application/json", "{\"error\":\"Missing firmware body\"}");
+    return;
+  }
+  firmwareStarted_ = false;
+  if (firmwareError_) {
+    char response[160];
+    snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}", firmwareError_);
+    server.send(400, "application/json", response);
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true,\"restarting\":true}");
+  restartAt_ = millis() + kRestartDelayMs;
+  if (!restartAt_) restartAt_ = 1;
+}
+
+// Starts the wait for a BOOT press. The device shows a prompt until the press or the timeout.
+void NetworkManager::handleFirmwareApproval() {
+  if (!authorized()) {
+    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    return;
+  }
+  firmwareApproval_ = FirmwareApproval::Waiting;
+  firmwareApprovalUntil_ = millis() + kFirmwareApprovalMs;
+  if (!firmwareApprovalUntil_) firmwareApprovalUntil_ = 1;
+  server.send(200, "application/json", "{\"ok\":true,\"firmwareApproval\":\"waiting\"}");
+}
+
+NetworkManager::FirmwareApproval NetworkManager::firmwareApproval() const {
+  return elapsed(millis(), firmwareApprovalUntil_) ? FirmwareApproval::None : firmwareApproval_;
+}
+
+bool NetworkManager::approveFirmware() {
+  if (firmwareApproval() != FirmwareApproval::Waiting) return false;
+  firmwareApproval_ = FirmwareApproval::Allowed;
+  firmwareApprovalUntil_ = millis() + kFirmwareApprovalMs;
+  if (!firmwareApprovalUntil_) firmwareApprovalUntil_ = 1;
+  return true;
+}
+
+void NetworkManager::confirmFirmware() {
+  esp_ota_mark_app_valid_cancel_rollback();
+  firmwarePending_ = false;
 }
 
 void NetworkManager::handleDiscovery() {
@@ -434,8 +558,13 @@ void NetworkManager::updateScan() {
 }
 
 void NetworkManager::update() {
+  if (elapsed(millis(), restartAt_)) ESP.restart();
   updateScan();
   updateConnection();
+  if (firmwarePending_) {
+    if (connected_) confirmFirmware();
+    else if (millis() > kConfirmFirmwareMs) esp_ota_mark_app_invalid_rollback_and_reboot();
+  }
   if (serverStarted_) server.handleClient();
   if (setupActive_) {
     dns.processNextRequest();

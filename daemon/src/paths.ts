@@ -1,5 +1,25 @@
+import {readFileSync} from 'node:fs';
 import {homedir, tmpdir, userInfo} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+export interface ServiceInfo {
+  // The folder the daemon runs from: this repository, or the copy the desktop app installs.
+  root: string;
+  version: string | null;
+}
+
+// This file runs from daemon/dist/src, so the root is three folders up.
+export function serviceInfo(root = fileURLToPath(new URL('../../../', import.meta.url))): ServiceInfo {
+  const trimmed = root.length > 1 ? root.replace(/[\\/]+$/, '') : root;
+  let version: string | null = null;
+  try {
+    version = readFileSync(join(trimmed, 'VERSION'), 'utf8').trim() || null;
+  } catch {
+    // A checkout without VERSION still runs.
+  }
+  return {root: trimmed, version};
+}
 
 export function socketPath(): string {
   if (process.env.AGENT_COMPANION_SOCKET) return process.env.AGENT_COMPANION_SOCKET;
@@ -56,6 +76,16 @@ export function characterPreferencePath(): string {
 export function displaySettingsPath(): string {
   if (process.env.AGENT_COMPANION_DISPLAY_CONFIG) return process.env.AGENT_COMPANION_DISPLAY_CONFIG;
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'display.json');
+}
+
+export function desktopAppPath(): string {
+  if (process.env.AGENT_COMPANION_DESKTOP_APP) return process.env.AGENT_COMPANION_DESKTOP_APP;
+  return join(defaultDataDirectory(process.platform, homedir(), process.env), 'desktop-app.json');
+}
+
+export function usageCachePath(): string {
+  if (process.env.AGENT_COMPANION_USAGE_CACHE) return process.env.AGENT_COMPANION_USAGE_CACHE;
+  return join(defaultDataDirectory(process.platform, homedir(), process.env), 'usage-cache.json');
 }
 
 export function defaultDataDirectory(

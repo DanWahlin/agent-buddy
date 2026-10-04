@@ -11,10 +11,12 @@
 //! picked up and moved, and can be quit.
 
 mod daemon;
+mod flasher;
 mod hyprland;
 mod packs;
 mod placement;
 mod pointer;
+mod service;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,7 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager, WebviewWindow, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry};
 
 use daemon::Snapshot;
 use placement::Placement;
@@ -53,6 +55,9 @@ struct App {
     characters: Mutex<Option<Submenu<Wry>>>,
     /// The tray's Show/Hide item, whose label follows the window.
     visibility: Mutex<Option<MenuItem<Wry>>>,
+    /// The address the Settings window loaded. The lock also stops two quick
+    /// clicks from making two windows.
+    settings: Mutex<Option<String>>,
 }
 
 impl App {
@@ -176,6 +181,36 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     }
 }
 
+/// Put a window in front of every app's windows and give it the keys. A click
+/// on the pet does not make this the active app, and macOS can refuse to
+/// activate it, so the window is ordered front on its own first: it is then
+/// in sight even when the keys stay where they were.
+#[cfg(target_os = "macos")]
+fn bring_to_front(window: &WebviewWindow) {
+    let target = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        use objc2_app_kit::{NSApplication, NSWindow};
+        // Asked for here, on the main thread, so a window closed meanwhile is not used.
+        let Ok(pointer) = target.ns_window() else { return };
+        let main = objc2::MainThreadMarker::new().expect("on the main thread");
+        let app = NSApplication::sharedApplication(main);
+        if app.isHidden() {
+            app.unhideWithoutActivation();
+        }
+        // SAFETY: Tauri's NSWindow, open while this runs on the main thread.
+        let ns_window = unsafe { &*(pointer as *const NSWindow) };
+        ns_window.orderFrontRegardless();
+        ns_window.makeKeyWindow();
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn bring_to_front(window: &WebviewWindow) {
+    let _ = window.set_focus();
+}
+
 /// Put the window on screen without making it the key window or this the
 /// active app: a pet must never take the keys from the app you type in.
 #[cfg(target_os = "macos")]
@@ -214,12 +249,56 @@ fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
     update_visibility(app, window);
 }
 
-/// Open the Settings page, which the daemon serves with a private token.
-fn open_settings() {
-    std::thread::spawn(|| match daemon::settings_url() {
-        Some(url) => packs::open(&url),
+/// The label of the window that shows the Settings page.
+const SETTINGS: &str = "settings";
+
+/// Show the Settings page, which the daemon serves with a private token, in a
+/// window of this app: a browser would open a new tab each time, and nothing
+/// outside a browser can bring one of its tabs to the front. The menus call
+/// it, and so does a click on either of the case's buttons.
+#[tauri::command]
+fn open_settings(handle: AppHandle) {
+    // Off the main thread: the daemon is asked over a socket, and on Windows
+    // making a webview from the main thread deadlocks.
+    std::thread::spawn(move || match daemon::settings_url() {
+        Some(url) => show_settings(&handle, url),
         None => eprintln!("[settings] the ESP32 daemon is not running"),
     });
+}
+
+fn show_settings(handle: &AppHandle, address: String) {
+    let Ok(url) = address.parse::<tauri::Url>() else {
+        eprintln!("[settings] the daemon gave an address that is not valid");
+        return;
+    };
+    let app = handle.state::<Arc<App>>();
+    let mut loaded = app.settings.lock().unwrap();
+    if let Some(window) = handle.get_webview_window(SETTINGS) {
+        // The token changes when the daemon restarts, so the open page would
+        // be refused. Otherwise leave it as it is, on the tab the user chose.
+        if loaded.as_deref() != Some(address.as_str()) && window.navigate(url).is_ok() {
+            *loaded = Some(address);
+        }
+        let _ = window.unminimize();
+        let _ = window.show();
+        bring_to_front(&window);
+        return;
+    }
+    // Only the pet's window may use this app's commands (capabilities/default.json),
+    // so the page, which is the daemon's, gets nothing from the app.
+    let built = WebviewWindowBuilder::new(handle, SETTINGS, WebviewUrl::External(url))
+        .title("Agent Companion Settings")
+        .inner_size(1000.0, 860.0)
+        .min_inner_size(420.0, 480.0)
+        .center()
+        .build();
+    match built {
+        Ok(window) => {
+            *loaded = Some(address);
+            bring_to_front(&window);
+        }
+        Err(error) => eprintln!("[settings] could not open the window: {error}"),
+    }
 }
 
 /// The character's own menu, on a right-click: hide it to the tray or menu
@@ -291,6 +370,12 @@ fn set_tray_icon(app: tauri::State<'_, Arc<App>>, rgba: Vec<u8>, width: u32, hei
 }
 
 fn main() {
+    // The companion service runs this binary to install firmware over USB; no window, no single instance.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(options) = flasher::options(&args) {
+        std::process::exit(flasher::run(options));
+    }
+
     #[cfg(target_os = "linux")]
     linux_environment();
 
@@ -324,6 +409,7 @@ fn main() {
         tray: Mutex::new(None),
         characters: Mutex::new(None),
         visibility: Mutex::new(None),
+        settings: Mutex::new(None),
     });
 
     let setup = app.clone();
@@ -344,12 +430,13 @@ fn main() {
                     let hidden = again.user_hidden.load(Ordering::Relaxed);
                     set_user_hidden(&again, &window, !hidden);
                 }
+                Command::Settings => open_settings(handle.clone()),
                 Command::Quit => handle.exit(0),
             }
         }))
         .manage(app.clone())
         .invoke_handler(tauri::generate_handler![
-            set_region, from_view, start_drag, set_tray_icon, show_context_menu
+            set_region, from_view, start_drag, set_tray_icon, show_context_menu, open_settings
         ])
         // Only the pack the page was told to show can be fetched, by its id.
         .register_uri_scheme_protocol(packs::SCHEME, move |_ctx, request| {
@@ -409,18 +496,44 @@ fn main() {
 
             setup.pointer.clone().watch(window.clone());
             settle_on_hyprland(&window);
+            if Command::from_args(&std::env::args().collect::<Vec<_>>()) == Command::Settings {
+                open_settings(handle.handle().clone());
+            }
+
+            // A release build carries the companion service, and starts it
+            // when no other one runs. A new user then sees Settings, as
+            // `npm run setup` shows it, once the new service answers.
+            let resources = handle.path().resource_dir().ok();
+            let welcome = handle.handle().clone();
+            std::thread::spawn(move || {
+                if !service::ensure(resources) {
+                    return;
+                }
+                for _ in 0..15 {
+                    if let Some(url) = daemon::settings_url() {
+                        return show_settings(&welcome, url);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            });
 
             let following = setup.clone();
             let shown = window.clone();
-            daemon::follow(move |snapshot| {
-                *following.daemon.lock().unwrap() = snapshot.cloned();
-                if following.ready.load(Ordering::Relaxed) {
-                    // Window, tray and menu changes belong on the main thread;
-                    // made from here they wait on it, and it may be waiting on us.
-                    let (app, window) = (following.clone(), shown.clone());
-                    let _ = shown.run_on_main_thread(move || apply_daemon(&app, &window));
-                }
-            });
+            let quitting = handle.handle().clone();
+            let asked = handle.handle().clone();
+            daemon::follow(
+                move |snapshot| {
+                    *following.daemon.lock().unwrap() = snapshot.cloned();
+                    if following.ready.load(Ordering::Relaxed) {
+                        // Window, tray and menu changes belong on the main thread;
+                        // made from here they wait on it, and it may be waiting on us.
+                        let (app, window) = (following.clone(), shown.clone());
+                        let _ = shown.run_on_main_thread(move || apply_daemon(&app, &window));
+                    }
+                },
+                move || quitting.exit(0),
+                move || open_settings(asked.clone()),
+            );
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -455,6 +568,7 @@ enum Command {
     Show,
     Hide,
     Toggle,
+    Settings,
     Quit,
 }
 
@@ -463,6 +577,8 @@ impl Command {
         let flag = |name: &str| args.iter().skip(1).any(|arg| arg == name);
         if flag("--quit") {
             Self::Quit
+        } else if flag("--settings") {
+            Self::Settings
         } else if flag("--toggle") {
             Self::Toggle
         } else if flag("--hide") {
@@ -552,7 +668,7 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
                 // The daemon's page, where the character and the desktop
                 // settings live. Asked for each time: its address carries a
                 // token that changes when the daemon restarts.
-                "settings" => open_settings(),
+                "settings" => open_settings(handle.clone()),
                 _ if id.starts_with("pack:") => {
                     let chosen = id.trim_start_matches("pack:").to_string();
                     *tray_app.chosen.lock().unwrap() = Some(chosen.clone());
@@ -582,7 +698,7 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
     let menu_app = app.clone();
     handle.on_menu_event(move |handle, event| match event.id.as_ref() {
         "context:hide" => set_user_hidden(&menu_app, &menu_window, true),
-        "context:settings" => open_settings(),
+        "context:settings" => open_settings(handle.clone()),
         "context:close" => handle.exit(0),
         _ => {}
     });
@@ -604,6 +720,7 @@ mod tests {
         assert_eq!(Command::from_args(&args(&["app", "--hide"])), Command::Hide);
         assert_eq!(Command::from_args(&args(&["app", "--toggle"])), Command::Toggle);
         assert_eq!(Command::from_args(&args(&["app", "--quit"])), Command::Quit);
+        assert_eq!(Command::from_args(&args(&["app", "--settings"])), Command::Settings);
         // The program's own path is never mistaken for a flag.
         assert_eq!(Command::from_args(&args(&["--hide"])), Command::Show);
     }
