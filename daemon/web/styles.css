@@ -363,6 +363,8 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 .group-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .group-head h3 { margin: 0; font-size: 1rem; }
 .group > .hint { margin: .35rem 0 .9rem; }
+.uninstall-group { margin: 1.2rem 0 0; border-color: #f8514944; }
+.uninstalled-steps { margin: .8rem 0 0; padding-left: 1.2rem; display: grid; gap: .5rem; }
 .usage-group {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent) 7%, transparent);
@@ -386,6 +388,31 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 .setting-row.static .pill { margin-left: .4rem; font-size: .8rem; padding: .2rem .6rem; }
 .setting-row > span { display: grid; gap: .2rem; }
 .setting-row .hint { margin: 0; }
+.setting-row > .volume-control { display: flex; flex: none; align-items: center; gap: .6rem; }
+/* Own track and thumb: the general input padding would keep the thumb off the ends. */
+.volume-control input[type="range"] {
+  --fill: .3; --thumb: 18px;
+  -webkit-appearance: none; appearance: none; width: 160px; height: 24px; margin: 0; padding: 0;
+  border: 0; border-radius: 0; background: transparent; cursor: pointer;
+}
+.volume-control input[type="range"]:disabled { cursor: default; opacity: .5; }
+.volume-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--accent) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--fill)),
+    var(--border) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--fill)));
+}
+.volume-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: var(--thumb); height: var(--thumb); margin-top: -6px;
+  border: 1px solid var(--border); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .3);
+}
+.volume-control input[type="range"]::-moz-range-track { height: 6px; border-radius: 999px; background: var(--border); }
+.volume-control input[type="range"]::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--accent); }
+.volume-control input[type="range"]::-moz-range-thumb {
+  width: var(--thumb); height: var(--thumb); border: 1px solid var(--border); border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .3);
+}
+.volume-control output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .toggle {
   appearance: none; flex: none; width: 46px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 999px;
   background: var(--border); position: relative; cursor: pointer; transition: background .2s;

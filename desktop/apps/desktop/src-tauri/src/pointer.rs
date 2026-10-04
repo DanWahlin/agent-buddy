@@ -47,8 +47,9 @@ const POLL_HIDDEN: Duration = Duration::from_millis(1000);
 /// "Near" is within this many CSS pixels of the window's edge.
 const NEAR: f64 = 120.0;
 
-/// A box the window also takes the mouse in: one of the case's buttons, which
-/// open Settings. CSS pixels within the window, like the head.
+/// A box the window also takes the mouse in: one of the case's buttons (the
+/// upper opens Settings, the lower mutes sounds). CSS pixels within the window,
+/// like the head.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct Rect {
     pub x: f64,
@@ -294,7 +295,7 @@ mod tests {
         assert!(inside(&HEAD, 164.0, 100.0, STICKY_MARGIN));
     }
 
-    /// The case's buttons take clicks too, so they can open Settings, but the
+    /// The case's buttons take clicks too, for Settings and sounds, but the
     /// case between them and the head still lets clicks through.
     #[test]
     fn the_case_buttons_take_the_mouse() {

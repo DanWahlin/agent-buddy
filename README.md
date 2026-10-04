@@ -71,7 +71,8 @@ desktop, with or without the device.
   sleep cycle after two idle minutes.
 - **Wi-Fi or USB:** run it tethered to your computer or from any USB power source
   on the same network.
-- **Optional sound:** short local sound cues through the board's speaker connector.
+- **Optional sound:** short local sound cues through the board's speaker connector,
+  and the same cues from the desktop app when you turn them on.
 
 ## How it works
 
@@ -158,10 +159,11 @@ to repair the device. The character on your desktop follows the device
 Restart any agent sessions that were already open, then start one and watch the
 character react ([Step 4](#step-4-try-it)).
 
-To open Settings in the app's own window, click one of the two buttons on the
+To open Settings in the app's own window, click the upper button on the
 desktop character's case, press the BOOT button on the real device, or
-right-click the character and select **Open Settings…**. Turn the
-character off, or hide the device around it, on the **Desktop** tab in Settings.
+right-click the character and select **Open Settings…**. The lower button
+turns the app's sounds on or off. Turn the character off, hide the device around
+it, or turn on sounds on the **Desktop** tab in Settings.
 
 ## Step 1: Flash the firmware
 
@@ -394,7 +396,9 @@ running, Settings opens in its window. If not, Settings opens in your browser.
 Don't use the PWR button for this: holding it turns the board off.
 
 Sound plays through the board's two-pin speaker connector. Connect a small speaker
-if your board or enclosure doesn't include one.
+if your board or enclosure doesn't include one. The [desktop app](#desktop-agent-companion)
+can play the same sounds through your computer; the device's volume does not
+change them.
 
 ## Agents
 
@@ -768,6 +772,21 @@ The page needs its private link. Open Settings from the desktop app, or run
 <details>
 <summary><strong>Uninstall</strong></summary>
 
+**From Settings (macOS and Linux).** Open Settings, select the **Desktop** tab,
+and select **Uninstall…** at the bottom. This removes the agent hooks, closes
+and deletes the desktop app, and removes and stops the companion service. It
+also deletes your settings, Wi-Fi pairing and added characters, unless you turn
+on **Keep my settings** first. The firmware on the device stays. Restart the
+agent sessions that are open after you uninstall.
+
+Settings does not delete these. It tells you what to do:
+
+- A desktop app that a package installed (`/usr/bin/agent-companion-desktop`).
+  Run `sudo apt remove agent-companion`.
+- A clone of this repository. The service and the app that you built there stay.
+
+**By hand.**
+
 1. Remove the hooks you installed, for example `npm run agents uninstall claude`
    for each agent.
 2. Stop and remove the background service.
@@ -816,6 +835,8 @@ no hooks of its own. The settings page controls both (most of these are on its
 | Characters | The character you install on the device is also shown on the desktop. With no device connected, choose **Show on desktop** instead. The device gets that character when it next connects without one. |
 | Show the character on the desktop | Turn it off to keep the character on the device only. |
 | Show the device around the character | On (default): a small copy of the device (screen, case and buttons), so it looks and reads exactly as it does on your desk. Off: only the character and its effects, straight on the desktop. |
+| Play sounds | Off (default). On: the desktop app plays the device's sound cues. The lower button on the case does the same. |
+| Sound volume | 30% (default). How loud the desktop app plays its sound cues, from 0% to 100%. A tick plays when you change it. Available when **Play sounds** is on. |
 | Show agent badges | The same switch for the device and the desktop. |
 | Show usage on the device | The same switch for the device and the desktop. See [AI credits and tokens](#ai-credits-and-tokens). |
 
@@ -875,15 +896,18 @@ these places:
 If the service can't find it (for example, an AppImage you haven't opened yet),
 **Start** stays off until you open the app one time yourself. Settings shows the
 app as running only while it follows the service, so an app from release 0.7.0
-or earlier shows as **Not running**.
+or earlier shows as **Not running**. To remove the app and the service, see
+**Uninstall** above.
 
 The window has no frame and is always on top.
 - **Clicks** go through to whatever is behind it, except on the character and
   the case's buttons.
 - **Click the character** to poke it, as you tap the device. **Drag it** to move
   it. It remembers where you put it.
-- **Click one of the two buttons on the device's case** to open Settings. Pressing
+- **Click the upper button on the device's case** to open Settings. Pressing
   the BOOT button on the real device does the same.
+- **Click the lower button on the device's case** to turn sounds on or off. A
+  blue light on the button shows that sounds are on. See **Sounds** below.
 - **Right-click the character** for **Hide**, **Open Settings…** and **Close**.
 - **Settings opens in a window of the app**, not in a browser tab. If the
   Settings window is already open, the app brings it to the front. To use a
@@ -892,14 +916,27 @@ The window has no frame and is always on top.
   or your app launcher), or use its tray icon (the menu bar on macOS). If your
   menu bar is too full, macOS hides the icon, so opening the app again always works.
 - **The tray icon** has **Show Agent Companion** or **Hide Agent Companion**,
-  **Character** when no device is connected, **Character (install in Settings)**
-  when a device is connected, **Open Settings…**, **Bring Back to Centre** and
-  **Quit Agent Companion**.
+  **Open Settings…** and **Quit Agent Companion**. Choose the character in Settings.
 - **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
   `--show`, `--hide`, `--settings` or `--quit` to control the running one.
 
 Hide is for now; to keep it off the desktop for good, turn off **Show the
 character on the desktop** in Settings.
+
+**Sounds.** The desktop app plays the device's sound cues when the character
+starts work, needs attention, finishes, or is poked. The cues are the same WAV
+files as on the device. Sounds are **off** (muted) until you turn them on. To
+turn them on or off, do one of these:
+
+- Click the lower button on the case.
+- In Settings, select the **Desktop** tab and use **Play sounds**.
+
+The two always agree, because the companion service keeps the setting. To
+make the sounds softer or louder, for example when music plays, use the
+**Sound volume** slider below **Play sounds** (30% by default). A tick plays at
+the new level when you release the slider. These settings are for the desktop
+app only: the device keeps its own **Volume** in its on-screen menu. The app
+plays no sounds while the character is hidden.
 
 It runs on macOS, Windows and Linux. On Hyprland (including Omarchy) it floats,
 pins and un-borders its own window, so there's nothing to configure. On other

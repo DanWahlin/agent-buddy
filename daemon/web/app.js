@@ -24,6 +24,8 @@ let lastResult = null;
 let toastTimer;
 let wifiScanning = false;
 let wifiScanned = false;
+// The status stream from the service.
+let events = null;
 
 function toast(message, kind = 'info') {
   const element = $('toast');
@@ -246,6 +248,19 @@ function renderStatus() {
   if (frameToggle) {
     if (!desktopPending) frameToggle.checked = desktop.backdrop !== 'none';
     frameToggle.disabled = desktop.visible === false;
+  }
+  const soundsToggle = $('desktop-sounds-toggle');
+  if (soundsToggle) {
+    if (!desktopPending) soundsToggle.checked = desktop.sounds === true;
+    soundsToggle.disabled = desktop.visible === false;
+  }
+  const volume = $('desktop-volume');
+  if (volume) {
+    if (!desktopPending && !volumeDragging) {
+      volume.value = String(Number.isInteger(desktop.volume) ? desktop.volume : 30);
+      showVolume();
+    }
+    volume.disabled = desktop.visible === false || desktop.sounds !== true;
   }
   renderDesktopApp();
 
@@ -509,6 +524,32 @@ $('device-frame-toggle')?.addEventListener('change', event => {
     framed ? 'The device is shown around the character.' : 'Only the character is shown.');
 });
 
+$('desktop-sounds-toggle')?.addEventListener('change', event => {
+  const sounds = event.target.checked;
+  void updateDesktop({sounds}, sounds ? 'Desktop sounds are on.' : 'Desktop sounds are muted.');
+});
+
+// Status updates arrive while the user drags; they must not move the slider.
+let volumeDragging = false;
+
+function showVolume() {
+  const volume = $('desktop-volume');
+  const label = $('desktop-volume-value');
+  if (!volume) return;
+  volume.style.setProperty('--fill', String(Number(volume.value) / 100));
+  if (label) label.textContent = `${volume.value}%`;
+}
+
+$('desktop-volume')?.addEventListener('pointerdown', () => { volumeDragging = true; });
+for (const end of ['pointerup', 'pointercancel']) {
+  window.addEventListener(end, () => { volumeDragging = false; });
+}
+$('desktop-volume')?.addEventListener('input', showVolume);
+$('desktop-volume')?.addEventListener('change', event => {
+  const volume = Number(event.target.value);
+  void updateDesktop({volume}, `Desktop sound volume is ${volume}%.`);
+});
+
 const desktopAppViews = {
   running: {pill: 'Running', kind: 'usb', hint: 'The desktop app is open. Stop closes it.'},
   starting: {pill: 'Starting…', kind: 'warning', hint: 'Opening the desktop app…'},
@@ -563,6 +604,40 @@ async function desktopAppAction(action) {
 
 $('desktop-app-start').addEventListener('click', () => desktopAppAction('start'));
 $('desktop-app-stop').addEventListener('click', () => desktopAppAction('stop'));
+
+$('uninstall').addEventListener('click', async () => {
+  const keepData = $('uninstall-keep-data').checked;
+  const message = 'Uninstall Agent Companion? This removes the desktop app, the companion service and the '
+    + (keepData ? 'agent hooks. Your settings stay.' : 'agent hooks, and deletes your settings, Wi-Fi pairing and added characters.');
+  if (!await confirmAction(message, 'Uninstall')) return;
+  const button = $('uninstall');
+  button.disabled = true;
+  try {
+    showUninstalled(await api('/api/uninstall', {method: 'POST', body: JSON.stringify({keepData}), type: 'application/json'}));
+  } catch (error) {
+    toast(error.message, 'error');
+    button.disabled = false;
+  }
+});
+
+// The service stops in a few seconds, so stop listening and show only what is left to do.
+function showUninstalled(result) {
+  events?.close();
+  for (const section of document.querySelectorAll('main > section, main > .tabs, main > .notice')) section.hidden = true;
+  $('summary').textContent = 'Uninstalled.';
+  $('uninstalled-summary').textContent = result.keptData
+    ? 'Your settings stay on this computer for when you install again. The desktop app closes in a few seconds.'
+    : 'Your settings are deleted. The desktop app closes in a few seconds.';
+  const steps = $('uninstalled-steps');
+  steps.replaceChildren(...[...result.manual ?? [], 'Restart the agent sessions that are open, so they stop calling the hooks.',
+    'You can close this window.'].map(text => {
+    const item = document.createElement('li');
+    item.textContent = text;
+    return item;
+  }));
+  $('uninstalled').hidden = false;
+  sessionStorage.removeItem('companion-token');
+}
 
 // A firmware update restarts the device; this long after the upload, it should run the new firmware.
 const firmwareRestartMs = 120_000;
@@ -912,7 +987,7 @@ function showLinkRequired(expired) {
 if (!token) {
   showLinkRequired(false);
 } else {
-  const events = new EventSource(`/api/events?token=${token}`);
+  events = new EventSource(`/api/events?token=${token}`);
   events.addEventListener('status', event => onStatus(JSON.parse(event.data)));
   events.addEventListener('error', async () => {
     status = null;

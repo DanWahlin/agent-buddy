@@ -163,6 +163,11 @@ export class DesktopApp {
     this.#startedAt = startedAt;
   }
 
+  // Where the app is: where it ran last, else the first usual location that has it.
+  location(): string | null {
+    return this.#target()?.executable ?? null;
+  }
+
   stop(): void {
     if (!this.running) return;
     this.#startedAt = 0;

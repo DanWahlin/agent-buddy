@@ -19,6 +19,9 @@ const MAX_BADGES: usize = 4;
 const ROLES: [&str; 3] = ["working", "attention", "complete"];
 const STATES: [&str; 5] = ["idle", "surprise", "working", "complete", "attention"];
 
+/// The cue volume when the daemon does not give one, as Settings has it.
+pub const DEFAULT_VOLUME: u8 = 30;
+
 /// What the desktop takes from the daemon's status.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
@@ -28,6 +31,10 @@ pub struct Snapshot {
     pub pack: Option<PathBuf>,
     pub visible: bool,
     pub backdrop: String,
+    /// Whether the page plays the device's sound cues. Off unless turned on.
+    pub sounds: bool,
+    /// How loud the cues play, 0 to 100.
+    pub volume: u8,
     /// Whether a device is connected; without one the desktop picks the character.
     pub connected: bool,
     /// Already filtered by the badge setting and cut to four, as the device gets them.
@@ -43,12 +50,14 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// What the page needs: the state, backdrop, badges and usage.
+    /// What the page needs: the state, backdrop, sounds, volume, badges and usage.
     pub fn for_page(&self) -> Value {
         json!({
             "state": self.state,
             "visible": self.visible,
             "backdrop": self.backdrop,
+            "sounds": self.sounds,
+            "volume": self.volume,
             "badges": self.badges.iter()
                 .map(|(id, role)| json!({ "id": id, "role": role }))
                 .collect::<Vec<_>>(),
@@ -184,6 +193,12 @@ pub fn parse(status: &Value) -> Option<Snapshot> {
             .and_then(Value::as_str)
             .unwrap_or("device")
             .to_string(),
+        sounds: desktop.and_then(|it| it.get("sounds")).and_then(Value::as_bool) == Some(true),
+        volume: desktop
+            .and_then(|it| it.get("volume"))
+            .and_then(Value::as_u64)
+            .filter(|it| *it <= 100)
+            .map_or(DEFAULT_VOLUME, |it| it as u8),
         badges: active,
         icons,
         usage: status
@@ -301,12 +316,12 @@ fn app_bundle(executable: &std::path::Path) -> Option<PathBuf> {
     is_bundle.then(|| bundle.to_path_buf())
 }
 
-/// Choose the desktop's character, for when no device is connected to choose it.
-pub fn set_character(id: &str) -> bool {
-    socket_path()
-        .and_then(|path| request(&path, &json!({ "type": "desktop", "character": id })))
-        .and_then(|reply| reply.get("ok")?.as_bool())
-        == Some(true)
+/// Turn the page's sounds on or off. The daemon keeps the setting, so Settings
+/// shows the same; true when it took the change.
+pub fn set_sounds(on: bool) -> bool {
+    let Some(path) = socket_path() else { return false };
+    let reply = request(&path, &json!({ "type": "desktop", "sounds": on }));
+    reply.and_then(|it| it.get("ok")?.as_bool()) == Some(true)
 }
 
 /// The settings page's address, with its private token, from the daemon.
@@ -332,9 +347,13 @@ mod tests {
                 ],
                 "icons": [{ "id": "copilot", "name": "x", "color": "#8F9BFF", "mask": "AAAA" }, { "id": "broken" }]
             },
-            "desktop": { "visible": false, "backdrop": "device", "character": "claude", "pack": "/p/claude.acpk" }
+            "desktop": { "visible": false, "backdrop": "device", "sounds": true, "volume": 30, "character": "claude", "pack": "/p/claude.acpk" }
         });
         let snapshot = parse(&status).unwrap();
+        assert!(snapshot.sounds);
+        assert_eq!(snapshot.for_page()["sounds"], true);
+        assert_eq!(snapshot.volume, 30);
+        assert_eq!(snapshot.for_page()["volume"], 30);
         assert_eq!(snapshot.character.as_deref(), Some("claude"));
         assert_eq!(snapshot.pack, Some(PathBuf::from("/p/claude.acpk")));
         assert!(!snapshot.visible);
@@ -405,7 +424,11 @@ mod tests {
         assert_eq!(snapshot.character.as_deref(), Some("copilot"));
         assert!(snapshot.visible);
         assert!(!snapshot.connected);
+        assert!(!snapshot.sounds);
+        assert_eq!(snapshot.volume, DEFAULT_VOLUME);
         assert_eq!(snapshot.backdrop, "device");
+        let loud = parse(&json!({ "state": "idle", "desktop": { "volume": 400 } })).unwrap();
+        assert_eq!(loud.volume, DEFAULT_VOLUME);
         assert_eq!(parse(&json!({ "state": "idle", "character": "none" })).unwrap().character, None);
         assert!(parse(&json!({ "state": "dancing" })).is_none());
         assert!(parse(&json!([])).is_none());

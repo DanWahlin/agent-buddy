@@ -12,7 +12,7 @@ import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
 import {defaultAgentContext, normalizeAgentHook} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
-import {desktopBackdrops, isDesktopBackdrop} from './display-settings.js';
+import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
@@ -148,9 +148,14 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
           throw new Error('Desktop visibility must be true or false.');
         if (request.backdrop !== undefined && !isDesktopBackdrop(request.backdrop))
           throw new Error(`Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
+        if (request.sounds !== undefined && typeof request.sounds !== 'boolean')
+          throw new Error('Desktop sounds must be on (true) or off (false).');
+        if (request.volume !== undefined && !isDesktopVolume(request.volume))
+          throw new Error('Desktop volume must be a whole number from 0 to 100.');
         if (request.character !== undefined && typeof request.character !== 'string')
           throw new Error('Desktop character must be a character id.');
-        const change = {visible: request.visible, backdrop: request.backdrop, character: request.character};
+        const change = {visible: request.visible, backdrop: request.backdrop, sounds: request.sounds,
+                        volume: request.volume, character: request.character};
         reply(service.setDesktop(change).then(() => ({ok: true, desktop: service.status().desktop})));
       } else if (request.type === 'usage') {
         if (request.enabled !== undefined && typeof request.enabled !== 'boolean')

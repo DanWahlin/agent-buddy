@@ -30,6 +30,8 @@ await esbuild.build({
   target: 'es2022',
   // Emscripten's loader names these for Node, behind a check that is never true in a page.
   external: ['node:*', 'fs', 'path', 'crypto', 'url', 'module', 'worker_threads'],
+  // The device's sound cues (assets/audio), inside the bundle as bytes.
+  loader: { '.wav': 'binary' },
   logLevel: 'warning',
 });
 console.log('built the page with the device engine');

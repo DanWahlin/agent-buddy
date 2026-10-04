@@ -7,11 +7,13 @@
  * screen does around it: steps the engine each frame, shows the result, and
  * passes on what the agent is doing. Around the screen it draws the device
  * itself, case and buttons, unless Settings asks for the character on its own.
+ * It plays the device's sound cues too, when sounds are on.
  */
 
 // Emscripten's loader, CommonJS, bundled by esbuild.
 import createEngine from '../../../../engine/prebuilt/engine.js';
 import { createPresenter, type Presenter } from './present.js';
+import { cueForMode, play, setVolume, unlock } from './sounds.js';
 
 interface TauriApi {
   core: { invoke(command: string, args?: Record<string, unknown>): Promise<unknown> };
@@ -41,6 +43,7 @@ interface Engine {
   _ac_badge_active(packet: number): number;
   _ac_usage(packet: number): number;
   _ac_frame(seconds: number, key: number): number;
+  _ac_shown_mode(): number;
 }
 
 interface DaemonSnapshot {
@@ -53,6 +56,10 @@ interface DaemonSnapshot {
   icons: Array<{ id: string; color: string; mask: string }>;
   /** "AIC: 902", "Tokens: 1.2M"; an older app or daemon may send none. */
   usage?: string[];
+  /** Whether to play the device's sound cues; off when missing. */
+  sounds?: boolean;
+  /** How loud the cues play, 0 to 100; 30 when missing. */
+  volume?: number;
 }
 
 type HostMessage =
@@ -75,8 +82,15 @@ const ROLE_LETTER = { working: 'w', attention: 'a', complete: 'c' } as const;
 let SCREEN = 466;
 const CASE_RADIUS = 269;
 const BUTTON_REACH = 7;
-/** Where the buttons sit on the case's edge, in degrees below the right-hand side. */
+/**
+ * Where the buttons sit on the case's edge, in degrees below the right-hand
+ * side. The upper one opens Settings; the lower one mutes and unmutes sounds.
+ */
 const BUTTON_DEGREES = [-24, 24];
+const SETTINGS_BUTTON = 0;
+const SOUNDS_BUTTON = 1;
+/** The small light on the lower button while sounds are on: the install bar's blue. */
+const SOUNDS_LIGHT = '#5AA1CD';
 const UNITS = 2 * (CASE_RADIUS + BUTTON_REACH + 4);
 /** How strongly the case's rim catches the light. */
 const RIM_GAIN = 1.8;
@@ -100,6 +114,15 @@ let iconsKey = '';
 let activeKey = '';
 let usageKey: string | null = null;
 let loaded = false;
+// Sounds, as the daemon has them, and a click's change until the daemon agrees.
+let soundsSetting = false;
+let soundsClicked: { on: boolean; until: number } | null = null;
+// The volume the daemon gave last; null until the first snapshot.
+let volumeSetting: number | null = null;
+// The mode the engine showed last: a cue plays when it changes, as on the device.
+// -1 after a pack loads, so the first mode shown plays nothing.
+let shownMode = -1;
+const SOUNDS_CLICK_MS = 3000;
 let pendingDaemon: DaemonSnapshot | null = null;
 let last = performance.now();
 
@@ -136,6 +159,7 @@ async function loadPack(url: string): Promise<void> {
   iconsKey = '';
   activeKey = '';
   usageKey = null;
+  shownMode = -1;
   loaded = true;
   if (wantedMode !== 0) e._ac_mode(wantedMode, 0);
   applyBadges(pendingDaemon);
@@ -197,6 +221,7 @@ function receive(incoming: HostMessage): void {
       applyBadges(incoming.daemon);
       applyUsage(incoming.daemon);
       followInstall(incoming.daemon);
+      followSounds(incoming.daemon);
       break;
     case 'showing':
       // Hidden from Settings or from the character's menu: stop entirely.
@@ -206,6 +231,64 @@ function receive(incoming: HostMessage): void {
       say(incoming.message);
       break;
   }
+}
+
+// --- sounds --------------------------------------------------------------------
+
+function soundsOn(): boolean {
+  if (soundsClicked && performance.now() < soundsClicked.until) return soundsClicked.on;
+  return soundsSetting;
+}
+
+/** Sounds are off unless the daemon says on: they start muted. */
+function followSounds(daemon: DaemonSnapshot | null): void {
+  const before = soundsOn();
+  soundsSetting = daemon?.sounds === true;
+  if (soundsClicked && soundsClicked.on === soundsSetting) soundsClicked = null;
+  if (soundsOn() !== before) drawCase();
+  followVolume(daemon?.volume);
+}
+
+/**
+ * Use the volume Settings has. When it changes while sounds are on, play the
+ * tick so the user hears the new level.
+ */
+function followVolume(volume: number | undefined): void {
+  const next = typeof volume === 'number' && volume >= 0 && volume <= 100 ? volume : 30;
+  if (next === volumeSetting) return;
+  const first = volumeSetting === null;
+  volumeSetting = next;
+  setVolume(next);
+  if (!first && soundsOn()) void play('tick').catch(() => {});
+}
+
+/**
+ * The lower button. The light changes at once; the daemon keeps the setting,
+ * so Settings shows the same. Turning sounds on plays the device's tick, so
+ * the click is heard, and lets the page play sounds at all.
+ */
+function toggleSounds(): void {
+  const on = !soundsOn();
+  soundsClicked = { on, until: performance.now() + SOUNDS_CLICK_MS };
+  drawCase();
+  if (on) void play('tick').catch(() => {});
+  void (tauri.core.invoke('set_sounds', { on }) as Promise<boolean>).then(ok => {
+    if (ok) return;
+    soundsClicked = null;
+    drawCase();
+  }, () => {
+    soundsClicked = null;
+    drawCase();
+  });
+}
+
+/** The device plays a cue each time the mode it shows changes; so does this. */
+function followShownMode(mode: number): void {
+  if (mode === shownMode) return;
+  const first = shownMode === -1;
+  shownMode = mode;
+  const cue = cueForMode(mode);
+  if (!first && cue && soundsOn()) void play(cue).catch(() => {});
 }
 
 // --- drawing -----------------------------------------------------------------
@@ -259,7 +342,7 @@ function drawDevice(size: number, context: CanvasRenderingContext2D): void {
 
   // The two buttons on the right edge, behind the case so it overlaps them,
   // lit along their top like the rim.
-  for (const degrees of BUTTON_DEGREES) {
+  BUTTON_DEGREES.forEach((degrees, index) => {
     const angle = degrees * Math.PI / 180;
     context.save();
     context.translate(centre + at(CASE_RADIUS - 2) * Math.cos(angle), centre + at(CASE_RADIUS - 2) * Math.sin(angle));
@@ -272,8 +355,16 @@ function drawDevice(size: number, context: CanvasRenderingContext2D): void {
     context.roundRect(0, -at(17), at(BUTTON_REACH + 2), at(34), at(3));
     context.fillStyle = key;
     context.fill();
+    if (index === SOUNDS_BUTTON && soundsOn()) {
+      context.beginPath();
+      context.roundRect(at(3), -at(8), at(BUTTON_REACH - 1), at(16), at(2));
+      context.fillStyle = SOUNDS_LIGHT;
+      context.shadowColor = SOUNDS_LIGHT;
+      context.shadowBlur = at(6);
+      context.fill();
+    }
     context.restore();
-  }
+  });
 
   // The case: matte black, a touch lighter towards the top left.
   const shell = context.createLinearGradient(centre - at(CASE_RADIUS), centre - at(CASE_RADIUS),
@@ -398,6 +489,8 @@ function setShowing(value: boolean): void {
   showing = value;
   if (showing) {
     last = performance.now();
+    // Whatever changed while hidden was not heard, and is not now.
+    shownMode = -1;
     schedule();
   } else if (timer) {
     clearTimeout(timer);
@@ -429,6 +522,7 @@ function draw(now: number): void {
     loaded = false;
     return;
   }
+  followShownMode(e._ac_shown_mode());
   if (!e._ac_changed() && !dirty) return;
   if (!presenter) return;
   lastFrame = e.HEAPU8.subarray(pixels, pixels + width * height * 4);
@@ -554,8 +648,8 @@ interface Box { x: number; y: number; width: number; height: number }
 
 /**
  * The case's buttons, in CSS pixels within the window: each one's upright
- * bounding box, a little larger than the button so it is easy to hit. Both
- * open Settings. Without the case there are no buttons to press.
+ * bounding box, a little larger than the button so it is easy to hit, upper
+ * first. Without the case there are no buttons to press.
  */
 function buttonBoxes(): Box[] {
   const box = device.getBoundingClientRect();
@@ -580,8 +674,9 @@ function buttonBoxes(): Box[] {
   });
 }
 
-function onButton(x: number, y: number): boolean {
-  return buttonBoxes().some(box => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height);
+/** Which button is under the pointer: SETTINGS_BUTTON, SOUNDS_BUTTON, or -1. */
+function buttonAt(x: number, y: number): number {
+  return buttonBoxes().findIndex(box => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height);
 }
 
 /** The tray shows the character it is showing, cut from a real frame. */
@@ -615,42 +710,49 @@ function sendTrayIcon(tries = 30): void {
 
 /**
  * Dragging the character moves the window; a click is a poke, the same as a
- * tap on the device's screen, and a click on either of the case's buttons opens
- * Settings. Only the page sees whether the pointer moved before it came up, so
- * it decides which: a drag that starts on a button only moves the window.
+ * tap on the device's screen. A click on the case's upper button opens
+ * Settings, and on the lower one mutes or unmutes sounds. Only the page sees
+ * whether the pointer moved before it came up, so it decides which: a drag
+ * that starts on a button only moves the window.
  */
 const DRAG_THRESHOLD_PX = 4;
-let pressedAt: { x: number; y: number; button: boolean } | null = null;
+let pressedAt: { x: number; y: number; button: number } | null = null;
 
-function hoverButton(over: boolean): void {
-  device.classList.toggle('over-button', over);
-  device.title = over ? 'Open Settings' : '';
+function hoverButton(button: number): void {
+  device.classList.toggle('over-button', button !== -1);
+  device.title = button === SETTINGS_BUTTON ? 'Open Settings'
+    : button === SOUNDS_BUTTON ? (soundsOn() ? 'Mute sounds' : 'Unmute sounds') : '';
 }
 
 device.addEventListener('pointerdown', event => {
   // Only the main button pokes or drags; the right one opens the menu.
   if (event.button !== 0) return;
-  pressedAt = { x: event.clientX, y: event.clientY, button: onButton(event.clientX, event.clientY) };
+  // A click lets the page play sounds, which a webview may not allow before one.
+  if (soundsOn()) unlock();
+  pressedAt = { x: event.clientX, y: event.clientY, button: buttonAt(event.clientX, event.clientY) };
 });
 device.addEventListener('pointermove', event => {
   if (!pressedAt) {
-    hoverButton(onButton(event.clientX, event.clientY));
+    hoverButton(buttonAt(event.clientX, event.clientY));
     return;
   }
   if (Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) < DRAG_THRESHOLD_PX) return;
   pressedAt = null;
-  hoverButton(false);
+  hoverButton(-1);
   void tauri.core.invoke('start_drag');
 });
-device.addEventListener('pointerup', () => {
-  if (pressedAt?.button) void tauri.core.invoke('open_settings');
-  else if (pressedAt && engine && loaded) engine._ac_mode(MODES.surprise, 1);
+device.addEventListener('pointerup', event => {
+  if (pressedAt?.button === SETTINGS_BUTTON) void tauri.core.invoke('open_settings');
+  else if (pressedAt?.button === SOUNDS_BUTTON) {
+    toggleSounds();
+    hoverButton(buttonAt(event.clientX, event.clientY));
+  } else if (pressedAt && engine && loaded) engine._ac_mode(MODES.surprise, 1);
   pressedAt = null;
 });
 for (const done of ['pointercancel', 'pointerleave']) {
   device.addEventListener(done, () => {
     pressedAt = null;
-    hoverButton(false);
+    hoverButton(-1);
   });
 }
 window.addEventListener('resize', resize);

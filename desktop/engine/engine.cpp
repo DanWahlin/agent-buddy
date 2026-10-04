@@ -383,6 +383,10 @@ AC_EXPORT void ac_forget() {
 // Whether the last ac_frame differed from the one before it.
 AC_EXPORT int ac_changed() { return engine && engine->changed ? 1 : 0; }
 
+// The mode the last ac_frame showed (CharacterMode), or -1 with no character.
+// The device plays its sound cue when this changes, so the desktop does too.
+AC_EXPORT int ac_shown_mode() { return engine ? static_cast<int>(engine->state.mode) : -1; }
+
 // The rectangles the last ac_frame changed: ac_dirty_count() of them, each
 // four int32 (x, y, width, height) at ac_dirty_rects().
 AC_EXPORT int ac_dirty_count() { return engine ? static_cast<int>(engine->dirty.size() / 4) : 0; }

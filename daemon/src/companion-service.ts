@@ -1,6 +1,9 @@
 import {existsSync} from 'node:fs';
 import {EventEmitter} from 'node:events';
+import {homedir, userInfo} from 'node:os';
+import {setTimeout as sleep} from 'node:timers/promises';
 import {
+  adapters,
   agentStatuses,
   markAgentSeen,
   defaultAgentContext,
@@ -42,7 +45,8 @@ import {
 import {
   loadDisplaySettingsSync, saveDisplaySettings, type DesktopBackdrop, type DisplaySettings,
 } from './display-settings.js';
-import {serviceInfo, type ServiceInfo} from './paths.js';
+import {defaultDataDirectory, serviceInfo, socketPath, type ServiceInfo} from './paths.js';
+import {createUninstallPlan, runUninstall, type UninstallPlan} from './uninstaller.js';
 import type {DaemonStatus, HookEvent, HookPayload, InstallProgress, WifiNetwork} from './protocol.js';
 import type {StateCoordinator} from './state-coordinator.js';
 import {builtFirmwareReader, type FirmwareImage} from './firmware-image.js';
@@ -114,6 +118,10 @@ export interface CompanionStatus extends DaemonStatus {
   desktop: {
     visible: boolean;
     backdrop: DesktopBackdrop;
+    // Whether the desktop app plays sounds; the device keeps its own volume.
+    sounds: boolean;
+    // The desktop app's sound volume, 0 to 100.
+    volume: number;
     character: string;
     // The .acpk the desktop renders, the same file the device installs; null if it is missing.
     pack: string | null;
@@ -137,6 +145,24 @@ const USAGE_REFRESH_MS = 30_000;
 // After a hook, wait this long so the agent has written its usage first.
 const USAGE_HOOK_DELAY_MS = 3_000;
 const settingsRepeatMs = 3_000;
+// After an uninstall request, the settings page has this long to show the result before the
+// desktop app closes, and the app has this long to close before its files go.
+const uninstallDelayMs = 3_000;
+const uninstallAppWaitMs = 6_000;
+
+export interface DesktopChange {
+  visible?: boolean;
+  backdrop?: DesktopBackdrop;
+  sounds?: boolean;
+  volume?: number;
+  character?: string;
+}
+
+export interface UninstallResult {
+  keptData: boolean;
+  // What the user must do, because the service cannot do it.
+  manual: string[];
+}
 
 // Actions shared by the CLI socket and the settings page; 'change' fires when status may differ.
 export class CompanionService extends EventEmitter {
@@ -167,6 +193,7 @@ export class CompanionService extends EventEmitter {
   #release: ReleaseFirmware | null = null;
   #usbInstalling: UsbFirmwareStatus['installing'] = null;
   #lastUsbFirmware: UsbFirmwareStatus['last'] = null;
+  #uninstalling = false;
 
   constructor(transport: DeviceTransport, coordinator: StateCoordinator, agentContext = defaultAgentContext(),
               badgeIcons: AgentBadgeIconDefinition[] = [],
@@ -283,6 +310,8 @@ export class CompanionService extends EventEmitter {
       desktop: {
         visible: this.#display.showDesktopCompanion,
         backdrop: this.#display.desktopBackdrop,
+        sounds: this.#display.desktopSounds,
+        volume: this.#display.desktopVolume,
         character: this.desktopCharacter(),
         pack: desktopPackPath(this.desktopCharacter()),
         app: this.#desktopApp.status(),
@@ -403,7 +432,7 @@ export class CompanionService extends EventEmitter {
     this.emit('change');
   }
 
-  async setDesktop(change: {visible?: boolean; backdrop?: DesktopBackdrop; character?: string}): Promise<void> {
+  async setDesktop(change: DesktopChange): Promise<void> {
     if (change.character !== undefined) {
       // A connected device decides the character; this is for when there is none.
       if (this.#transport.connected) throw new Error('The device is connected; install the character instead.');
@@ -412,11 +441,14 @@ export class CompanionService extends EventEmitter {
       await saveCharacterPreference(change.character);
       this.#characterPreference = change.character;
     }
-    if (change.visible !== undefined || change.backdrop !== undefined) {
+    if (change.visible !== undefined || change.backdrop !== undefined || change.sounds !== undefined
+      || change.volume !== undefined) {
       this.#display = {
         ...this.#display,
         ...(change.visible === undefined ? {} : {showDesktopCompanion: change.visible}),
         ...(change.backdrop === undefined ? {} : {desktopBackdrop: change.backdrop}),
+        ...(change.sounds === undefined ? {} : {desktopSounds: change.sounds}),
+        ...(change.volume === undefined ? {} : {desktopVolume: change.volume}),
       };
       await saveDisplaySettings(this.#display);
     }
@@ -460,6 +492,50 @@ export class CompanionService extends EventEmitter {
   stopDesktop(): void {
     this.#desktopApp.stop();
     this.emit('change');
+  }
+
+  // Removes the agent hooks now. Then, after a short time, closes the desktop app and starts a
+  // script that removes the app, this service and (unless keepData) its data, and stops the service.
+  async uninstall(keepData: boolean, run: (plan: UninstallPlan) => void = runUninstall): Promise<UninstallResult> {
+    if (process.platform !== 'darwin' && process.platform !== 'linux')
+      throw new Error('Uninstall from Settings works on macOS and Linux only. See "Uninstall" in the README.');
+    if (this.#uninstalling) throw new Error('The uninstall is already in progress.');
+    this.#uninstalling = true;
+    const manual: string[] = [];
+    for (const adapter of adapters) {
+      try {
+        // Only hooks that are there, so an agent without hooks does not get new, empty config files.
+        if (['missing', 'unsupported'].includes(adapter.hookStatus(this.#agentContext))) continue;
+        await uninstallAgent(adapter.id, this.#agentContext);
+      } catch (error) {
+        manual.push(`Remove the ${adapter.name} hook yourself: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const home = homedir();
+    const plan = createUninstallPlan({
+      platform: process.platform,
+      home,
+      uid: process.getuid?.() ?? userInfo().uid,
+      dataDir: defaultDataDirectory(process.platform, home, process.env),
+      socketPath: socketPath(),
+      serviceRoot: this.#service.root,
+      app: this.#desktopApp.location(),
+      keepData,
+      configHome: process.env.XDG_CONFIG_HOME,
+      dataHome: process.env.XDG_DATA_HOME,
+      cacheHome: process.env.XDG_CACHE_HOME,
+    });
+    console.log(`[uninstall] hooks removed; removing ${plan.remove.length} paths in ${uninstallDelayMs} ms`);
+    setTimeout(() => void this.#finishUninstall(plan, run), uninstallDelayMs);
+    this.emit('change');
+    return {keptData: keepData, manual: [...manual, ...plan.manual]};
+  }
+
+  async #finishUninstall(plan: UninstallPlan, run: (plan: UninstallPlan) => void): Promise<void> {
+    this.#desktopApp.stop();
+    const until = Date.now() + uninstallAppWaitMs;
+    while (this.#desktopApp.running && Date.now() < until) await sleep(200);
+    run(plan);
   }
 
   get installBusy(): boolean {

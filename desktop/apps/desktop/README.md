@@ -38,9 +38,16 @@ dialog - so the character is the handle. A click is still a poke: the page
 tells the two apart by whether the pointer travelled a few pixels first, which
 only it can see.
 
+**The case's buttons.** The upper button opens Settings. The lower button
+turns sounds on or off: the page plays the device's own cues (`assets/audio`,
+bundled into the page) when the mode the engine shows changes, as the firmware
+does. The companion service keeps the setting (`desktopSounds`, off by
+default), so the button and the **Play sounds** switch in Settings agree. The
+**Sound volume** slider in Settings sets the cue gain (`desktopVolume`, 0 to
+100, 30 by default); the page plays a tick when the volume changes.
+
 **Quit from the tray.** With no title bar and no taskbar button, the tray is
-the only way out, and the menu also has *Bring Back to Centre* for when it has
-ended up somewhere awkward.
+the only way out. Its menu has Show/Hide, *Open Settings…* and *Quit*.
 
 Where it was put is remembered, and checked on the way back up: a position is
 only restored if enough of the window would land on a monitor that exists
@@ -50,10 +57,9 @@ instead of somewhere nobody can reach.
 ## Changing character
 
 With a device connected, the character is the one installed on it: change it
-in Settings. With no device, choose **Show on desktop** in Settings, or use
-**Character** in the tray. The daemon keeps that choice, so the device gets the
-same character when it next connects without one. Without the daemon at all,
-the tray choice is remembered locally.
+in Settings. With no device, choose **Show on desktop** in Settings. The daemon
+keeps that choice, so the device gets the same character when it next connects
+without one. Without the daemon at all, the app shows the default character.
 
 Only the pack the page was told to show can be fetched, by its id, over a
 protocol of the app's own.

@@ -59,12 +59,9 @@ pub fn path_for(directory: &Path, id: &str) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// Which pack to show without the daemon: the one chosen last, else the default.
-pub fn choose<'a>(ids: &'a [String], wanted: Option<&str>) -> Option<&'a String> {
-    wanted
-        .and_then(|id| ids.iter().find(|candidate| candidate.as_str() == id))
-        .or_else(|| ids.iter().find(|candidate| candidate.as_str() == DEFAULT))
-        .or_else(|| ids.first())
+/// Which pack to show without the daemon: the default, else any.
+pub fn choose(ids: &[String]) -> Option<&String> {
+    ids.iter().find(|candidate| candidate.as_str() == DEFAULT).or_else(|| ids.first())
 }
 
 /// Where the page fetches a pack from.
@@ -81,28 +78,6 @@ pub fn pack_url(id: &str) -> String {
 pub fn requested_id(path: &str) -> Option<&str> {
     let id = path.trim_start_matches('/').strip_suffix(".acpk")?;
     is_valid_id(id).then_some(id)
-}
-
-/// The character last chosen from the tray, for when there is no daemon.
-pub fn remembered(window: &tauri::WebviewWindow) -> Option<String> {
-    let path = choice_file(window)?;
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|id| id.trim().to_string())
-        .filter(|id| is_valid_id(id))
-}
-
-pub fn remember(window: &tauri::WebviewWindow, id: &str) {
-    let Some(path) = choice_file(window) else { return };
-    if let Some(directory) = path.parent() {
-        let _ = std::fs::create_dir_all(directory);
-    }
-    let _ = std::fs::write(path, id);
-}
-
-fn choice_file(window: &tauri::WebviewWindow) -> Option<PathBuf> {
-    use tauri::Manager;
-    Some(window.app_handle().path().app_data_dir().ok()?.join("character"))
 }
 
 #[cfg(test)]
@@ -125,13 +100,10 @@ mod tests {
     }
 
     #[test]
-    fn the_chosen_one_wins_then_the_default_then_anything() {
-        let all = ids(&["copilot", "claude", "openclaw"]);
-        assert_eq!(choose(&all, Some("claude")).unwrap(), "claude");
-        assert_eq!(choose(&all, Some("gone")).unwrap(), "copilot");
-        assert_eq!(choose(&all, None).unwrap(), "copilot");
-        assert_eq!(choose(&ids(&["openclaw"]), None).unwrap(), "openclaw");
-        assert!(choose(&[], None).is_none());
+    fn the_default_wins_then_anything() {
+        assert_eq!(choose(&ids(&["claude", "copilot", "openclaw"])).unwrap(), "copilot");
+        assert_eq!(choose(&ids(&["openclaw"])).unwrap(), "openclaw");
+        assert!(choose(&[]).is_none());
     }
 
     #[test]

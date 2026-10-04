@@ -25,7 +25,7 @@ class FakeService extends EventEmitter {
   modes: string[] = [];
   agentActions: string[] = [];
   badges: boolean[] = [];
-  desktop: Array<{visible?: boolean; backdrop?: string; character?: string}> = [];
+  desktop: Array<{visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}> = [];
   usage: Array<{enabled?: boolean; window?: string}> = [];
   usbFirmware = {release: '0.7.0', releaseId: null, flasher: true, port: '/dev/test', unanswered: false,
                  installing: null, last: null};
@@ -38,7 +38,7 @@ class FakeService extends EventEmitter {
             mode: 'auto', sessions: 0, wifiPaired: false, firmware: this.firmware, installing: null, lastInstall: null,
             drivingAgents: [], agents: this.agentStatuses(),
             badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
-            desktop: {visible: true, backdrop: 'device', character: 'copilot', pack: null},
+            desktop: {visible: true, backdrop: 'device', sounds: false, volume: 30, character: 'copilot', pack: null},
             usage: {enabled: true, window: 'today', aic: 902, tokens: null, lines: ['AIC: 902'], summary: ['AIC: 902']}} as never;
   }
   agentStatuses() {
@@ -82,7 +82,7 @@ class FakeService extends EventEmitter {
   async setAgentBadgesEnabled(enabled: boolean) {
     this.badges.push(enabled);
   }
-  async setDesktop(change: {visible?: boolean; backdrop?: string; character?: string}) {
+  async setDesktop(change: {visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}) {
     if (change.character === 'missing') throw new Error('Unknown character.');
     this.desktop.push(change);
   }
@@ -103,6 +103,12 @@ class FakeService extends EventEmitter {
   }
   async installFirmwareOverUsb() {
     this.usbInstalls += 1;
+  }
+  uninstalls: boolean[] = [];
+  async uninstall(keepData: boolean) {
+    if (this.uninstalls.length > 0) throw new Error('The uninstall is already in progress.');
+    this.uninstalls.push(keepData);
+    return {keptData: keepData, manual: ['Delete the desktop app: /opt/app']};
   }
 }
 
@@ -216,13 +222,20 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":false}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"device"}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"sounds":"on"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"sounds":true}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":101}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":"50"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":30}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"Bad!"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"missing"}'})).status, 409);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"claude"}'})).status, 200);
     assert.deepEqual(service.desktop, [
-      {visible: false, backdrop: undefined, character: undefined},
-      {visible: undefined, backdrop: 'device', character: undefined},
-      {visible: undefined, backdrop: undefined, character: 'claude'},
+      {visible: false, backdrop: undefined, sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: 'device', sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, sounds: true, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, sounds: undefined, volume: 30, character: undefined},
+      {visible: undefined, backdrop: undefined, sounds: undefined, volume: undefined, character: 'claude'},
     ]);
     assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{}'})).status, 400);
     assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{"enabled":"yes"}'})).status, 400);
@@ -242,6 +255,14 @@ test('validates and performs actions', async () => {
     assert.equal(refused.status, 409);
     assert.match(JSON.parse(refused.body).error, /one time yourself/);
     assert.deepEqual(service.desktopApp, ['start', 'stop']);
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{}'})).status, 400);
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":"yes"}'})).status, 400);
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":true}', token: false})).status, 401);
+    const uninstalled = await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":true}'});
+    assert.equal(uninstalled.status, 200);
+    assert.deepEqual(JSON.parse(uninstalled.body), {ok: true, keptData: true, manual: ['Delete the desktop app: /opt/app']});
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":false}'})).status, 409);
+    assert.deepEqual(service.uninstalls, [true]);
     assert.equal((await call('/api/firmware/update', {method: 'GET'})).status, 404);
     assert.equal((await call('/api/firmware/update', {method: 'POST', token: false})).status, 401);
     assert.equal((await call('/api/firmware/update', {method: 'POST'})).status, 202);

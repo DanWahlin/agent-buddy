@@ -194,6 +194,50 @@
         </span>
         <input id="device-frame-toggle" class="toggle" type="checkbox" role="switch">
       </label>
+      <label class="setting-row" for="desktop-sounds-toggle">
+        <span>
+          <strong>Play sounds</strong>
+          <span class="hint">The desktop app plays the device's sounds when the character starts work, needs attention, finishes, or is tapped. Sounds are off until you turn them on. The lower button on the case also turns them on or off.</span>
+        </span>
+        <input id="desktop-sounds-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <div class="setting-row static">
+        <span>
+          <strong id="desktop-volume-title">Sound volume</strong>
+          <span class="hint">How loud the desktop app plays its sounds. A sound plays when you change it. The device keeps its own volume.</span>
+        </span>
+        <span class="volume-control">
+          <input id="desktop-volume" type="range" min="0" max="100" step="5" value="30"
+                 aria-labelledby="desktop-volume-title">
+          <output id="desktop-volume-value" for="desktop-volume">30%</output>
+        </span>
+      </div>
+      <section class="group uninstall-group" aria-labelledby="uninstall-title">
+        <div class="group-head">
+          <h3 id="uninstall-title">Uninstall</h3>
+        </div>
+        <p class="hint">Removes the desktop app, the companion service and the agent hooks from this computer. The firmware on the device stays.</p>
+        <label class="setting-row" for="uninstall-keep-data">
+          <span>
+            <strong>Keep my settings</strong>
+            <span class="hint">Keeps the Wi-Fi pairing, added characters and settings, for when you install again.</span>
+          </span>
+          <input id="uninstall-keep-data" class="toggle" type="checkbox" role="switch">
+        </label>
+        <div class="setting-row static">
+          <span>
+            <strong>Uninstall Agent Companion</strong>
+            <span class="hint" id="uninstall-hint">The desktop app closes, then its files go.</span>
+          </span>
+          <button type="button" id="uninstall" class="danger">Uninstall…</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="uninstalled" class="card" aria-labelledby="uninstalled-title" hidden>
+      <h2 id="uninstalled-title">Agent Companion is uninstalled</h2>
+      <p id="uninstalled-summary" class="hint"></p>
+      <ul id="uninstalled-steps" class="uninstalled-steps"></ul>
     </section>
   </main>
 
