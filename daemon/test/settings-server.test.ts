@@ -23,6 +23,8 @@ class FakeService extends EventEmitter {
   installs: string[] = [];
   wifi: Array<[string, string]> = [];
   modes: string[] = [];
+  orientation: {offsetDegrees: number} | null = {offsetDegrees: 0};
+  orientationChanges: number[] = [];
   agentActions: string[] = [];
   badges: boolean[] = [];
   desktop: Array<{visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}> = [];
@@ -35,7 +37,8 @@ class FakeService extends EventEmitter {
   usbInstalls = 0;
   status() {
     return {state: 'idle', transport: 'usb', connected: this.connected, port: '/dev/test', character: 'copilot',
-            mode: 'auto', sessions: 0, wifiPaired: false, firmware: this.firmware, installing: null, lastInstall: null,
+            mode: 'auto', sessions: 0, wifiPaired: false, firmware: this.firmware,
+            orientation: this.orientation, installing: null, lastInstall: null,
             drivingAgents: [], agents: this.agentStatuses(),
             badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
             desktop: {visible: true, backdrop: 'device', sounds: false, volume: 30, character: 'copilot', pack: null},
@@ -78,6 +81,14 @@ class FakeService extends EventEmitter {
   }
   async setConnection(mode: string) {
     this.modes.push(mode);
+  }
+  async setOrientationOffset(offsetDegrees: number) {
+    if (!this.connected) throw new Error('Connect the Agent Companion first.');
+    if (!this.orientation) throw new Error('Update the device firmware to adjust orientation.');
+    if (this.installBusy) throw new Error('Wait for the current installation to finish.');
+    this.orientationChanges.push(offsetDegrees);
+    this.orientation = {offsetDegrees};
+    return this.orientation;
   }
   async setAgentBadgesEnabled(enabled: boolean) {
     this.badges.push(enabled);
@@ -132,6 +143,7 @@ async function withServer(run: (call: Call, service: FakeService) => Promise<voi
           req.destroy();
           resolve({status: res.statusCode ?? 0, headers: res.headers, body});
         }
+
       });
       res.on('end', () => resolve({status: res.statusCode ?? 0, headers: res.headers, body}));
       res.on('close', () => resolve({status: res.statusCode ?? 0, headers: res.headers, body}));
@@ -150,6 +162,32 @@ async function withServer(run: (call: Call, service: FakeService) => Promise<voi
 type Call = (path: string, options?: {
   method?: string; host?: string; token?: string | false; headers?: Record<string, string>; body?: string | Buffer;
 }) => Promise<{status: number; headers: Record<string, string | string[] | undefined>; body: string}>;
+
+test('orientation settings are authenticated, bounded, confirmed, and report unavailable devices', async () => {
+  await withServer(async (call, service) => {
+    const request = (offsetDegrees: unknown, tokenValue: string | false = token) =>
+      call('/api/orientation', {method: 'POST', token: tokenValue,
+        body: JSON.stringify({offsetDegrees}), headers: {'Content-Type': 'application/json'}});
+    assert.equal((await request(0.5, false)).status, 401);
+    for (const value of [15.5, -15.5, 0.1, '0', null]) {
+      assert.equal((await request(value)).status, 400);
+    }
+    assert.deepEqual(service.orientationChanges, []);
+    const saved = await request(-2.5);
+    assert.equal(saved.status, 200);
+    assert.deepEqual(JSON.parse(saved.body), {ok: true, orientation: {offsetDegrees: -2.5}});
+    assert.deepEqual(service.orientationChanges, [-2.5]);
+    assert.equal(JSON.parse((await call('/api/status')).body).orientation.offsetDegrees, -2.5);
+    assert.equal((await request(0)).status, 200);
+    service.installBusy = true;
+    assert.equal((await request(1)).status, 409);
+    service.installBusy = false;
+    service.orientation = null;
+    assert.equal((await request(1)).status, 409);
+    service.connected = false;
+    assert.equal((await request(1)).status, 409);
+  });
+});
 
 test('serves the page with strict security headers', async () => {
   await withServer(async call => {

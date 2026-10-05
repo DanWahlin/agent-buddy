@@ -147,6 +147,24 @@
         <label>Password <input id="password" name="password" type="password" maxlength="63" autocomplete="off"></label>
         <button type="submit" class="button">Connect device</button>
       </form>
+      <section class="group" aria-labelledby="orientation-title">
+        <h3 id="orientation-title">Screen alignment</h3>
+        <p class="hint" id="orientation-hint">Connect the device to adjust its screen alignment.</p>
+        <div class="setting-row static">
+          <span>
+            <strong id="orientation-offset-title">Alignment trim</strong>
+            <span class="hint">Correct a steady tilt in half-degree steps. Saved on this device. Touch follows the same correction.</span>
+          </span>
+          <span class="volume-control orientation-control">
+            <button type="button" id="orientation-left" class="secondary" disabled>Left</button>
+            <input id="orientation-offset" type="range" min="-15" max="15" step="0.5" value="0"
+                   aria-labelledby="orientation-offset-title" disabled>
+            <button type="button" id="orientation-right" class="secondary" disabled>Right</button>
+            <output id="orientation-offset-value" for="orientation-offset">0 deg</output>
+            <button type="button" id="orientation-reset" class="secondary" disabled>Reset</button>
+          </span>
+        </div>
+      </section>
       <div class="setting-row static firmware-row">
         <span>
           <strong>Device firmware <span id="firmware-state" class="pill offline">Checking…</span></strong>
@@ -156,9 +174,13 @@
           <button type="button" id="firmware-update" disabled hidden>Update</button>
         </span>
       </div>
-      <div class="setting-row static usb-firmware-row">
+      <details id="usb-firmware-recovery" class="firmware-recovery">
+        <summary>USB release install or recovery</summary>
+        <p class="hint">This installs a published release, not the source build above.
+          Use it to set up a new device or deliberately replace its firmware.</p>
+        <div class="setting-row static usb-firmware-row">
         <span>
-          <strong>Install over USB <span id="usb-firmware-state" class="pill offline">Checking…</span></strong>
+          <strong>Published release <span id="usb-firmware-state" class="pill offline">Checking…</span></strong>
           <span class="hint" id="usb-firmware-hint">Waiting for the companion service…</span>
           <span class="bar" id="usb-firmware-bar" role="progressbar" aria-labelledby="usb-firmware-state"
                 aria-valuemin="0" aria-valuemax="100" hidden><span></span></span>
@@ -166,7 +188,8 @@
         <span class="row-actions">
           <button type="button" id="usb-firmware-install" disabled>Install</button>
         </span>
-      </div>
+        </div>
+      </details>
     </section>
 
     <section id="panel-desktop" class="card panel" role="tabpanel" aria-labelledby="tab-desktop" tabindex="0" hidden>

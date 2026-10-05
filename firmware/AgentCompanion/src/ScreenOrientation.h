@@ -77,8 +77,8 @@ class DisplayOrientation {
   float angle() const { return angle_; }
 
  private:
-  static constexpr float kSnapEnter = 2.0f * kOrientationPi / 180.0f;
-  static constexpr float kSnapExit = 5.0f * kOrientationPi / 180.0f;
+  static constexpr float kSnapEnter = 0.5f * kOrientationPi / 180.0f;
+  static constexpr float kSnapExit = 1.5f * kOrientationPi / 180.0f;
   float angle_ = 0.0f;
 };
 }

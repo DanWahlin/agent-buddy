@@ -1,4 +1,8 @@
 import {request as httpRequest} from 'node:http';
+import {
+  isOrientationOffset, isOrientationTenths, orientationFromTenths, orientationProtocol,
+  type DeviceOrientation,
+} from './orientation-settings.js';
 import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
 import {
   activePacket,
@@ -57,6 +61,7 @@ export class WifiTransport {
   #character: string | null = null;
   #adaptivePatchRam = false;
   #firmware: string | null = null;
+  #orientation: DeviceOrientation | null = null;
   #ssidBase64: string | undefined;
   #installing = false;
   #buttons: ButtonCount | null = null;
@@ -84,6 +89,10 @@ export class WifiTransport {
   // The first 16 hex digits of the firmware's ELF SHA-256; null before protocol 9.
   get firmware(): string | null {
     return this.#connected ? this.#firmware : null;
+  }
+
+  get orientation(): DeviceOrientation | null {
+    return this.#connected ? this.#orientation : null;
   }
 
   get adaptivePatchRam(): boolean {
@@ -173,9 +182,20 @@ export class WifiTransport {
       if (!response.ok) return false;
       const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
                                                patchRam?: string; ssidBase64?: string; firmware?: string;
-                                               buttonPresses?: number};
+                                               buttonPresses?: number; orientationOffsetTenths?: unknown};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
+      const protocol = Number.isInteger(status.protocol) ? Number(status.protocol) : 0;
+      const previousOffset = this.#orientation?.offsetDegrees;
+      if (protocol >= orientationProtocol && status.orientationOffsetTenths !== null) {
+        if (!isOrientationTenths(status.orientationOffsetTenths)) {
+          console.error('[wifi] The device sent an invalid orientation offset.');
+          return false;
+        }
+        this.#orientation = orientationFromTenths(status.orientationOffsetTenths);
+      } else {
+        this.#orientation = null;
+      }
       this.#character = typeof status.character === 'string' ? status.character : null;
       this.#adaptivePatchRam = status.patchRam === 'adaptive';
       this.#firmware = typeof status.firmware === 'string' && /^[0-9a-f]{16}$/.test(status.firmware)
@@ -191,7 +211,7 @@ export class WifiTransport {
       }
       this.#endpoint = endpoint;
       this.#boot = status.boot!;
-      this.#protocol = Number.isInteger(status.protocol) ? Number(status.protocol) : 0;
+      this.#protocol = protocol;
       if (needsSync) {
         this.#iconSignature = '';
         this.#activeSignature = '';
@@ -199,6 +219,7 @@ export class WifiTransport {
       }
       if (this.#enabled && needsSync) await this.#sendState(this.#desired);
       else this.#setConnection(true, endpoint);
+      if (previousOffset !== this.#orientation?.offsetDegrees) this.#changed();
       return true;
     } catch {
       return false;
@@ -207,6 +228,28 @@ export class WifiTransport {
 
   async installCharacter(pack: Buffer, progress: InstallProgress = () => undefined): Promise<string> {
     return parseUploadResponse(await this.#upload('/character', pack, {}, progress));
+  }
+
+  async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
+    if (!isOrientationOffset(offsetDegrees))
+      throw new Error('Orientation offset must be from -15 to 15 degrees in half-degree steps.');
+    const operation = this.#commands.then(async () => {
+      if (!this.#connected || !this.#config || !this.#endpoint)
+        throw new Error('Connect the Agent Companion first.');
+      if (this.#protocol < orientationProtocol || !this.#orientation)
+        throw new Error('Update the device firmware to adjust orientation.');
+      if (this.#installing) throw new Error('Wait for the current installation to finish.');
+      const response = await this.#postBadge('/orientation', String(Math.round(offsetDegrees * 10)));
+      const body = await response.json() as {orientationOffsetTenths?: unknown};
+      const orientation = orientationFromTenths(body.orientationOffsetTenths);
+      if (orientation.offsetDegrees !== offsetDegrees)
+        throw new Error('The device did not apply the requested orientation offset.');
+      this.#orientation = orientation;
+      this.#changed();
+      return orientation;
+    });
+    this.#commands = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   // Sends a firmware image (the app .bin). The device checks the MD5, restarts into it, and goes
@@ -348,15 +391,17 @@ export class WifiTransport {
       });
   }
 
-  async #postBadge(path: '/icon' | '/agents' | '/usage', body: string): Promise<void> {
-    if (!this.#config || !this.#endpoint) return;
+  async #postBadge(path: '/icon' | '/agents' | '/usage' | '/orientation', body: string): Promise<Response> {
+    if (!this.#config || !this.#endpoint) throw new Error('The Wi-Fi device is not connected.');
     const response = await fetch(`${this.#endpoint}${path}`, {
       method: 'POST',
       headers: {Authorization: `Bearer ${this.#config.token}`, 'Content-Type': 'text/plain; charset=utf-8'},
       body,
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) throw new Error(`Device rejected badge packet: ${await response.text()}`);
+    if (!response.ok) throw new Error(`Device rejected ${path === '/orientation'
+      ? 'orientation settings' : 'badge packet'}: ${await response.text()}`);
+    return response;
   }
 
   #setConnection(connected: boolean, endpoint: string | null): void {

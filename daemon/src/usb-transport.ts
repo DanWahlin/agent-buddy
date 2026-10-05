@@ -1,5 +1,8 @@
 import {SerialPort} from 'serialport';
 import {
+  orientationPacket, orientationProtocol, parseOrientationLine, type DeviceOrientation,
+} from './orientation-settings.js';
+import {
   deviceNetwork,
   parseWifiNetworkLine,
   uniqueWifiNetworks,
@@ -24,7 +27,7 @@ import {
 
 const networkRefreshMs = 5000;
 // The newest firmware protocol this daemon knows; see kDeviceProtocol in DeviceCommands.h.
-const maxProtocol = 11;
+const maxProtocol = 12;
 
 interface LineWaiter {
   match: (line: string) => boolean;
@@ -55,6 +58,7 @@ export class UsbTransport {
   #adaptivePatchRam = false;
   #firmware: string | null = null;
   #network: DeviceNetwork | null = null;
+  #orientation: DeviceOrientation | null = null;
   // The ESP32 port the last scan chose, and how many handshakes in a row it failed.
   #seen: UsbPort | null = null;
   #failures = 0;
@@ -83,6 +87,10 @@ export class UsbTransport {
 
   get network(): DeviceNetwork | null {
     return this.connected ? this.#network : null;
+  }
+
+  get orientation(): DeviceOrientation | null {
+    return this.connected ? this.#orientation : null;
   }
 
   get connected(): boolean {
@@ -124,6 +132,7 @@ export class UsbTransport {
     const port = this.#port;
     this.#port = undefined;
     this.#path = null;
+    this.#orientation = null;
     if (port?.isOpen) {
       await new Promise<void>(resolve => port.close(() => resolve()));
     }
@@ -223,6 +232,7 @@ export class UsbTransport {
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
       this.#applyInfo(info);
+      await this.#readOrientation();
       this.#iconSignature = '';
       this.#activeSignature = '';
       this.#usageSignature = null;
@@ -288,6 +298,36 @@ export class UsbTransport {
     return operation;
   }
 
+  async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
+    const packet = orientationPacket(offsetDegrees);
+    const operation = this.#commands.then(async () => {
+      if (!this.connected) throw new Error('Connect the Agent Companion first.');
+      if (this.#protocol < orientationProtocol)
+        throw new Error('Update the device firmware to adjust orientation.');
+      const expected = `ORIENTATION_SETTINGS offset_tenths=${Math.round(offsetDegrees * 10)}`;
+      const line = await this.#request(packet,
+          candidate => candidate === expected || candidate.startsWith('COMMAND_ERROR '));
+      if (line.startsWith('COMMAND_ERROR ')) throw new Error(line.slice('COMMAND_ERROR '.length));
+      const orientation = parseOrientationLine(line);
+      this.#orientation = orientation;
+      this.#changed();
+      return orientation;
+    });
+    this.#commands = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  async #readOrientation(): Promise<void> {
+    if (this.#protocol < orientationProtocol) {
+      this.#orientation = null;
+      return;
+    }
+    const line = await this.#request('o', candidate => candidate.startsWith('ORIENTATION_SETTINGS ')
+        || candidate.startsWith('COMMAND_ERROR '));
+    if (line.startsWith('COMMAND_ERROR ')) throw new Error(line.slice('COMMAND_ERROR '.length));
+    this.#orientation = parseOrientationLine(line);
+  }
+
   // The device scans with its own radio, so the list holds only networks it can actually join.
   scanWifi(): Promise<WifiNetwork[]> {
     const operation = this.#commands.then(async () => {
@@ -314,6 +354,7 @@ export class UsbTransport {
       throw new Error(`Unsupported device protocol: ${info}`);
     }
     this.#protocol = protocol;
+    if (protocol < orientationProtocol) this.#orientation = null;
     this.#adaptivePatchRam = /\bpatch_ram=adaptive\b/.test(info);
     this.#firmware = /\bfirmware=([0-9a-f]{16})\b/.exec(info)?.[1] ?? null;
     this.#network = deviceNetwork(/\bssid_b64=([A-Za-z0-9+/=]*)/.exec(info)?.[1],
@@ -327,6 +368,7 @@ export class UsbTransport {
       if (!this.connected) return;
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
       this.#applyInfo(info);
+      await this.#readOrientation();
       console.log(`[usb] ${info}`);
       this.#changed();
     }).catch(error => console.error(`[usb] ${this.#message(error)}`));
@@ -336,14 +378,19 @@ export class UsbTransport {
   // A newly saved network joins in the background, so keep asking until the device reports it joined.
   #refreshNetwork(): void {
     if (!this.connected || this.#networkRefreshActive || this.#protocol < 4
-        || !this.#network || this.#network.connected) return;
+        || (this.#protocol < orientationProtocol && (!this.#network || this.#network.connected))) return;
     this.#networkRefreshActive = true;
     const operation = this.#commands.then(async () => {
       if (!this.connected) return;
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
+      const previousOrientation = this.#orientation?.offsetDegrees;
+      const previousNetwork = this.#network;
+      this.#applyInfo(info);
+      await this.#readOrientation();
       const network = deviceNetwork(/\bssid_b64=([A-Za-z0-9+/=]*)/.exec(info)?.[1],
                                     /\bwifi_connected=1\b/.test(info));
-      if (network?.ssid !== this.#network?.ssid || network?.connected !== this.#network?.connected) {
+      if (network?.ssid !== previousNetwork?.ssid || network?.connected !== previousNetwork?.connected
+          || previousOrientation !== this.#orientation?.offsetDegrees) {
         this.#network = network;
         this.#changed();
       }

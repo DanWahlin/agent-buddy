@@ -27,11 +27,12 @@
 #include "src/Motion.h"
 #include "src/OrientedDisplay.h"
 #include "src/OrientationSensor.h"
+#include "src/OrientationSettings.h"
 
 using namespace copilot;
 
 namespace {
-Arduino_ESP32QSPI displayBus(12, 38, 4, 5, 6, 7);
+Arduino_ESP32QSPI displayBus(kDisplayCsPin, 38, 4, 5, 6, 7, true);
 Arduino_CO5300 panel(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
 OrientedDisplay display(&panel, &displayBus);
 QueueHandle_t freeFrames, readyFrames, commands;
@@ -44,7 +45,7 @@ tinfl_decompressor inflater;
 alignas(4) uint8_t inflateHistory[TINFL_LZ_DICT_SIZE];
 SpritePredictor spritePredictor;
 uint32_t inflateTimeUs = 0, predictTimeUs = 0;
-constexpr size_t kTransferBytes = 4096;
+constexpr size_t kTransferBytes = 8 * 1024;
 static_assert(kCharacterUploadChunkBytes <= kTransferBytes,
               "Character upload chunks are staged in the display transfer buffer.");
 uint8_t* transferBuffer;
@@ -68,9 +69,12 @@ NetworkManager network;
 OrientationSensor orientationSensor;
 ButtonPressTracker bootButton;
 uint32_t buttonPresses = 0;
+int16_t orientationOffsetTenths = 0;
+bool orientationDirty = false;
 constexpr char kPreferencesNamespace[] = "agent-companion";
 constexpr char kSoundPreference[] = "sound";
 constexpr char kSoundVolumePreference[] = "volume";
+constexpr char kOrientationPreference[] = "orient-offset";
 
 void logMessage(const char* format, ...) {
   char message[384];
@@ -87,8 +91,10 @@ void logMessage(const char* format, ...) {
 }
 
 bool updateOrientation() {
-  if (!orientationSensor.update()) return false;
-  if (!display.setAngle(orientationSensor.angle())) return false;
+  bool changed = orientationDirty;
+  orientationDirty = false;
+  if (orientationSensor.update()) changed = display.setAngle(orientationSensor.angle()) || changed;
+  if (!changed) return false;
   setTouchRotation(display.angle());
   return true;
 }
@@ -314,6 +320,54 @@ void saveSoundVolume(uint8_t volume) {
     logMessage("SETTINGS_ERROR sound preference write failed\n");
   preferences.end();
 }
+
+int16_t loadOrientationOffset() {
+  Preferences preferences;
+  if (!preferences.begin(kPreferencesNamespace, false)) {
+    logMessage("ORIENTATION_ERROR preference open failed; using zero trim\n");
+    return 0;
+  }
+  if (preferences.isKey(kOrientationPreference)
+      && preferences.getType(kOrientationPreference) != PT_I16) {
+    preferences.end();
+    logMessage("ORIENTATION_ERROR invalid preference type; using zero trim\n");
+    return 0;
+  }
+  const int16_t tenths = preferences.getShort(kOrientationPreference, 0);
+  preferences.end();
+  if (!validOrientationOffset(tenths)) {
+    logMessage("ORIENTATION_ERROR invalid stored trim=%d; using zero trim\n", tenths);
+    return 0;
+  }
+  return tenths;
+}
+
+int16_t currentOrientationOffset() { return orientationOffsetTenths; }
+
+const char* configureOrientation(int16_t tenths) {
+  if (!validOrientationOffset(tenths)) return "Invalid orientation offset.";
+  if (installStarted || restartAt || network.firmwareRestarting()
+      || network.firmwareApproval() != NetworkManager::FirmwareApproval::None)
+    return "Wait for the current installation or firmware request to finish.";
+  if (tenths == orientationOffsetTenths) return nullptr;
+  Preferences preferences;
+  if (!preferences.begin(kPreferencesNamespace, false)) {
+    logMessage("ORIENTATION_ERROR preference open failed\n");
+    return "Could not open orientation preferences.";
+  }
+  const bool saved = preferences.putShort(kOrientationPreference, tenths) == sizeof(tenths);
+  preferences.end();
+  if (!saved) {
+    logMessage("ORIENTATION_ERROR preference write failed\n");
+    return "Could not save orientation preferences.";
+  }
+  orientationOffsetTenths = tenths;
+  orientationDirty = display.setTrim(tenths * kOrientationPi / 1800.0f) || orientationDirty;
+  return nullptr;
+}
+
+const NetworkManager::OrientationControl kOrientationControl{
+    currentOrientationOffset, configureOrientation};
 
 void queueModeCue(CharacterMode mode) {
   switch (mode) {
@@ -915,6 +969,22 @@ void configureWifi(const char* payload) {
 
 void processCommand(DeviceCommand command, const DeviceCommands& parser, const Frame* frame) {
   switch (command) {
+    case DeviceCommand::ConfigureOrientation: {
+      int16_t tenths;
+      if (!parseOrientationOffset(parser.payload(), tenths)) {
+        logMessage("COMMAND_ERROR invalid orientation offset\n");
+        break;
+      }
+      if (const char* error = configureOrientation(tenths)) {
+        logMessage("COMMAND_ERROR %s\n", error);
+        break;
+      }
+      logMessage("ORIENTATION_SETTINGS offset_tenths=%d\n", orientationOffsetTenths);
+      break;
+    }
+    case DeviceCommand::GetOrientation:
+      logMessage("ORIENTATION_SETTINGS offset_tenths=%d\n", orientationOffsetTenths);
+      break;
     case DeviceCommand::None: break;
     case DeviceCommand::Invalid: logMessage("COMMAND_ERROR invalid or incomplete packet\n"); break;
     case DeviceCommand::Capture:
@@ -1072,9 +1142,11 @@ void setup() {
   if (!characterReady) logMessage("CHARACTER id=none reason=%s\n", spriteStorageError());
   if (!initializeTouchInput()) fatal(touchInputError());
   pinMode(kBootButtonPin, INPUT_PULLUP);
+  orientationOffsetTenths = loadOrientationOffset();
+  orientationDirty = display.setTrim(orientationOffsetTenths * kOrientationPi / 1800.0f);
   // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
   // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
-  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket);
+  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket, &kOrientationControl);
   if (!orientationSensor.begin()) {
     logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
   } else {
@@ -1263,6 +1335,7 @@ void loop() {
                     display.angle() * 180.0f / kOrientationPi,
                     orientationSensor.accelerometerX(), orientationSensor.accelerometerY(),
                     orientationSensor.accelerometerZ());
+      logMessage("SCANOUT compose=%uus spi_wait=%uus\n", display.composeUs(), display.writeUs());
       logMessage("STAGES motion=%uus decode=%uus composite=%uus eyes=%uus effects=%uus inflate=%uus predict=%uus\n",
                     timing.motionUs, timing.decodeUs, timing.compositeUs, timing.eyesUs, timing.effectsUs,
                     timing.inflateUs, timing.predictUs);

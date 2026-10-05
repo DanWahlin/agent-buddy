@@ -147,9 +147,37 @@ are converted from native RGB565; character pixels already have display byte
 order and are not converted again.
 
 Near each quarter turn, angle snapping prevents small sensor changes from moving
-the interface. Touch uses the same snapped angle and pixel mapping as the display.
+the interface. Snapping starts within 0.5 degrees and releases at 1.5 degrees,
+so a broad snap window cannot leave the interface visibly tilted. Touch uses
+the same snapped angle and pixel mapping as the display.
+The shared touch/IMU bus uses 400 kHz Fast-mode, as supported by SensorLib, so
+accelerometer reads do not consume the frame's timing margin. Rotated scanout
+clips each row once and processes small tiles to reuse source cache lines.
+The 8 KiB internal DMA buffer is split in two: SPI sends one half while the next
+rows are composed into the other half. Every transfer completes before the buffer is
+reused or another screen is drawn. `SCANOUT` telemetry separates composition
+time from SPI waiting time.
 Settings, character installation, and BOOT-approved firmware prompts all use this
 path. The original character capture command still returns the unrotated source.
+
+Web **Settings > Device > Screen alignment** adds a per-device trim from -15 to
++15 degrees in 0.5-degree steps. **Left** rotates counterclockwise and **Right**
+rotates clockwise; **Reset** sets zero. The device saves the value in NVS, so it
+survives restarts and is not copied to a different device. Trim is applied after
+angle snapping and uses the same transform for display and touch.
+
+The Device tab distinguishes the installed source build from a published
+release. When the current source build is installed, no Update button is shown.
+Published release installation remains available under **USB release install
+or recovery**. Replacing firmware on a connected device requires confirmation;
+it can remove source-build features and reinstalls the release's Copilot pack.
+
+Protocol 12 adds the bounded `^<offset-tenths>\n` USB packet and the `o` query.
+Both reply with `ORIENTATION_SETTINGS offset_tenths=N`. Wi-Fi uses an authenticated
+`POST /orientation` with the same integer payload, and `/status` reports
+`orientationOffsetTenths`. Older firmware continues to work with the daemon but
+does not offer this control. Alignment writes are rejected during installation
+or a firmware approval request.
 
 Run `bash tools/test_device_inputs.sh` for orientation, scanout, touch, and BOOT
 regressions. Before a release, compare frame rate and free memory with the previous

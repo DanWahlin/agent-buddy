@@ -59,6 +59,11 @@ int main() {
       check(6, angle, 1, 1, 4, 4, order);
       check(466, angle, 27, 0, 412, 466, order);
     }
+    for (int degrees = -180; degrees <= 180; degrees += 5) {
+      const float angle = degrees * copilot::kOrientationPi / 180;
+      check(5, angle, 1, 1, 3, 3, order);
+      check(6, angle, 0, 0, 6, 6, order);
+    }
   }
 
   const std::array<uint16_t, 4> colors{0xf800, 0x07e0, 0x001f, 0xffff};

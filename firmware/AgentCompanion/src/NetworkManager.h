@@ -16,9 +16,13 @@ class NetworkManager {
     void (*abort)(const char* error);
     const char* (*installedId)();
   };
+  struct OrientationControl {
+    int16_t (*offset)();
+    const char* (*configure)(int16_t tenths);
+  };
 
   void begin(CommandHandler commandHandler, const CharacterUpload* upload,
-             BadgeHandler badgeHandler = nullptr);
+             BadgeHandler badgeHandler = nullptr, const OrientationControl* orientation = nullptr);
   void update();
   bool startSetup();
   bool configure(const char* ssid, const char* password);
@@ -63,6 +67,7 @@ class NetworkManager {
   void handleFirmwareBody();
   void handleFirmwareResponse();
   void handleFirmwareApproval();
+  void handleOrientation();
   void confirmFirmware();
   void handleDiscovery();
   void updateConnection();
@@ -76,6 +81,7 @@ class NetworkManager {
   CommandHandler commandHandler_ = nullptr;
   BadgeHandler badgeHandler_ = nullptr;
   const CharacterUpload* upload_ = nullptr;
+  const OrientationControl* orientation_ = nullptr;
   const char* uploadError_ = nullptr;
   bool uploadAuthorized_ = false;
   bool uploadStarted_ = false;

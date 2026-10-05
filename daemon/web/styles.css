@@ -252,6 +252,9 @@ button.sized::after { content: attr(data-widest); visibility: hidden; }
 .wifi-form { grid-template-columns: 1fr 1fr; }
 .wifi-form > button[type="submit"] { justify-self: start; }
 .firmware-row { margin-top: 1.25rem; }
+.firmware-recovery { margin-top: 1rem; }
+.firmware-recovery > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.firmware-recovery > .hint { margin-top: .75rem; }
 .usb-firmware-row .bar { display: block; margin-top: .5rem; }
 .usb-firmware-row .bar[hidden] { display: none; }
 .usb-firmware-row .bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
@@ -407,6 +410,7 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
   border: 0; border-radius: 0; background: transparent; cursor: pointer;
 }
 .volume-control input[type="range"]:disabled { cursor: default; opacity: .5; }
+.orientation-control { flex-wrap: wrap; justify-content: flex-end; }
 .volume-control input[type="range"]::-webkit-slider-runnable-track {
   height: 6px; border-radius: 999px;
   background: linear-gradient(to right,

@@ -4,9 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
 #include <vector>
 
 constexpr int32_t GFX_NOT_DEFINED = -1;
+#define ESP32QSPI_SPI_HOST SPI2_HOST
+#define log_e(...) std::fprintf(stderr, __VA_ARGS__)
 
 class Arduino_DataBus {
  public:

@@ -60,16 +60,16 @@ int main() {
   copilot::DisplayOrientation display;
   assert(!display.update(degree));
   assert(display.angle() == 0.0f);
-  assert(!display.update(4 * degree));
-  assert(display.update(6 * degree));
-  assert(near(display.angle(), 6 * degree));
-  assert(display.update(degree));
+  assert(!display.update(1.4f * degree));
+  assert(display.update(1.6f * degree));
+  assert(near(display.angle(), 1.6f * degree));
+  assert(display.update(0.3f * degree));
   assert(display.angle() == 0.0f);
   for (float cardinal : {copilot::kOrientationPi / 2, copilot::kOrientationPi,
                          -copilot::kOrientationPi / 2, 0.0f}) {
-    display.update(cardinal + degree);
+    display.update(cardinal + 0.3f * degree);
     assert(std::fabs(copilot::ScreenOrientation::shortestAngle(display.angle() - cardinal)) < 0.00001f);
-    assert(!display.update(cardinal - 4 * degree));
+    assert(!display.update(cardinal - 1.2f * degree));
     assert(std::fabs(copilot::ScreenOrientation::shortestAngle(display.angle() - cardinal)) < 0.00001f);
   }
 

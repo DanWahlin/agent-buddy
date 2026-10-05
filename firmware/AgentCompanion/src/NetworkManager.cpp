@@ -1,6 +1,7 @@
 #include "NetworkManager.h"
 #include "Config.h"
 #include "DeviceCommands.h"
+#include "OrientationSettings.h"
 
 #include <Arduino.h>
 #include <DNSServer.h>
@@ -61,10 +62,11 @@ void copyText(char* destination, size_t capacity, const String& source) {
 
 namespace copilot {
 void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload* upload,
-                           BadgeHandler badgeHandler) {
+                           BadgeHandler badgeHandler, const OrientationControl* orientation) {
   commandHandler_ = commandHandler;
   upload_ = upload;
   badgeHandler_ = badgeHandler;
+  orientation_ = orientation;
   bootId_ = esp_random();
   // esp_app_get_elf_sha256() stops at CONFIG_APP_RETRIEVE_LEN_ELF_SHA (9) digits, so format the
   // first 8 bytes here; the daemon reads the same bytes from the .bin.
@@ -127,6 +129,7 @@ void NetworkManager::configureRoutes() {
   server.on("/icon", HTTP_POST, [this] { handleIcon(); });
   server.on("/agents", HTTP_POST, [this] { handleBadge("Invalid agents"); });
   server.on("/usage", HTTP_POST, [this] { handleBadge("Invalid usage"); });
+  server.on("/orientation", HTTP_POST, [this] { handleOrientation(); });
   server.on("/character", HTTP_POST, [this] { handleCharacterResponse(); },
             [this] { handleCharacterBody(); });
   server.on("/firmware/approval", HTTP_POST, [this] { handleFirmwareApproval(); });
@@ -140,22 +143,48 @@ void NetworkManager::configureRoutes() {
     char ssid[48];
     encodedSsid(ssid, sizeof(ssid));
     char response[480];
+    char orientation[8] = "null";
+    if (orientation_) snprintf(orientation, sizeof(orientation), "%d", orientation_->offset());
     snprintf(response, sizeof(response),
              "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
              "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
-             "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\"}",
+             "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s}",
              deviceId_, hostname_, connected_ ? "true" : "false",
              static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
              upload_ ? upload_->installedId() : "none", ssid, firmwareId_,
              static_cast<unsigned>(buttonPresses_),
              firmwareApproval() == FirmwareApproval::Waiting ? "waiting"
-                 : firmwareApproval() == FirmwareApproval::Allowed ? "allowed" : "none");
+                 : firmwareApproval() == FirmwareApproval::Allowed ? "allowed" : "none", orientation);
     server.send(200, "application/json", response);
   });
   server.onNotFound([] {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
   });
+}
+
+void NetworkManager::handleOrientation() {
+  if (!authorized()) {
+    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    return;
+  }
+  if (!orientation_) {
+    server.send(501, "application/json", "{\"error\":\"Orientation settings are unavailable\"}");
+    return;
+  }
+  int16_t tenths;
+  if (!parseOrientationOffset(server.arg("plain").c_str(), tenths)) {
+    server.send(400, "application/json", "{\"error\":\"Invalid orientation offset\"}");
+    return;
+  }
+  if (const char* error = orientation_->configure(tenths)) {
+    server.send(409, "application/json", String("{\"error\":\"") + error + "\"}");
+    return;
+  }
+  char response[64];
+  snprintf(response, sizeof(response), "{\"ok\":true,\"orientationOffsetTenths\":%d}",
+           orientation_->offset());
+  server.send(200, "application/json", response);
 }
 
 void NetworkManager::connect() {

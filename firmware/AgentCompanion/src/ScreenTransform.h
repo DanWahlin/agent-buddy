@@ -73,10 +73,44 @@ class ScreenTransform {
     return static_cast<uint16_t>((pixel >> 8) | (pixel << 8));
   }
 
+  static int64_t ceilDivide(int64_t value, int32_t divisor) {
+    if (value >= INT32_MIN && value <= INT32_MAX) {
+      const int32_t dividend = static_cast<int32_t>(value);
+      const int32_t quotient = dividend / divisor;
+      return static_cast<int64_t>(quotient) + (dividend - quotient * divisor > 0);
+    }
+    return value >= 0 ? (value + divisor - 1) / divisor : value / divisor;
+  }
+
+  static void clipSpan(int32_t start, int32_t step, int32_t limit,
+                       int& first, int& last) {
+    int64_t begin, end;
+    if (step > 0) {
+      begin = ceilDivide(-static_cast<int64_t>(start), step);
+      end = ceilDivide(static_cast<int64_t>(limit) - start, step);
+    } else if (step < 0) {
+      begin = ceilDivide(static_cast<int64_t>(start) - limit + 1, -step);
+      end = ceilDivide(static_cast<int64_t>(start) + 1, -step);
+    } else {
+      if (start < 0 || start >= limit) last = first;
+      return;
+    }
+    if (begin >= last || end <= first || first >= last) {
+      last = first;
+    } else {
+      first = static_cast<int>(std::max<int64_t>(first, begin));
+      last = static_cast<int>(std::min<int64_t>(last, end));
+    }
+  }
+
   template<bool DisplayOrder>
+#if defined(ARDUINO_ARCH_ESP32) && !defined(__clang__)
+  // Speed-optimize scanout without changing the firmware's size-optimized build.
+  __attribute__((optimize("O3")))
+#endif
   void render(const ScreenPixels& source, int firstRow, int rows, uint16_t* output) const {
-    for (int row = firstRow; row < firstRow + rows; ++row, output += size_) {
-      if (cosine_ == kOne && sine_ == 0) {
+    if (cosine_ == kOne && sine_ == 0) {
+      for (int row = firstRow; row < firstRow + rows; ++row, output += size_) {
         std::fill(output, output + size_, 0);
         if (row < source.y || row >= source.y + source.height) continue;
         const uint16_t* input = source.pixels + (row - source.y) * source.width;
@@ -85,18 +119,49 @@ class ScreenTransform {
         } else {
           for (int x = 0; x < source.width; ++x) output[source.x + x] = encode<false>(input[x]);
         }
-        continue;
       }
-      int32_t sourceX, sourceY;
-      inverse(0, row, sourceX, sourceY);
-      for (int x = 0; x < size_; ++x) {
-        const int pixelX = ((sourceX + kHalf) >> 16) - source.x;
-        const int pixelY = ((sourceY + kHalf) >> 16) - source.y;
-        output[x] = static_cast<unsigned>(pixelX) < static_cast<unsigned>(source.width)
-                        && static_cast<unsigned>(pixelY) < static_cast<unsigned>(source.height)
-            ? encode<DisplayOrder>(source.pixels[pixelY * source.width + pixelX]) : 0;
-        sourceX += cosine_;
-        sourceY -= sine_;
+      return;
+    }
+    constexpr int kTileRows = 4;
+    constexpr int kTileColumns = 16;
+    const int width = source.width, height = source.height;
+    const uint16_t* pixels = source.pixels;
+    // Nearby output rows reuse source cache lines, including near a quarter turn.
+    for (int row = firstRow; row < firstRow + rows; row += kTileRows) {
+      const int tileRows = std::min(kTileRows, firstRow + rows - row);
+      int32_t rowX[kTileRows], rowY[kTileRows];
+      int first[kTileRows], last[kTileRows];
+      for (int y = 0; y < tileRows; ++y) {
+        inverse(0, row + y, rowX[y], rowY[y]);
+        rowX[y] += kHalf - source.x * kOne;
+        rowY[y] += kHalf - source.y * kOne;
+        int begin = 0, end = size_;
+        clipSpan(rowX[y], cosine_, width * kOne, begin, end);
+        clipSpan(rowY[y], -sine_, height * kOne, begin, end);
+        first[y] = begin < end ? begin : 0;
+        last[y] = begin < end ? end : 0;
+        rowX[y] += first[y] * cosine_;
+        rowY[y] -= first[y] * sine_;
+        uint16_t* destination = output + (row + y - firstRow) * size_;
+        std::fill(destination, destination + first[y], 0);
+        std::fill(destination + last[y], destination + size_, 0);
+      }
+      for (int column = 0; column < size_; column += kTileColumns) {
+        const int columns = std::min(kTileColumns, size_ - column);
+        for (int y = 0; y < tileRows; ++y) {
+          const int begin = std::max(column, first[y]);
+          const int end = std::min(column + columns, last[y]);
+          if (begin >= end) continue;
+          int32_t sourceX = rowX[y], sourceY = rowY[y];
+          uint16_t* destination = output + (row + y - firstRow) * size_ + begin;
+          for (int x = begin; x < end; ++x) {
+            *destination++ = encode<DisplayOrder>(pixels[(sourceY >> 16) * width + (sourceX >> 16)]);
+            sourceX += cosine_;
+            sourceY -= sine_;
+          }
+          rowX[y] = sourceX;
+          rowY[y] = sourceY;
+        }
       }
     }
   }

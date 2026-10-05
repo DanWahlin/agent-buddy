@@ -21,6 +21,10 @@ bool OrientationSensor::begin() {
     error_ = "QMI8658 accelerometer enable failed.";
     return false;
   }
+  if (!Wire.setClock(kOrientationI2cFrequency)) {
+    error_ = "Touch/IMU I2C clock configuration failed.";
+    return false;
+  }
   available_ = true;
   return true;
 }

@@ -10,6 +10,7 @@ import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-se
 import {settingsInfoPath} from './paths.js';
 import {isAgentId} from './agents/types.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
+import {isOrientationOffset} from './orientation-settings.js';
 
 export const defaultSettingsPort = 4667;
 const maxJsonBytes = 64 * 1024;
@@ -34,7 +35,8 @@ export interface SettingsServerOptions {
   service: Pick<CompanionService, 'status' | 'installBusy' | 'characters' | 'installCharacter' | 'addCharacter'
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
-    | 'stopDesktop' | 'setUsage' | 'updateFirmware' | 'installFirmwareOverUsb' | 'uninstall' | 'on' | 'off'>;
+    | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
+    | 'uninstall' | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
@@ -186,6 +188,17 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       if (!isConnectionMode(body.mode)) throw new HttpError(400, 'Connection mode must be auto, usb, or wifi.');
       await service.setConnection(body.mode);
       return json(response, 200, {ok: true, mode: body.mode});
+    }
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'orientation') {
+      const body = await readJson(request) as {offsetDegrees?: unknown};
+      if (!isOrientationOffset(body.offsetDegrees))
+        throw new HttpError(400, 'Orientation offset must be from -15 to 15 degrees in half-degree steps.');
+      try {
+        const orientation = await service.setOrientationOffset(body.offsetDegrees);
+        return json(response, 200, {ok: true, orientation});
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'badges') {
       const body = await readJson(request) as {enabled?: unknown};
