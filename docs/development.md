@@ -153,10 +153,12 @@ the same snapped angle and pixel mapping as the display.
 The shared touch/IMU bus uses 400 kHz Fast-mode, as supported by SensorLib, so
 accelerometer reads do not consume the frame's timing margin. Rotated scanout
 clips each row once and processes small tiles to reuse source cache lines.
-The 8 KiB internal DMA buffer is split in two: SPI sends one half while the next
+The 16 KiB internal DMA buffer is split in two: SPI sends one half while the next
 rows are composed into the other half. Every transfer completes before the buffer is
 reused or another screen is drawn. `SCANOUT` telemetry separates composition
 time from SPI waiting time.
+Effect-restoration records also live in PSRAM, leaving internal RAM available
+for Wi-Fi startup and traffic bursts.
 Settings, character installation, and BOOT-approved firmware prompts all use this
 path. The original character capture command still returns the unrotated source.
 

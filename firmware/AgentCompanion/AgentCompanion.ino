@@ -45,7 +45,7 @@ tinfl_decompressor inflater;
 alignas(4) uint8_t inflateHistory[TINFL_LZ_DICT_SIZE];
 SpritePredictor spritePredictor;
 uint32_t inflateTimeUs = 0, predictTimeUs = 0;
-constexpr size_t kTransferBytes = 8 * 1024;
+constexpr size_t kTransferBytes = 16 * 1024;
 static_assert(kCharacterUploadChunkBytes <= kTransferBytes,
               "Character upload chunks are staged in the display transfer buffer.");
 uint8_t* transferBuffer;
@@ -1109,7 +1109,8 @@ void startCharacter() {
             firstOpenPatch, secondOpenPatch, patch, patchPixels, frames[0].pixels,
             frames[1].pixels, inflatePose, kCharacterFrameWidth, kCharacterFrameHeight);
   }
-  void* effectMemory = allocate(sizeof(CharacterEffects), MALLOC_CAP_INTERNAL, "Effects allocation failed.");
+  // Leave internal RAM for Wi-Fi bursts; restoration records do not require DMA.
+  void* effectMemory = allocate(sizeof(CharacterEffects), MALLOC_CAP_SPIRAM, "Effects allocation failed.");
   auto* badgeOverlay = static_cast<uint16_t*>(allocate(
       CharacterEffects::kOverlayScratchPixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM,
       "Badge overlay allocation failed."));
