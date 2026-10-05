@@ -2,6 +2,26 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.10.0]
+
+### Build and maintenance
+
+- Rebuild desktop engine for orientation firmware sources
+
+- Preserve networking RAM and update protocol-limit tests
+
+
+### Features and improvements
+
+- Add accelerometer-based display orientation
+
+- Add saved web alignment trim and pipelined display DMA
+
+
+### Other changes
+
+- Start Wi-Fi before renderer allocations
+
 ## [v0.9.0]
 
 ### Features and improvements
