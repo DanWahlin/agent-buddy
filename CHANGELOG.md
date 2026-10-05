@@ -2,6 +2,19 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.11.0]
+
+### Features and improvements
+
+- Add service and desktop app versions to the Settings status card
+
+- Improve Status card text with normal size and weight
+
+
+### Fixes
+
+- Fix Needs attention for Copilot questions and plan approvals
+
 ## [v0.10.0]
 
 ### Build and maintenance
