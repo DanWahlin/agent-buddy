@@ -31,6 +31,8 @@ export interface DesktopAppStatus {
   canStart: boolean;
   // Why the last start failed, when the app closed before it reached the service.
   error: string | null;
+  // The release the running app was built from. Null when it does not run, or is older than this field.
+  version: string | null;
 }
 
 // What the desktop app tells the service about itself on each status request.
@@ -39,6 +41,7 @@ export interface DesktopAppReport {
   environment?: unknown;
   // 1 when the app can install firmware over USB (`--flash-firmware`).
   flasher?: unknown;
+  version?: unknown;
 }
 
 export interface SavedDesktopApp {
@@ -67,6 +70,7 @@ export class DesktopApp {
   #quitAt = 0;
   #settingsAt = 0;
   #error: string | null = null;
+  #version: string | null = null;
   #saving: Promise<void> = Promise.resolve();
   #found: {at: number; executable: string | null} | null = null;
   readonly #path: string;
@@ -92,7 +96,7 @@ export class DesktopApp {
     let state: DesktopAppState = running ? 'running' : 'stopped';
     if (running && this.#quitPending(now)) state = 'stopping';
     else if (!running && this.#startedAt > 0 && now - this.#startedAt < startingForMs) state = 'starting';
-    return {state, canStart: this.#target() !== null, error: this.#error};
+    return {state, canStart: this.#target() !== null, error: this.#error, version: running ? this.#version : null};
   }
 
   // The display variables the app last reported, for other programs the service opens.
@@ -111,10 +115,15 @@ export class DesktopApp {
     }
     const settings = this.#settingsAt > 0 && now - this.#settingsAt < settingsPendingForMs;
     this.#settingsAt = 0;
-    const changed = !this.running || this.#error !== null;
+    let changed = !this.running || this.#error !== null;
     this.#lastSeen = now;
     this.#startedAt = 0;
     this.#error = null;
+    const version = parseDesktopAppVersion(report.version);
+    if (version !== this.#version) {
+      this.#version = version;
+      changed = true;
+    }
     const app = parseDesktopAppReport(report);
     if (app && JSON.stringify(app) !== JSON.stringify(this.#saved)) {
       this.#saved = app;
@@ -212,6 +221,11 @@ export function defaultDesktopAppLocations(platform: NodeJS.Platform, home: stri
 // This file runs from daemon/dist/src or daemon/src.
 function repositoryRoot(): string {
   return fileURLToPath(new URL('../../../', import.meta.url));
+}
+
+// The page shows the version as text, but keep it short and plain all the same.
+export function parseDesktopAppVersion(value: unknown): string | null {
+  return typeof value === 'string' && /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/.test(value) ? value : null;
 }
 
 export function parseDesktopAppReport(report: DesktopAppReport): SavedDesktopApp | null {

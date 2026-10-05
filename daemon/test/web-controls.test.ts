@@ -7,8 +7,15 @@ test('web alignment controls initialize once and send confirmed settings', async
   const elements = new Map<string, ReturnType<typeof makeElement>>();
   function makeElement() {
     return {
-      value: '0', disabled: false, checked: false, hidden: false, open: false, textContent: '', className: '',
+      value: '0', disabled: false, checked: false, hidden: false, open: false, className: '',
       style: {setProperty() {}}, dataset: {},
+      children: [] as string[],
+      get textContent() { return this.text; },
+      set textContent(value: string) { this.text = value; if (value === '') this.children = []; },
+      text: '',
+      append(...items: Array<{textContent: string; className: string}>) {
+        for (const item of items) this.children.push(`${item.className}:${item.textContent}`);
+      },
       classList: {toggle() {}, add() {}, remove() {}},
       listeners: new Map<string, number>(),
       addEventListener(type: string) {
@@ -27,6 +34,7 @@ test('web alignment controls initialize once and send confirmed settings', async
     document: {
       getElementById: element, querySelectorAll: () => [], addEventListener() {},
       documentElement: {dataset: {theme: 'light'}},
+      createElement: () => ({textContent: '', className: ''}),
     },
     location: {hash: '', pathname: '/'},
     history: {replaceState() {}},
@@ -68,4 +76,18 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext('status.connected = false; status.firmware.usb.unanswered = true; renderUsbFirmware()', context);
   assert.equal(element('usb-firmware-recovery').open, true);
   assert.equal(element('usb-firmware-install').textContent, 'Install v0.9.0');
+
+  const versions = () => element('fact-versions').children;
+  runInContext('status.service = {version: "0.10.0"}; status.desktop = {app: {state: "running", version: "0.10.0"}}; '
+    + 'renderVersions()', context);
+  assert.deepEqual(versions(), ['fact-line:Service v0.10.0', 'fact-line:Desktop app v0.10.0']);
+  runInContext('status.desktop.app.version = "0.7.0"; renderVersions()', context);
+  assert.deepEqual(versions(), ['fact-line:Service v0.10.0', 'fact-line:Desktop app v0.7.0',
+    'fact-detail:The versions are different. Install the same release of both.']);
+  runInContext('status.desktop.app = {state: "stopped", version: null}; status.service = {version: null}; '
+    + 'renderVersions()', context);
+  assert.deepEqual(versions(), ['fact-line:Service version unknown', 'fact-line:Desktop app not running']);
+  runInContext('status.desktop.app = {state: "running"}; renderVersions()', context);
+  assert.equal(versions()[1], 'fact-line:Desktop app version unknown');
 });
+

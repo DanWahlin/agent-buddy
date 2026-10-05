@@ -136,6 +136,7 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         const command = request.client === 'desktop'
           ? service.desktopSeen({
             executable: request.executable, environment: request.environment, flasher: request.flasher,
+            version: request.version,
           }) : null;
         respond(socket, command ? {...service.status(), desktopCommand: command} : service.status());
       } else if (request.type === 'agents') {

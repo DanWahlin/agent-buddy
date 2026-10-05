@@ -316,9 +316,12 @@ const DISPLAY_VARIABLES: [&str; 8] = [
     "HYPRLAND_INSTANCE_SIGNATURE",
 ];
 
+/// The release this app was built from: the repository's VERSION file, read by build.rs.
+pub const APP_VERSION: &str = env!("AGENT_COMPANION_VERSION");
+
 fn status_request() -> Value {
     // flasher: this app installs firmware over USB when run with --flash-firmware.
-    let mut body = json!({ "type": "status", "client": "desktop", "flasher": 1 });
+    let mut body = json!({ "type": "status", "client": "desktop", "flasher": 1, "version": APP_VERSION });
     if let Some(path) = launch_path() {
         body["executable"] = json!(path.to_string_lossy());
     }
@@ -435,6 +438,8 @@ mod tests {
         let body = status_request();
         assert_eq!(body["type"], "status");
         assert_eq!(body["client"], "desktop");
+        assert_eq!(body["version"], APP_VERSION);
+        assert!(!APP_VERSION.is_empty());
         assert!(body["executable"].as_str().is_some_and(|it| std::path::Path::new(it).is_absolute()));
         assert!(body["environment"].as_object().unwrap().keys().all(|it| DISPLAY_VARIABLES.contains(&it.as_str())));
         assert_eq!(

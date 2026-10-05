@@ -678,7 +678,9 @@ connection** on the settings page's **Status** card, or with `npm run connection
 ## Update
 
 **Companion daemon.** If the desktop app installed it, install the new release
-of the app and open it: the app updates its copy of the service. If you set it
+of the app and open it: the app updates its copy of the service. The settings
+page's Status card shows the **Versions** of the service and the desktop app,
+and tells you when they are different. If you set it
 up from the repository, run this in the repository folder:
 
 ```bash

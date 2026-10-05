@@ -251,6 +251,7 @@ async function agentAction(id, action) {
 function renderStatus() {
   if (!status) {
     $('fact-connection').textContent = 'Service offline';
+    $('fact-versions').textContent = '—';
     $('summary').textContent = 'Waiting for the companion service…';
     renderDesktopApp();
     renderOrientation();
@@ -289,6 +290,7 @@ function renderStatus() {
     }
     state.append(list);
   }
+  renderVersions();
   const badgesToggle = $('badges-toggle');
   // Don't let an update that raced a click undo the switch the user just flipped.
   if (badgesToggle && !badgesPending) badgesToggle.checked = status.badges?.enabled !== false;
@@ -670,6 +672,29 @@ $('desktop-volume')?.addEventListener('change', event => {
   const volume = Number(event.target.value);
   void updateDesktop({volume}, `Desktop sound volume is ${volume}%.`);
 });
+
+// The service and the desktop app each come from a release. Different versions mean that one of
+// them was not updated, so say so.
+function renderVersions() {
+  const fact = $('fact-versions');
+  const service = status?.service?.version;
+  const app = status?.desktop?.app;
+  const appText = !app || app.state !== 'running' ? 'not running'
+    : app.version ? `v${app.version}` : 'version unknown';
+  fact.textContent = '';
+  for (const line of [`Service ${service ? `v${service}` : 'version unknown'}`, `Desktop app ${appText}`]) {
+    const row = document.createElement('span');
+    row.className = 'fact-line';
+    row.textContent = line;
+    fact.append(row);
+  }
+  if (service && app?.state === 'running' && app.version && app.version !== service) {
+    const warning = document.createElement('span');
+    warning.className = 'fact-detail';
+    warning.textContent = 'The versions are different. Install the same release of both.';
+    fact.append(warning);
+  }
+}
 
 const desktopAppViews = {
   running: {pill: 'Running', kind: 'usb', hint: 'The desktop app is open. Stop closes it.'},

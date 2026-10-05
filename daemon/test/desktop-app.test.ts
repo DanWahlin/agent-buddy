@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
-  DesktopApp, defaultDesktopAppLocations, desktopFlasherPath, desktopLaunchCommand, parseDesktopAppReport,
+  DesktopApp, defaultDesktopAppLocations, desktopFlasherPath, desktopLaunchCommand, parseDesktopAppReport, parseDesktopAppVersion,
   type SavedDesktopApp,
 } from '../src/desktop-app.js';
 
@@ -35,7 +35,7 @@ async function withApp(run: (app: DesktopApp, clock: {now: number}, launched: Sa
 
 test('the app is running while it asks for status, and stopped soon after it stops', async () => {
   await withApp(async (app, clock) => {
-    assert.deepEqual(app.status(), {state: 'stopped', canStart: false, error: null});
+    assert.deepEqual(app.status(), {state: 'stopped', canStart: false, error: null, version: null});
     assert.deepEqual(app.seen({}), {command: null, changed: true});
     assert.equal(app.status().state, 'running');
     clock.now += 400;
@@ -43,6 +43,25 @@ test('the app is running while it asks for status, and stopped soon after it sto
     clock.now += 3000;
     assert.equal(app.status().state, 'stopped');
   });
+});
+
+test('the running app reports its version, and a stopped app has none', async () => {
+  await withApp(async (app, clock) => {
+    app.seen({version: '0.10.0'});
+    assert.equal(app.status().version, '0.10.0');
+    clock.now += 400;
+    assert.deepEqual(app.seen({version: '0.11.0'}), {command: null, changed: true});
+    assert.equal(app.status().version, '0.11.0');
+    clock.now += 400;
+    app.seen({version: '<b>1</b>'});
+    assert.equal(app.status().version, null);
+    app.seen({version: '0.11.0'});
+    clock.now += 3000;
+    assert.equal(app.status().version, null);
+  });
+  assert.equal(parseDesktopAppVersion('0.10.0-beta.1+abc'), '0.10.0-beta.1+abc');
+  assert.equal(parseDesktopAppVersion(10), null);
+  assert.equal(parseDesktopAppVersion('x'.repeat(40)), null);
 });
 
 test('start needs a location the app reported, and remembers it', async () => {
@@ -65,7 +84,7 @@ test('start needs a location the app reported, and remembers it', async () => {
     app.seen({executable: '/Applications/Agent Companion.app'});
     assert.equal(app.status().state, 'running');
     clock.now += 30_000;
-    assert.deepEqual(app.status(), {state: 'stopped', canStart: true, error: null});
+    assert.deepEqual(app.status(), {state: 'stopped', canStart: true, error: null, version: null});
 
     const reloaded = new DesktopApp({path, now: () => clock.now, launch: async () => undefined, locations: []});
     assert.equal(reloaded.status().canStart, true);
