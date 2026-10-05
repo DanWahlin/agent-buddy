@@ -295,6 +295,32 @@ test('normalizers map attention, work, completion, and idle events per agent', (
   assert.deepEqual(copilotAdapter.normalize('errorOccurred', {sessionId: 's', recoverable: true}, 100), []);
   assert.deepEqual(copilotAdapter.normalize('errorOccurred', {sessionId: 's', recoverable: false}, 100)
     .map(hook => hook.event), ['errorOccurred']);
+  for (const name of ['ask_user', 'exit_plan_mode']) {
+    assert.deepEqual(copilotAdapter.normalize('preToolUse', {sessionId: 's', toolCalls: [{id: 't', name, args: {}}]}, 100)
+      .map(hook => [hook.event, hook.payload.sessionId, hook.payload.notification_type, hook.payload.timestamp]),
+                     [['notification', 'copilot:s', 'elicitation_dialog', 100]]);
+  }
+  assert.deepEqual(copilotAdapter.normalize('preToolUse', {sessionId: 's', toolName: 'ask_user'}, 100)
+    .map(hook => hook.event), ['notification']);
+  assert.deepEqual(copilotAdapter.normalize('preToolUse', {sessionId: 's', toolCalls: [{id: 't', name: 'bash'}]}, 100)
+    .map(hook => hook.event), ['preToolUse']);
+  assert.deepEqual(copilotAdapter.normalize('postToolUse', {sessionId: 's', toolName: 'ask_user', timestamp: 200}, 100)
+    .map(hook => hook.event), ['postToolUse']);
+});
+
+test('a Copilot question shows Needs attention over other working sessions until answered', () => {
+  let time = 1000;
+  const coordinator = new StateCoordinator(() => {}, {now: () => time, sweepMs: 0});
+  const handle = (hooks: ReturnType<typeof copilotAdapter.normalize>) => {
+    for (const hook of hooks) coordinator.handle(hook.event, hook.payload);
+  };
+  handle(copilotAdapter.normalize('preToolUse', {sessionId: 'other', toolCalls: [{id: 'a', name: 'bash'}]}, time));
+  handle(copilotAdapter.normalize('preToolUse', {sessionId: 'asker', toolCalls: [{id: 'b', name: 'ask_user'}]}, ++time));
+  assert.equal(coordinator.state, 'attention');
+  time += 5000;
+  handle(copilotAdapter.normalize('postToolUse', {sessionId: 'asker', toolName: 'ask_user', timestamp: time}, time));
+  assert.equal(coordinator.state, 'working');
+  coordinator.close();
 });
 
 test('coordinator keeps multi-agent sessions isolated and reports display drivers', () => {

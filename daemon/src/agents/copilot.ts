@@ -1,11 +1,12 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isRecord, writeTextAtomically, removeFile} from './file-utils.js';
-import {canonicalEvent, normalized} from './normalize.js';
+import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
 import {versionOf} from './commands.js';
 import {copilotHome} from './homes.js';
 import {hookHealth, type FoundHook} from './hook-config.js';
 import type {AgentAdapter, AgentContext, HookStatus} from './types.js';
+import type {HookPayload} from '../protocol.js';
 
 export const copilotAdapter: AgentAdapter = {
   id: 'copilot',
@@ -28,9 +29,24 @@ export const copilotAdapter: AgentAdapter = {
     const event = canonicalEvent(nativeEvent, payload);
     // Copilot retries recoverable model-call errors itself, so they don't need the user.
     if (event === 'errorOccurred' && payload.recoverable === true) return [];
+    // Questions and plan approvals wait for the user but fire no notification hook. The
+    // postToolUse after the user answers sets Working again.
+    if (event === 'preToolUse' && callsTool(payload, userInputTools)) {
+      return [{event: 'notification',
+        payload: namespacePayload('copilot', attentionPayload(payload, receiptTime, 'elicitation_dialog'))}];
+    }
     return normalized('copilot', event, payload, receiptTime);
   },
 };
+
+const userInputTools = ['ask_user', 'exit_plan_mode'];
+
+// Copilot's preToolUse lists the calls in toolCalls[].name instead of toolName.
+function callsTool(payload: HookPayload, names: string[]): boolean {
+  if (isTool(payload, ...names)) return true;
+  const calls = Array.isArray(payload.toolCalls) ? payload.toolCalls : [];
+  return calls.some(call => isRecord(call) && typeof call.name === 'string' && names.includes(call.name));
+}
 
 export function copilotHookPath(home: string, env: NodeJS.ProcessEnv = {}): string {
   return join(copilotHome(home, env), 'hooks', 'agent-companion.json');
