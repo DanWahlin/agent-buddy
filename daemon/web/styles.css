@@ -128,12 +128,12 @@ main {
 }
 .facts div { background: var(--panel-2); border-radius: 12px; padding: .8rem 1rem; }
 .facts dt { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
-.facts dd { margin: .3rem 0 0; font-size: 1.05rem; font-weight: 600; }
+.facts dd { margin: .3rem 0 0; font-size: .85rem; font-weight: 400; }
 .facts .fact-detail { display: block; margin-top: .2rem; color: var(--muted); font-size: .85rem; font-weight: 400;
   overflow-wrap: anywhere; }
 /* Each usage line wraps as a whole, so "AIC: 1,234" never splits across lines. */
 .facts .fact-line { display: block; white-space: nowrap; }
-.facts .fact-agents { list-style: none; margin: .3rem 0 0; padding: 0; font-size: .85rem; font-weight: 500; }
+.facts .fact-agents { list-style: none; margin: .3rem 0 0; padding: 0; font-size: .85rem; font-weight: 400; }
 .facts .fact-agents li { display: flex; align-items: center; gap: .45rem; margin-top: .15rem; overflow-wrap: anywhere; }
 .facts .fact-agents li::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); box-shadow: 0 0 6px var(--accent); }
