@@ -22,6 +22,7 @@
 #include "src/CharacterFrame.h"
 #include "src/DeviceCommands.h"
 #include "src/TouchInput.h"
+#include "src/ButtonInput.h"
 #include "src/SettingsMenu.h"
 #include "src/Motion.h"
 #include "src/OrientedDisplay.h"
@@ -65,6 +66,8 @@ bool captureInterrupted = false;
 SettingsMenu settings(kBrightness);
 NetworkManager network;
 OrientationSensor orientationSensor;
+ButtonPressTracker bootButton;
+uint32_t buttonPresses = 0;
 constexpr char kPreferencesNamespace[] = "agent-companion";
 constexpr char kSoundPreference[] = "sound";
 constexpr char kSoundVolumePreference[] = "volume";
@@ -85,9 +88,8 @@ void logMessage(const char* format, ...) {
 
 bool updateOrientation() {
   if (!orientationSensor.update()) return false;
-  const float angle = orientationSensor.angle();
-  display.setAngle(angle);
-  setTouchRotation(angle);
+  if (!display.setAngle(orientationSensor.angle())) return false;
+  setTouchRotation(display.angle());
   return true;
 }
 
@@ -103,6 +105,11 @@ Frame frames[2];
     logMessage("FATAL: %s\n", message);
     delay(2000);
   }
+}
+
+void flushDisplay() {
+  display.flush();
+  if (display.error()) fatal(display.error());
 }
 
 void* allocate(size_t bytes, uint32_t capabilities, const char* error) {
@@ -446,7 +453,7 @@ void drawSettingsMenu(CharacterMode selected) {
                      selected == CharacterMode::Attention, 1, 34);
   drawSettingsButton(58, 382, 165, "Surprise", selected == CharacterMode::Surprise, 2, 34);
   drawSettingsButton(243, 382, 165, "Close", false, 2, 34);
-  display.flush();
+  flushDisplay();
 }
 
 void drawNetworkSettings() {
@@ -502,7 +509,7 @@ void drawNetworkSettings() {
   drawSettingsButton(88, 336, 290, network.setupActive() ? "Restart setup" : "Setup Wi-Fi",
                      network.setupActive(), 2, 44);
   drawSettingsButton(150, 394, 166, "Back", false, 2, 38);
-  display.flush();
+  flushDisplay();
 }
 
 void clearCharacterMargins() {
@@ -628,12 +635,13 @@ bool pauseRendering() {
 }
 
 void drawInstallScreen(const char* source) {
+  updateOrientation();
   display.fillScreen(0);
   display.setBrightness(settings.brightness());
   drawCenteredText("Installing character", 140, 2, 0xE73F);
   drawCenteredText(source, 208, 2, 0x8C71);
   display.drawRoundRect(83, 238, 300, 24, 8, 0x5D19);
-  display.flush();
+  flushDisplay();
 }
 
 // The pack's display name arrives in its header, shortly after the transfer starts.
@@ -648,19 +656,21 @@ void drawInstallName() {
 
 void drawInstallProgress(uint32_t received, uint32_t total) {
   static int shown = -1;
+  const bool orientationChanged = updateOrientation();
   drawInstallName();
   const int percent = total ? static_cast<int>(uint64_t(received) * 100 / total) : 0;
-  if (percent == shown) return;
+  if (percent == shown && !orientationChanged) return;
   shown = percent;
   display.fillRoundRect(86, 241, std::max(1, 294 * percent / 100), 18, 6, 0x2372);
   char label[8];
   snprintf(label, sizeof(label), "%d%%", percent);
   display.fillRect(183, 276, 100, 16, 0);
   drawCenteredText(label, 276, 2, 0xE73F);
-  display.flush();
+  flushDisplay();
 }
 
 void drawInstallResult(const char* error) {
+  updateOrientation();
   display.fillRect(40, 300, 386, 60, 0);
   if (error) {
     drawCenteredText("Install failed", 306, 2, 0xF249);
@@ -670,7 +680,7 @@ void drawInstallResult(const char* error) {
   } else {
     drawCenteredText("Installed. Restarting...", 306, 2, 0x47E9);
   }
-  display.flush();
+  flushDisplay();
 }
 
 // Stops pack reads, then erases the old pack; every attempt ends in a restart.
@@ -815,7 +825,7 @@ void drawShellScreen() {
   drawCenteredText("Connect USB or Wi-Fi and run", 236, 1, 0x8C71);
   drawCenteredText("npm run character", 256, 2, 0x8C71);
   drawCenteredText(spriteStorageError() ? spriteStorageError() : "", 300, 1, 0x8C71);
-  display.flush();
+  flushDisplay();
 }
 
 bool queueNetworkMode(const char* state) {
@@ -849,6 +859,14 @@ bool handleBadgePacket(const char* packet, char* response, size_t responseSize) 
       return false;
     }
     snprintf(response, responseSize, "AGENTS accepted=%u", static_cast<unsigned>(agentBadges.activeCount()));
+    return true;
+  }
+  if (packet[0] == '$') {
+    if (!agentBadges.setUsagePacket(packet + 1)) {
+      snprintf(response, responseSize, "COMMAND_ERROR %s", agentBadges.error());
+      return false;
+    }
+    snprintf(response, responseSize, "USAGE accepted=%u", static_cast<unsigned>(agentBadges.usage().count));
     return true;
   }
   snprintf(response, responseSize, "COMMAND_ERROR invalid badge packet");
@@ -913,7 +931,7 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       network.encodedSsid(ssid, sizeof(ssid));
       logMessage("INFO protocol=%u uptime_ms=%llu reset_reason=%u mode=%s requested=%s assets=%u "
                  "max_gap_us=%u dropped_logs=%u audio_ready=%u sound_volume=%u character=%s "
-                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s\n",
+                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s firmware=%s\n",
                     kDeviceProtocol, static_cast<unsigned long long>(esp_timer_get_time() / 1000),
                     static_cast<unsigned>(esp_reset_reason()),
                     frame ? modeName(frame->state.mode) : "none",
@@ -922,7 +940,7 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
                     droppedLogs.load(std::memory_order_relaxed), static_cast<unsigned>(audioReady()),
                     static_cast<unsigned>(soundVolume()), installedCharacterId(),
                     patchBuffersInternal, static_cast<unsigned>(startupFreeInternal),
-                    static_cast<unsigned>(network.connected()), ssid);
+                    static_cast<unsigned>(network.connected()), ssid, network.firmwareId());
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",
@@ -957,6 +975,14 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       char response[96];
       char packet[196];
       snprintf(packet, sizeof(packet), "&%s", parser.payload());
+      handleBadgePacket(packet, response, sizeof(response));
+      logMessage("%s\n", response);
+      break;
+    }
+    case DeviceCommand::SetUsage: {
+      char response[96];
+      char packet[196];
+      snprintf(packet, sizeof(packet), "$%s", parser.payload());
       handleBadgePacket(packet, response, sizeof(response));
       logMessage("%s\n", response);
       break;
@@ -1039,12 +1065,13 @@ void setup() {
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
   logMessage("\nAgent Companion character shell / Waveshare AMOLED 1.75-B\nPSRAM: %u bytes\n",
              ESP.getPsramSize());
-  if (!display.begin(kSpiFrequency)) fatal("CO5300 initialization failed.");
+  if (!display.begin(kSpiFrequency)) fatal(display.error());
   display.setBrightness(0);
   display.fillScreen(0);
   characterReady = initializeSpriteStorage();
   if (!characterReady) logMessage("CHARACTER id=none reason=%s\n", spriteStorageError());
   if (!initializeTouchInput()) fatal(touchInputError());
+  pinMode(kBootButtonPin, INPUT_PULLUP);
   // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
   // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
   network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket);
@@ -1060,7 +1087,7 @@ void setup() {
   transferBuffer = static_cast<uint8_t*>(heap_caps_aligned_alloc(
       16, kTransferBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   if (!transferBuffer) fatal("DMA staging allocation failed.");
-  display.setTransferBuffer(transferBuffer, kTransferBytes);
+  if (!display.setTransferBuffer(transferBuffer, kTransferBytes)) fatal(display.error());
   freeFrames = xQueueCreate(2, sizeof(Frame*));
   readyFrames = xQueueCreate(2, sizeof(Frame*));
   commands = xQueueCreate(8, sizeof(ModeRequest));
@@ -1075,6 +1102,52 @@ void setup() {
              static_cast<unsigned>(characterReady ? characterPack()->header.totalBytes : 0));
 }
 
+// A BOOT button press asks the computer to open Settings. USB gets a line now; over Wi-Fi the
+// daemon sees the count go up in GET /status. While a Wi-Fi firmware update waits, the press
+// allows the update instead.
+void pollBootButton() {
+  if (!bootButton.sample(digitalRead(kBootButtonPin) == LOW, millis())) return;
+  if (network.approveFirmware()) {
+    logMessage("BUTTON firmware allowed\n");
+    return;
+  }
+  network.setButtonPresses(++buttonPresses);
+  logMessage("BUTTON settings presses=%u\n", static_cast<unsigned>(buttonPresses));
+}
+
+// The prompt replaces the character while a Wi-Fi firmware update waits for the BOOT press, and
+// stays until the device restarts into the new firmware. Returns true while it shows.
+bool showFirmwarePrompt(bool shell) {
+  enum class Prompt : uint8_t { None, Waiting, Allowed, Restarting };
+  static Prompt shown = Prompt::None;
+  Prompt prompt = Prompt::None;
+  if (network.firmwareRestarting()) prompt = Prompt::Restarting;
+  else if (network.firmwareApproval() == NetworkManager::FirmwareApproval::Waiting) prompt = Prompt::Waiting;
+  else if (network.firmwareApproval() == NetworkManager::FirmwareApproval::Allowed) prompt = Prompt::Allowed;
+  if (prompt == shown) return prompt != Prompt::None;
+  shown = prompt;
+  if (prompt == Prompt::None) {
+    if (shell) drawShellScreen();
+    else clearCharacterMargins();
+    return false;
+  }
+  if (settings.isOpen()) closeSettings("firmware");
+  display.fillScreen(0);
+  display.setBrightness(settings.brightness());
+  drawCenteredText("Firmware update", 150, 3, 0xE73F);
+  if (prompt == Prompt::Waiting) {
+    drawCenteredText("Press BOOT to allow it", 206, 2, 0x867F);
+    drawCenteredText("Did not start an update? Do nothing.", 246, 1, 0x8C71);
+    drawCenteredText("The request stops in 60 seconds.", 266, 1, 0x8C71);
+  } else if (prompt == Prompt::Allowed) {
+    drawCenteredText("Allowed. Receiving...", 206, 2, 0x47E9);
+  } else {
+    drawCenteredText("Installed. Restarting...", 206, 2, 0x47E9);
+  }
+  flushDisplay();
+  return true;
+}
+
 // Without a pack the shell keeps USB, Wi-Fi setup, and installation available.
 void shellLoop() {
   static DeviceCommands parser;
@@ -1082,12 +1155,13 @@ void shellLoop() {
   network.update();
   const bool orientationChanged = updateOrientation();
   if (restartAt || installStarted) return;
+  const bool prompt = showFirmwarePrompt(true);
   if (network.revision() != networkRevision) {
-    drawShellScreen();
+    if (!prompt) drawShellScreen();
     networkRevision = network.revision();
-  } else if (orientationChanged) {
-    display.flush();
   }
+  if (orientationChanged) flushDisplay();
+  pollBootButton();
   processCommand(parser.expire(esp_timer_get_time() / 1000), parser, nullptr);
   for (unsigned read = 0; read < 64 && Serial.available(); ++read)
     processCommand(parser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
@@ -1116,10 +1190,11 @@ void loop() {
     return;
   }
   network.update();
-  updateOrientation();
+  const bool orientationChanged = updateOrientation();
   if (installStarted) return;
   Frame* frame;
   if (xQueueReceive(readyFrames, &frame, pdMS_TO_TICKS(3000)) != pdTRUE) fatal("Renderer stalled.");
+  const bool prompt = showFirmwarePrompt(false);
   if (settings.isOpen() && network.revision() != networkRevision) {
     if (settings.networkPage()) drawNetworkSettings();
     else drawSettingsMenu(frame->state.requestedMode);
@@ -1137,11 +1212,12 @@ void loop() {
   }
   previousPresentation = start;
   uint32_t transferUs = 0;
-  if (!settings.isOpen()) {
-    display.flushFrame(
-        frame->pixels, kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight);
-  } else {
-    display.flush();
+  if (!settings.isOpen() && !prompt) {
+    if (!display.flushFrame(
+            frame->pixels, kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight))
+      fatal(display.error());
+  } else if (orientationChanged) {
+    flushDisplay();
   }
   transferUs = esp_timer_get_time() - start;
   if (fadeFrame <= 40) {
@@ -1149,8 +1225,9 @@ void loop() {
     ++fadeFrame;
   }
   TouchGesture gesture;
-  if (pollTouchGesture(gesture)) handleTouchGesture(gesture, *frame);
+  if (pollTouchGesture(gesture) && !prompt) handleTouchGesture(gesture, *frame);
   if (touchInputError()) fatal(touchInputError());
+  pollBootButton();
   closeIdleSettings();
   processCommand(commandParser.expire(esp_timer_get_time() / 1000), commandParser, frame);
   for (unsigned read = 0; read < 8 && Serial.available(); ++read) {
@@ -1181,8 +1258,9 @@ void loop() {
                     frameCount * 1000000.0 / (now - lastReport),
                     renderTotal / (1000.0 * frameCount), transferTotal / (1000.0 * frameCount),
                     maxRender / 1000.0, ESP.getFreePsram(), droppedLogs.load(std::memory_order_relaxed));
-      logMessage("ORIENTATION available=%u angle=%.1f accel=%.3f,%.3f,%.3f\n",
+      logMessage("ORIENTATION available=%u angle=%.1f display_angle=%.1f accel=%.3f,%.3f,%.3f\n",
                     orientationSensor.available(), orientationSensor.angle() * 180.0f / kOrientationPi,
+                    display.angle() * 180.0f / kOrientationPi,
                     orientationSensor.accelerometerX(), orientationSensor.accelerometerY(),
                     orientationSensor.accelerometerZ());
       logMessage("STAGES motion=%uus decode=%uus composite=%uus eyes=%uus effects=%uus inflate=%uus predict=%uus\n",

@@ -33,17 +33,22 @@ def layout(root):
         if name in partitions:
             raise ValueError(f"Duplicate partition: {name}")
         partitions[name] = dict(kind=kind, subtype=subtype, offset=int(offset, 0), size=int(size, 0))
-    if "factory" not in partitions or "assets" not in partitions:
-        raise ValueError("The factory and assets partitions are required.")
+    if not {"otadata", "app0", "app1", "assets"} <= partitions.keys():
+        raise ValueError("The otadata, app0, app1 and assets partitions are required.")
     regions = sorted(partitions.values(), key=lambda item: item["offset"])
     end = 0x9000
     for item in regions:
         if item["offset"] < end or item["size"] <= 0 or item["offset"] + item["size"] > 0x1000000:
             raise ValueError("Partition overlap or invalid 16 MiB flash bounds.")
         end = item["offset"] + item["size"]
-    app, assets = partitions["factory"], partitions["assets"]
-    if app["kind"] != "app" or app["offset"] != 0x10000:
-        raise ValueError("Application must start at 0x10000.")
+    app, spare, assets = partitions["app0"], partitions["app1"], partitions["assets"]
+    if app["kind"] != "app" or app["subtype"] != "ota_0" or app["offset"] != 0x10000:
+        raise ValueError("Application slot app0 (ota_0) must start at 0x10000.")
+    # Updates over Wi-Fi write the other slot, so it must hold the same application.
+    if spare["kind"] != "app" or spare["subtype"] != "ota_1" or spare["size"] != app["size"]:
+        raise ValueError("Application slot app1 (ota_1) must match app0's size.")
+    if partitions["otadata"]["offset"] != 0xE000:
+        raise ValueError("otadata must be at 0xE000, where boot_app0.bin is written.")
     if assets["kind"] != "data" or int(assets["subtype"], 0) != 0x40 or assets["offset"] % 0x10000:
         raise ValueError("Assets require a 64 KiB-aligned data partition with subtype 0x40.")
     return app, assets

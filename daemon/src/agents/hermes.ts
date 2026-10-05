@@ -1,10 +1,12 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {isMap, isScalar, parseDocument, stringify} from 'yaml';
-import {shellQuote, versionOf} from './commands.js';
-import {readText, writeTextAtomically} from './file-utils.js';
+import {isCompanionHookCommand, shellHookCommand, hasCommand, versionOf} from './commands.js';
+import {hermesHome} from './homes.js';
+import {isRecord, readText, recordOf, writeTextAtomically} from './file-utils.js';
 import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
-import type {AgentAdapter, AgentContext, NormalizedHook} from './types.js';
+import {eventGroups, hookHealth, parseHookCommand, type FoundHook} from './hook-config.js';
+import type {AgentAdapter, AgentContext, HookStatus, NormalizedHook} from './types.js';
 import type {HookPayload} from '../protocol.js';
 
 const events = [
@@ -23,38 +25,47 @@ export const hermesAdapter: AgentAdapter = {
   detect(ctx) {
     const configPath = hermesConfigPath(ctx);
     const version = versionOf('hermes', ctx);
-    return {installed: Boolean(version) || existsSync(configPath), version, configPath};
+    return {installed: hasCommand('hermes', ctx) || existsSync(configPath), version, configPath};
   },
   hookStatus(ctx) {
-    if (!containsOurHook(ctx)) return 'missing';
+    const status = hermesHookHealth(ctx);
+    if (status !== 'installed') return status;
     return hermesApprovedEvents(ctx).includes('pre_llm_call') ? 'installed' : 'needs-approval';
   },
   async install(ctx) {
     const path = hermesConfigPath(ctx);
     const source = (await readText(path)) ?? '';
-    const hooks = withoutOurHooks(currentHooks(source), ctx);
-    for (const event of events) hooks[event] = [...(hooks[event] ?? []), {command: hermesCommand(ctx, event), timeout: 5}];
+    const current = hooksSection(source);
+    if (!current) throw new Error(`"hooks" in ${path} isn't a mapping, so it was left unchanged.`);
+    // Reads every event first, so a value that isn't a list stops the install before any change.
+    for (const event of events) eventGroups(current, event, path);
+    const hooks = withoutOurHooks(current, ctx, false);
+    for (const event of events)
+      hooks[event] = [...eventGroups(hooks, event, path), {command: hermesCommand(ctx, event), timeout: 5}];
+    for (const [event, entries] of Object.entries(hooks)) {
+      if (Array.isArray(entries) && !entries.length && (current[event] as unknown[]).length) delete hooks[event];
+    }
+    const legacy = legacyWindowsConfigPath(ctx);
+    if (legacy) await removeOurHooksFrom(legacy, ctx);
+    if (JSON.stringify(hooks) === JSON.stringify(current)) return;
     await writeTextAtomically(path, replaceHooksSection(source, hooks));
   },
   async uninstall(ctx) {
-    const path = hermesConfigPath(ctx);
-    const source = await readText(path);
-    if (source === undefined || source === null) return;
-    const hooks = withoutOurHooks(currentHooks(source), ctx);
-    const next = replaceHooksSection(source, hooks);
-    if (next !== source) await writeTextAtomically(path, next);
+    await removeOurHooksFrom(hermesConfigPath(ctx), ctx);
+    const legacy = legacyWindowsConfigPath(ctx);
+    if (legacy) await removeOurHooksFrom(legacy, ctx);
   },
   normalize(nativeEvent, payload, receiptTime) {
     const name = String(nativeEvent ?? payload.hook_event_name ?? '');
     if (name === 'pre_tool_call' && isTool(payload, 'clarify')) return notification(payload, receiptTime);
     if (name === 'pre_approval_request') {
-      const extra = object(payload.extra);
+      const extra = recordOf(payload.extra);
       if (extra.surface === 'smart') return [];
       return notification(payload, receiptTime);
     }
     if (name === 'post_approval_response') return normalized('hermes', 'preToolUse', payload, receiptTime);
     if (name === 'post_tool_call') {
-      const extra = object(payload.extra);
+      const extra = recordOf(payload.extra);
       return normalized('hermes', extra.status === 'error' || extra.error_type ? 'postToolUseFailure' : 'postToolUse',
                         payload, receiptTime);
     }
@@ -64,35 +75,55 @@ export const hermesAdapter: AgentAdapter = {
   },
 };
 
-export function hermesConfigPath(ctx: Pick<AgentContext, 'home' | 'env'>): string {
-  return join(ctx.env.HERMES_HOME ?? join(ctx.home, '.hermes'), 'config.yaml');
+export function hermesConfigPath(ctx: Pick<AgentContext, 'home' | 'env' | 'platform'>): string {
+  return join(hermesHome(ctx.home, ctx.env, ctx.platform), 'config.yaml');
+}
+
+// Earlier versions wrote the hooks to ~/.hermes on Windows too, where Hermes never reads them.
+function legacyWindowsConfigPath(ctx: AgentContext): string | undefined {
+  if (ctx.platform !== 'win32' || ctx.env.HERMES_HOME?.trim()) return undefined;
+  const path = join(ctx.home, '.hermes', 'config.yaml');
+  return path === hermesConfigPath(ctx) ? undefined : path;
+}
+
+async function removeOurHooksFrom(path: string, ctx: AgentContext): Promise<void> {
+  const source = await readText(path);
+  if (source === null) return;
+  const current = hooksSection(source);
+  if (!current) return;
+  const hooks = withoutOurHooks(current, ctx, true);
+  if (JSON.stringify(hooks) === JSON.stringify(current)) return;
+  await writeTextAtomically(path, replaceHooksSection(source, hooks));
 }
 
 function hermesCommand(ctx: AgentContext, event: string): string {
-  return `${shellQuote(ctx.node)} ${shellQuote(ctx.cli)} hook hermes ${event}`;
+  return shellHookCommand(ctx, 'hermes', event);
 }
 
-function containsOurHook(ctx: AgentContext): boolean {
+function hermesHookHealth(ctx: AgentContext): HookStatus {
+  let hooks: Record<string, unknown> | undefined;
   try {
-    return isOurCommand(readFileSync(hermesConfigPath(ctx), 'utf8'), ctx);
+    hooks = hooksSection(readFileSync(hermesConfigPath(ctx), 'utf8'));
   } catch {
-    return false;
+    return 'missing';
   }
+  const found: FoundHook[] = [];
+  for (const [event, entries] of Object.entries(hooks ?? {})) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (!isOurEntry(entry, ctx)) continue;
+      found.push({...(parseHookCommand(String(entry.command), 'hermes') ?? {node: '', cli: ''}), event});
+    }
+  }
+  return hookHealth(found, events, ctx);
 }
 
-function isOurCommand(command: string, ctx: AgentContext): boolean {
-  return command.includes(ctx.cli) && command.includes('hook hermes');
+function isOurEntry(entry: unknown, ctx: AgentContext): entry is Record<string, unknown> {
+  return isRecord(entry) && isCompanionHookCommand(String(entry.command ?? ''), 'hermes', ctx);
 }
 
 function notification(payload: HookPayload, receiptTime: number): NormalizedHook[] {
   return [{event: 'notification', payload: namespacePayload('hermes', attentionPayload(payload, receiptTime))}];
 }
-
-function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-type HookEntry = Record<string, unknown>;
 
 // Refuses files we can't edit safely so a broken config never gets a second `hooks:` block.
 function parseConfig(source: string) {
@@ -104,28 +135,31 @@ function parseConfig(source: string) {
   return doc;
 }
 
-function currentHooks(source: string): Record<string, HookEntry[]> {
+// The `hooks:` mapping, or undefined when `hooks:` holds something else.
+function hooksSection(source: string): Record<string, unknown> | undefined {
   const value = parseConfig(source).toJSON() as Record<string, unknown> | null;
-  const hooks = value && typeof value.hooks === 'object' && value.hooks && !Array.isArray(value.hooks)
-    ? value.hooks as Record<string, unknown> : {};
-  const result: Record<string, HookEntry[]> = {};
-  for (const [event, entries] of Object.entries(hooks)) {
-    result[event] = Array.isArray(entries) ? entries as HookEntry[] : [];
-  }
-  return result;
+  const hooks = value?.hooks;
+  if (hooks === undefined || hooks === null) return {};
+  return isRecord(hooks) ? {...hooks} : undefined;
 }
 
-function withoutOurHooks(hooks: Record<string, HookEntry[]>, ctx: AgentContext): Record<string, HookEntry[]> {
-  const result: Record<string, HookEntry[]> = {};
+// Removes our entries and keeps everything else, including values that aren't lists. With
+// `dropEmptied`, an event goes when it held only our entries.
+function withoutOurHooks(hooks: Record<string, unknown>, ctx: AgentContext, dropEmptied: boolean): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
   for (const [event, entries] of Object.entries(hooks)) {
-    const kept = entries.filter(entry => !isOurCommand(String(entry?.command ?? ''), ctx));
-    if (kept.length) result[event] = kept;
+    if (!Array.isArray(entries)) {
+      result[event] = entries;
+      continue;
+    }
+    const kept = entries.filter(entry => !isOurEntry(entry, ctx));
+    if (!dropEmptied || kept.length || !entries.length) result[event] = kept;
   }
   return result;
 }
 
 // Rewrites only the top-level `hooks:` block so the rest of the user's file keeps its exact text.
-export function replaceHooksSection(source: string, hooks: Record<string, HookEntry[]>): string {
+export function replaceHooksSection(source: string, hooks: Record<string, unknown>): string {
   const block = Object.keys(hooks).length ? stringify({hooks}, {lineWidth: 0}) : '';
   const contents = parseConfig(source).contents;
   const pair = isMap(contents)
@@ -149,8 +183,7 @@ export function hermesApprovedEvents(ctx: AgentContext): string[] {
     const path = join(dirname(hermesConfigPath(ctx)), 'shell-hooks-allowlist.json');
     const data = JSON.parse(readFileSync(path, 'utf8')) as {approvals?: Array<{event?: unknown; command?: unknown}>};
     return (data.approvals ?? [])
-      .filter(item => typeof item.command === 'string' && isOurCommand(item.command, ctx)
-        && item.command === hermesCommand(ctx, String(item.event)))
+      .filter(item => typeof item.command === 'string' && item.command === hermesCommand(ctx, String(item.event)))
       .map(item => String(item.event));
   } catch {
     return [];

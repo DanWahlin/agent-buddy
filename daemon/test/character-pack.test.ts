@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdtemp, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import test from 'node:test';
 import {
   addCharacterPack,
@@ -64,14 +64,14 @@ test('large blink patches need firmware that keeps internal RAM free for Wi-Fi',
 });
 
 test('names select built-in packs and other values are absolute paths', () => {
-  assert.equal(resolveCharacterPack('openclaw', '/packs'), '/packs/openclaw.acpk');
+  assert.equal(resolveCharacterPack('openclaw', '/packs'), join('/packs', 'openclaw.acpk'));
   assert.equal(resolveCharacterPack('/tmp/custom.acpk', '/packs'), '/tmp/custom.acpk');
   assert.throws(() => resolveCharacterPack('custom.acpk', '/packs'), /absolute/);
-  assert.equal(resolveCharacterPack('OpenClaw', '/packs'), '/packs/openclaw.acpk');
+  assert.equal(resolveCharacterPack('OpenClaw', '/packs'), join('/packs', 'openclaw.acpk'));
   assert.equal(characterRequestValue('copilot', '/work'), 'copilot');
   assert.equal(characterRequestValue('Copilot', '/work'), 'copilot');
   assert.equal(characterRequestValue('Unknown Name', '/work'), 'unknown name');
-  assert.equal(characterRequestValue('packs/custom.acpk', '/work'), '/work/packs/custom.acpk');
+  assert.equal(characterRequestValue('packs/custom.acpk', '/work'), resolve('/work', 'packs', 'custom.acpk'));
 });
 
 test('loads packs from disk with a build hint for missing built-ins', async () => {

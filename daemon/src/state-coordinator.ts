@@ -106,15 +106,18 @@ export class StateCoordinator {
     };
   }
 
+  // The "agent:session" ids of the sessions that count as active.
+  activeSessionIds(): string[] {
+    const now = this.#now();
+    return [...this.#sessions.values()].filter(session => this.#isActive(session, now)).map(session => session.id);
+  }
+
   agentActivity(): Map<AgentId, {activeSessions: number; driving: boolean}> {
     const now = this.#now();
     const activity = new Map<AgentId, {activeSessions: number; driving: boolean}>();
     for (const session of this.#sessions.values()) {
       const agent = this.#agentFromSession(session.id);
-      if (!agent) continue;
-      const active = session.activeUntil > now || session.attentionUntil > now
-        || session.subagents.size > 0 || session.completionPending;
-      if (!active) continue;
+      if (!agent || !this.#isActive(session, now)) continue;
       const entry = activity.get(agent) ?? {activeSessions: 0, driving: false};
       entry.activeSessions += 1;
       entry.driving ||= this.#drivingAgents.has(agent);
@@ -315,6 +318,11 @@ export class StateCoordinator {
       this.#sessions.set(id, session);
     }
     return session;
+  }
+
+  #isActive(session: SessionState, now: number): boolean {
+    return session.activeUntil > now || session.attentionUntil > now
+      || session.subagents.size > 0 || session.completionPending;
   }
 
   #sessionId(payload: HookPayload): string {

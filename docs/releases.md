@@ -68,8 +68,10 @@ not a repository name, and remains unchanged.
 
 `.github/workflows/build.yml` runs native tests, re-exports and compares sprite
 assets, installs the pinned Arduino CLI/core and Waveshare libraries, builds the
-firmware, then packages only a verified matched bundle. This needs no Azure
-credentials or image-generation calls: all approved source artwork is checked in.
+firmware, then packages only a verified matched bundle. Its `daemon-windows` job
+runs the companion service's tests on native Windows, and a release waits for it.
+This needs no Azure credentials or image-generation calls: all approved source
+artwork is checked in.
 
 Actions are pinned to revisions. Build jobs have read-only repository permissions;
 only the tag-triggered publishing job receives `contents: write`. The tag must

@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
   defaultDataDirectory,
   defaultSocketPath,
+  isNamedPipe,
+  serviceInfo,
   socketPath,
   statePath,
   wifiConfigPath,
+  windowsPipeName,
 } from '../src/paths.js';
 
 test('honors explicit daemon path overrides', () => {
@@ -43,4 +48,34 @@ test('uses native macOS and Linux runtime paths', () => {
   assert.equal(defaultDataDirectory('linux', '/home/example',
                                     {XDG_STATE_HOME: '/home/example/state'}),
                '/home/example/state/esp32-agent-companion');
+});
+
+test('uses a per-user named pipe and LOCALAPPDATA on Windows', () => {
+  assert.equal(defaultSocketPath('win32', 'C:\\Users\\Dan', {}, 'C:\\Temp', -1, 'Dan'),
+               '\\\\.\\pipe\\esp32-agent-companion-Dan');
+  assert.equal(windowsPipeName('Dan W'), '\\\\.\\pipe\\esp32-agent-companion-Dan_W');
+  assert.equal(windowsPipeName('dé😀'), '\\\\.\\pipe\\esp32-agent-companion-d___');
+  assert.equal(windowsPipeName(''), '\\\\.\\pipe\\esp32-agent-companion-user');
+  assert.equal(isNamedPipe('\\\\.\\pipe\\esp32-agent-companion-Dan'), true);
+  assert.equal(isNamedPipe('\\\\?\\pipe\\x'), true);
+  assert.equal(isNamedPipe('/tmp/daemon.sock'), false);
+  assert.equal(defaultDataDirectory('win32', 'C:\\Users\\Dan', {LOCALAPPDATA: 'D:\\Local'}),
+               'D:\\Local\\ESP32 Agent Companion');
+  assert.equal(defaultDataDirectory('win32', 'C:\\Users\\Dan', {LOCALAPPDATA: 'relative'}),
+               'C:\\Users\\Dan\\AppData\\Local\\ESP32 Agent Companion');
+  assert.equal(defaultDataDirectory('win32', 'C:\\Users\\Dan', {}),
+               'C:\\Users\\Dan\\AppData\\Local\\ESP32 Agent Companion');
+});
+
+test('reports the folder the daemon runs from and its version', () => {
+  const root = mkdtempSync(join(tmpdir(), 'companion-root-'));
+  try {
+    assert.deepEqual(serviceInfo(`${root}/`), {root, version: null});
+    writeFileSync(join(root, 'VERSION'), '0.8.0\n');
+    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0'});
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
+  const own = serviceInfo();
+  assert.ok(!own.root.endsWith('/') && own.root.length > 1);
 });

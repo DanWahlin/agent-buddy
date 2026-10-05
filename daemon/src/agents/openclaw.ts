@@ -1,7 +1,7 @@
 import {existsSync} from 'node:fs';
 import {mkdir, rm, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {findExecutable, versionOf} from './commands.js';
+import {findExecutable, hasCommand, versionOf} from './commands.js';
 import {canonicalEvent, normalized} from './normalize.js';
 import type {AgentAdapter, AgentContext} from './types.js';
 
@@ -13,13 +13,13 @@ export const openclawAdapter: AgentAdapter = {
   detect(ctx) {
     const configPath = pluginDirectory(ctx);
     const version = versionOf('openclaw', ctx);
-    return {installed: Boolean(version), version, configPath};
+    return {installed: hasCommand('openclaw', ctx), version, configPath};
   },
   hookStatus(ctx) {
     return existsSync(join(pluginDirectory(ctx), 'package.json')) ? 'installed' : 'missing';
   },
   async install(ctx) {
-    if (!findExecutable('openclaw', ctx.env))
+    if (!findExecutable('openclaw', ctx.env, ctx.platform))
       throw new Error('the openclaw command wasn\'t found on PATH. Install OpenClaw, then run npm run setup again.');
     const directory = pluginDirectory(ctx);
     await mkdir(directory, {recursive: true, mode: 0o700});
@@ -50,7 +50,7 @@ export const openclawAdapter: AgentAdapter = {
     }
   },
   async uninstall(ctx) {
-    if (ctx.runCommand && findExecutable('openclaw', ctx.env)) {
+    if (ctx.runCommand && findExecutable('openclaw', ctx.env, ctx.platform)) {
       await ctx.runCommand('openclaw', ['plugins', 'uninstall', 'agent-companion', '--force'], {timeoutMs: 10_000})
         .catch(() => ({stdout: '', status: 1}));
     }
@@ -83,7 +83,7 @@ function forward(nativeEvent, event, ctx) {
   const body = JSON.stringify({type: 'hook', agent: 'openclaw', nativeEvent, payload}) + '\\n';
   const socket = createConnection(socketPath);
   const timer = setTimeout(() => socket.destroy(), 250);
-  socket.on('connect', () => socket.end(body));
+  socket.on('connect', () => (/^\\\\\\\\[.?]\\\\pipe\\\\/i.test(socketPath) ? socket.write(body) : socket.end(body)));
   socket.on('error', () => undefined);
   socket.on('close', () => clearTimeout(timer));
 }

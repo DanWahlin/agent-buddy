@@ -15,6 +15,7 @@ import {
   type AgentBadgeActive,
   type AgentBadgeIconDefinition,
 } from './agent-badges.js';
+import {shouldSendUsage, usagePacket} from './usage-tracker.js';
 import {
   parseWifiProvisioningResponse,
   wifiProvisioningPacket,
@@ -22,6 +23,8 @@ import {
 } from './wifi-config.js';
 
 const networkRefreshMs = 5000;
+// The newest firmware protocol this daemon knows; see kDeviceProtocol in DeviceCommands.h.
+const maxProtocol = 11;
 
 interface LineWaiter {
   match: (line: string) => boolean;
@@ -45,14 +48,23 @@ export class UsbTransport {
   #protocol = 0;
   #iconSignature = '';
   #activeSignature = '';
+  // What the device shows now; null until it is sent after a connect or restart.
+  #usageSignature: string | null = null;
   #enabled = true;
   #character: string | null = null;
   #adaptivePatchRam = false;
+  #firmware: string | null = null;
   #network: DeviceNetwork | null = null;
+  // The ESP32 port the last scan chose, and how many handshakes in a row it failed.
+  #seen: UsbPort | null = null;
+  #failures = 0;
   readonly #changed: () => void;
+  readonly #button: (presses: number) => void;
 
-  constructor(changed: () => void = () => undefined) {
+  // `button` runs when the device's BOOT button is pressed, with the count since the device started.
+  constructor(changed: () => void = () => undefined, button: (presses: number) => void = () => undefined) {
     this.#changed = changed;
+    this.#button = button;
   }
 
   get character(): string | null {
@@ -60,6 +72,11 @@ export class UsbTransport {
   }
 
   // Firmware that reports patch_ram=adaptive keeps enough internal RAM free for Wi-Fi with any pack.
+  // The first 16 hex digits of the firmware's ELF SHA-256; null before protocol 9.
+  get firmware(): string | null {
+    return this.connected ? this.#firmware : null;
+  }
+
   get adaptivePatchRam(): boolean {
     return this.connected && this.#adaptivePatchRam;
   }
@@ -74,6 +91,17 @@ export class UsbTransport {
 
   get path(): string | null {
     return this.#path;
+  }
+
+  // An ESP32 port that is there but does not answer: a new board, or other firmware.
+  get unanswered(): UsbPort | null {
+    return !this.connected && this.#failures >= 2 ? this.#seen : null;
+  }
+
+  // The port to install firmware on: the connected device's, else the first ESP32 port found now.
+  async findPort(): Promise<UsbPort | null> {
+    if (this.connected && this.#path) return {path: this.#path, pid: this.#seen?.path === this.#path ? this.#seen.pid : null};
+    return pickPort(await SerialPort.list(), this.#preferredPort);
   }
 
   get state(): CharacterState {
@@ -119,31 +147,49 @@ export class UsbTransport {
       .catch(error => console.error(`[usb] ${this.#message(error)}`));
   }
 
+  setUsage(lines: readonly string[]): void {
+    const signature = lines.join('|');
+    if (!shouldSendUsage(this.#protocol) || signature === this.#usageSignature) return;
+    this.#commands = this.#commands
+      .then(() => this.#sendUsage(signature))
+      .catch(error => console.error(`[usb] ${this.#message(error)}`));
+  }
+
   // Disabling releases the serial port so a cable can provide power only.
   async setEnabled(enabled: boolean): Promise<void> {
     this.#enabled = enabled;
-    if (enabled) this.start();
-    else await this.stop();
+    if (enabled) {
+      this.start();
+      return;
+    }
+    await this.stop();
+    // A scan that was opening the port when this stopped closes it again (see #open).
+    for (let waited = 0; this.#scanActive && waited < 15_000; waited += 50)
+      await new Promise(resolve => setTimeout(resolve, 50));
+    this.#failures = 0;
   }
 
   async #scan(): Promise<void> {
     if (!this.#enabled || this.#scanActive || this.connected) return;
     this.#scanActive = true;
+    const before = JSON.stringify(this.unanswered);
     try {
-      const ports = await SerialPort.list();
-      const candidate = ports.find(port => port.path === this.#preferredPort)
-        ?? ports.find(port => port.vendorId?.toLowerCase() === '303a'
-          && isLikelyEsp32Port(port.path))
-        ?? ports.find(port => isLikelyEsp32Port(port.path));
+      const candidate = pickPort(await SerialPort.list(), this.#preferredPort);
+      if (candidate?.path !== this.#seen?.path) this.#failures = 0;
+      this.#seen = candidate;
       if (!candidate) return;
-      const path = process.platform === 'darwin'
-        ? candidate.path.replace(/^\/dev\/tty\./, '/dev/cu.')
-        : candidate.path;
-      await this.#open(path);
+      try {
+        await this.#open(candidate.path);
+        this.#failures = 0;
+      } catch (error) {
+        if (this.#enabled) this.#failures++;
+        throw error;
+      }
     } catch (error) {
       console.error(`[usb] discovery failed: ${this.#message(error)}`);
     } finally {
       this.#scanActive = false;
+      if (JSON.stringify(this.unanswered) !== before) this.#changed();
     }
   }
 
@@ -168,21 +214,18 @@ export class UsbTransport {
     await new Promise<void>((resolve, reject) => {
       port.open(error => error ? reject(error) : resolve());
     });
+    if (!this.#enabled) {
+      await new Promise<void>(resolve => port.close(() => resolve()));
+      return;
+    }
     this.#port = port;
     this.#path = path;
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
-      const protocol = Number(/^INFO protocol=(\d+)(?: |$)/.exec(info)?.[1]);
-      if (!Number.isInteger(protocol) || protocol < 1 || protocol > 7) {
-        throw new Error(`Unsupported device protocol: ${info}`);
-      }
-      this.#protocol = protocol;
-      this.#adaptivePatchRam = /\bpatch_ram=adaptive\b/.test(info);
-      this.#network = deviceNetwork(/\bssid_b64=([A-Za-z0-9+/=]*)/.exec(info)?.[1],
-                                    /\bwifi_connected=1\b/.test(info));
+      this.#applyInfo(info);
       this.#iconSignature = '';
       this.#activeSignature = '';
-      this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(info)?.[1] ?? null;
+      this.#usageSignature = null;
       console.log(`[usb] ${info}`);
       console.log(`[usb] connected ${path}`);
       this.#changed();
@@ -213,6 +256,13 @@ export class UsbTransport {
       this.#activeSignature = activeSignature;
       console.log(`[badges] ${active.length} agent badge(s) via usb`);
     }
+  }
+
+  async #sendUsage(signature: string): Promise<void> {
+    if (!this.connected || !shouldSendUsage(this.#protocol) || signature === this.#usageSignature) return;
+    const lines = signature ? signature.split('|') : [];
+    await this.#request(usagePacket(lines), line => line === `USAGE accepted=${lines.length}`);
+    this.#usageSignature = signature;
   }
 
   async configureWifi(ssid: string, password: string): Promise<WifiConfig> {
@@ -256,6 +306,31 @@ export class UsbTransport {
     });
     this.#commands = operation.then(() => undefined, () => undefined);
     return operation;
+  }
+
+  #applyInfo(info: string): void {
+    const protocol = Number(/^INFO protocol=(\d+)(?: |$)/.exec(info)?.[1]);
+    if (!Number.isInteger(protocol) || protocol < 1 || protocol > maxProtocol) {
+      throw new Error(`Unsupported device protocol: ${info}`);
+    }
+    this.#protocol = protocol;
+    this.#adaptivePatchRam = /\bpatch_ram=adaptive\b/.test(info);
+    this.#firmware = /\bfirmware=([0-9a-f]{16})\b/.exec(info)?.[1] ?? null;
+    this.#network = deviceNetwork(/\bssid_b64=([A-Za-z0-9+/=]*)/.exec(info)?.[1],
+                                  /\bwifi_connected=1\b/.test(info));
+    this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(info)?.[1] ?? null;
+  }
+
+  // A restart can bring new firmware (a Wi-Fi update), so ask again what the device runs.
+  #refreshInfo(): void {
+    const operation = this.#commands.then(async () => {
+      if (!this.connected) return;
+      const info = await this.#request('i', line => line.startsWith('INFO protocol='));
+      this.#applyInfo(info);
+      console.log(`[usb] ${info}`);
+      this.#changed();
+    }).catch(error => console.error(`[usb] ${this.#message(error)}`));
+    this.#commands = operation;
   }
 
   // A newly saved network joins in the background, so keep asking until the device reports it joined.
@@ -362,6 +437,11 @@ export class UsbTransport {
       if (!line) continue;
       // Software restarts keep the USB port open, so the boot banner marks a new session.
       if (line.startsWith('READY:')) this.#rebooted(line);
+      const presses = parseButtonLine(line);
+      if (presses !== null) {
+        this.#button(presses);
+        continue;
+      }
       const waiter = this.#waiters.find(candidate => candidate.match(line));
       if (!waiter) continue;
       clearTimeout(waiter.timer);
@@ -374,8 +454,10 @@ export class UsbTransport {
     this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(line)?.[1] ?? null;
     this.#iconSignature = '';
     this.#activeSignature = '';
+    this.#usageSignature = null;
     console.log(`[usb] device restarted character=${this.#character ?? 'unknown'}`);
     this.#changed();
+    this.#refreshInfo();
   }
 
   #waitFor(match: (line: string) => boolean, timeoutMs: number): Promise<string> {
@@ -405,6 +487,14 @@ export class UsbTransport {
   }
 }
 
+// The device sends `BUTTON settings presses=N` without a request when its BOOT button is pressed.
+export function parseButtonLine(line: string): number | null {
+  const match = /^BUTTON settings presses=(\d{1,10})$/.exec(line);
+  if (!match) return null;
+  const presses = Number(match[1]);
+  return presses > 0 && presses <= 0xFFFFFFFF ? presses : null;
+}
+
 export function parseUploadReady(line: string): {maxBytes: number; chunk: number} {
   const maxBytes = Number(/\bmax_bytes=(\d+)\b/.exec(line)?.[1]);
   const chunk = Number(/\bchunk=(\d+)\b/.exec(line)?.[1]);
@@ -415,8 +505,32 @@ export function parseUploadReady(line: string): {maxBytes: number; chunk: number
   return {maxBytes, chunk};
 }
 
+type PortInfo = Awaited<ReturnType<typeof SerialPort.list>>[number];
+
+export interface UsbPort {
+  path: string;
+  // The USB product ID; 0x1001 is the ESP32-S3's own USB port.
+  pid: number | null;
+}
+
+// The preferred port, else an Espressif one, else any port that looks like an ESP32 board.
+export function pickPort(ports: readonly PortInfo[], preferred?: string,
+                         platform: NodeJS.Platform = process.platform): UsbPort | null {
+  const candidate = ports.find(port => port.path === preferred)
+    ?? ports.find(port => port.vendorId?.toLowerCase() === '303a' && isLikelyEsp32Port(port.path, platform))
+    // Windows lists Bluetooth links as COM ports too; only a USB port has a vendor ID.
+    ?? ports.find(port => isLikelyEsp32Port(port.path, platform) && (platform !== 'win32' || Boolean(port.vendorId)));
+  if (!candidate) return null;
+  const pid = Number.parseInt(candidate.productId ?? '', 16);
+  return {
+    path: platform === 'darwin' ? candidate.path.replace(/^\/dev\/tty\./, '/dev/cu.') : candidate.path,
+    pid: Number.isFinite(pid) ? pid : null,
+  };
+}
+
 export function isLikelyEsp32Port(
     path: string, platform: NodeJS.Platform = process.platform): boolean {
   if (platform === 'darwin') return /^\/dev\/(?:cu|tty)\.usbmodem/i.test(path);
+  if (platform === 'win32') return /^COM\d+$/i.test(path);
   return /^\/dev\/tty(?:ACM|USB)\d+$/i.test(path);
 }

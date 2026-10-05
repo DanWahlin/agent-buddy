@@ -25,16 +25,24 @@ class FakeService extends EventEmitter {
   modes: string[] = [];
   agentActions: string[] = [];
   badges: boolean[] = [];
-  desktop: Array<{visible?: boolean; backdrop?: string; character?: string}> = [];
+  desktop: Array<{visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}> = [];
+  usage: Array<{enabled?: boolean; window?: string}> = [];
+  usbFirmware = {release: '0.7.0', releaseId: null, flasher: true, port: '/dev/test', unanswered: false,
+                 installing: null, last: null};
+  firmware = {device: 'aaaaaaaaaaaaaaaa', built: 'bbbbbbbbbbbbbbbb', canUpdate: true, updating: null, last: null,
+              usb: this.usbFirmware};
+  firmwareUpdates = 0;
+  usbInstalls = 0;
   status() {
     return {state: 'idle', transport: 'usb', connected: this.connected, port: '/dev/test', character: 'copilot',
-            mode: 'auto', sessions: 0, wifiPaired: false, installing: null, lastInstall: null,
+            mode: 'auto', sessions: 0, wifiPaired: false, firmware: this.firmware, installing: null, lastInstall: null,
             drivingAgents: [], agents: this.agentStatuses(),
-            badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot CLI', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
-            desktop: {visible: true, backdrop: 'device', character: 'copilot', pack: null}} as never;
+            badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
+            desktop: {visible: true, backdrop: 'device', sounds: false, volume: 30, character: 'copilot', pack: null},
+            usage: {enabled: true, window: 'today', aic: 902, tokens: null, lines: ['AIC: 902'], summary: ['AIC: 902']}} as never;
   }
   agentStatuses() {
-    return [{id: 'copilot', name: 'GitHub Copilot CLI', detected: true, installed: true,
+    return [{id: 'copilot', name: 'GitHub Copilot', detected: true, installed: true,
              hookStatus: 'installed', enabled: true, activeSessions: 0, driving: false}];
   }
   async setAgentEnabled(id: string, enabled: boolean) {
@@ -74,9 +82,33 @@ class FakeService extends EventEmitter {
   async setAgentBadgesEnabled(enabled: boolean) {
     this.badges.push(enabled);
   }
-  async setDesktop(change: {visible?: boolean; backdrop?: string; character?: string}) {
+  async setDesktop(change: {visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}) {
     if (change.character === 'missing') throw new Error('Unknown character.');
     this.desktop.push(change);
+  }
+  desktopApp: string[] = [];
+  canStartDesktop = true;
+  async startDesktop() {
+    if (!this.canStartDesktop) throw new Error('Open the desktop app one time yourself.');
+    this.desktopApp.push('start');
+  }
+  stopDesktop() {
+    this.desktopApp.push('stop');
+  }
+  async setUsage(change: {enabled?: boolean; window?: string}) {
+    this.usage.push(change);
+  }
+  async updateFirmware() {
+    this.firmwareUpdates += 1;
+  }
+  async installFirmwareOverUsb() {
+    this.usbInstalls += 1;
+  }
+  uninstalls: boolean[] = [];
+  async uninstall(keepData: boolean) {
+    if (this.uninstalls.length > 0) throw new Error('The uninstall is already in progress.');
+    this.uninstalls.push(keepData);
+    return {keptData: keepData, manual: ['Delete the desktop app: /opt/app']};
   }
 }
 
@@ -190,14 +222,66 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":false}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"device"}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"sounds":"on"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"sounds":true}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":101}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":"50"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":30}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"Bad!"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"missing"}'})).status, 409);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"claude"}'})).status, 200);
     assert.deepEqual(service.desktop, [
-      {visible: false, backdrop: undefined, character: undefined},
-      {visible: undefined, backdrop: 'device', character: undefined},
-      {visible: undefined, backdrop: undefined, character: 'claude'},
+      {visible: false, backdrop: undefined, sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: 'device', sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, sounds: true, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, sounds: undefined, volume: 30, character: undefined},
+      {visible: undefined, backdrop: undefined, sounds: undefined, volume: undefined, character: 'claude'},
     ]);
+    assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{}'})).status, 400);
+    assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{"enabled":"yes"}'})).status, 400);
+    assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{"window":"year"}'})).status, 400);
+    const usage = await call('/api/usage', {method: 'POST', headers: json, body: '{"enabled":false,"window":"month"}'});
+    assert.equal(usage.status, 200);
+    assert.deepEqual(JSON.parse(usage.body).usage.lines, ['AIC: 902']);
+    assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{"window":"active"}'})).status, 200);
+    assert.deepEqual(service.usage, [{enabled: false, window: 'month'}, {enabled: undefined, window: 'active'}]);
+    assert.equal((await call('/api/desktop/start', {method: 'POST'})).status, 200);
+    assert.equal((await call('/api/desktop/stop', {method: 'POST'})).status, 200);
+    assert.equal((await call('/api/desktop/restart', {method: 'POST'})).status, 404);
+    assert.equal((await call('/api/desktop/start', {method: 'GET'})).status, 404);
+    assert.equal((await call('/api/desktop/start', {method: 'POST', token: false})).status, 401);
+    service.canStartDesktop = false;
+    const refused = await call('/api/desktop/start', {method: 'POST'});
+    assert.equal(refused.status, 409);
+    assert.match(JSON.parse(refused.body).error, /one time yourself/);
+    assert.deepEqual(service.desktopApp, ['start', 'stop']);
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{}'})).status, 400);
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":"yes"}'})).status, 400);
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":true}', token: false})).status, 401);
+    const uninstalled = await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":true}'});
+    assert.equal(uninstalled.status, 200);
+    assert.deepEqual(JSON.parse(uninstalled.body), {ok: true, keptData: true, manual: ['Delete the desktop app: /opt/app']});
+    assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":false}'})).status, 409);
+    assert.deepEqual(service.uninstalls, [true]);
+    assert.equal((await call('/api/firmware/update', {method: 'GET'})).status, 404);
+    assert.equal((await call('/api/firmware/update', {method: 'POST', token: false})).status, 401);
+    assert.equal((await call('/api/firmware/update', {method: 'POST'})).status, 202);
+    assert.equal(service.firmwareUpdates, 1);
+    service.firmware = {...service.firmware, built: service.firmware.device, canUpdate: false};
+    const current = await call('/api/firmware/update', {method: 'POST'});
+    assert.equal(current.status, 409);
+    assert.match(JSON.parse(current.body).error, /already runs/);
+    service.firmware = {...service.firmware, built: 'bbbbbbbbbbbbbbbb', canUpdate: false};
+    assert.match(JSON.parse((await call('/api/firmware/update', {method: 'POST'})).body).error, /Wi-Fi/);
+    assert.equal(service.firmwareUpdates, 1);
+    assert.equal((await call('/api/firmware/usb', {method: 'POST', token: false})).status, 401);
+    assert.equal((await call('/api/firmware/usb', {method: 'POST'})).status, 202);
+    assert.equal(service.usbInstalls, 1);
+    service.firmware = {...service.firmware, usb: {...service.usbFirmware, flasher: false}};
+    const noApp = await call('/api/firmware/usb', {method: 'POST'});
+    assert.equal(noApp.status, 409);
+    assert.match(JSON.parse(noApp.body).error, /desktop app/);
+    assert.equal(service.usbInstalls, 1);
     assert.equal((await call('/api/agents/copilot/disable', {method: 'POST'})).status, 200);
     assert.equal((await call('/api/agents/copilot/install', {method: 'POST'})).status, 200);
     assert.equal((await call('/api/agents/copilot', {method: 'DELETE'})).status, 200);

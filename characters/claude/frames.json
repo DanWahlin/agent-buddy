@@ -68,7 +68,7 @@
   "dataBytes": 1802532,
   "dataSha256": "bdbba5666638b672c4790ed1eff377e3eb5774e780b352853ef7b441fda1cb67",
   "metadataBytes": 13899,
-  "partitionBytes": 14548992,
+  "partitionBytes": 12451840,
   "uniqueBlocks": 1330,
   "blockReferences": 1440,
   "sourceManifest": {

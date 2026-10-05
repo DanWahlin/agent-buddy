@@ -67,7 +67,7 @@ def validate_manifest(manifest, files):
         if index < 3 and (offset, capacity) != limits[index]:
             raise ValueError(f"Unsafe offset or budget for {filename}.")
         if index == 3 and (offset != 0x10000 or capacity != 0x200000):
-            raise ValueError("Unsafe application offset or budget; expected the 2 MiB factory layout.")
+            raise ValueError("Unsafe application offset or budget; expected a 2 MiB app0 slot at 0x10000.")
         if index == 4 and (offset < end or offset % 0x10000):
             raise ValueError("Unsafe assets offset or partition overlap.")
         if capacity == 0 or size == 0 or size > capacity or offset + capacity > FLASH_BYTES:

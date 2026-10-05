@@ -11,7 +11,8 @@ class FirmwareBundleTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         self.put("firmware/AgentCompanion/partitions.csv",
-                 "factory,app,factory,0x10000,0x200000,\nassets,data,0x40,0x210000,0xDE0000,\n")
+                 "otadata,data,ota,0xE000,0x2000,\napp0,app,ota_0,0x10000,0x200000,\n"
+                 "app1,app,ota_1,0x210000,0x200000,\nassets,data,0x40,0x410000,0xBE0000,\n")
         self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
         self.put("build/characters/copilot.acpk", b"default character pack")
         for path in BINARIES:
@@ -26,7 +27,7 @@ class FirmwareBundleTests(unittest.TestCase):
         snapshot(self.root)
         record(self.root)
         check(self.root)
-        self.assertEqual(layout(self.root)[1]["offset"], 0x210000)
+        self.assertEqual(layout(self.root)[1]["offset"], 0x410000)
 
     def test_records_portable_paths(self):
         # A bundle recorded under WSL or CI must still pass check on Windows, and vice versa.
@@ -72,8 +73,21 @@ class FirmwareBundleTests(unittest.TestCase):
 
     def test_rejects_partition_overlap(self):
         self.put("firmware/AgentCompanion/partitions.csv",
-                 "factory,app,factory,0x10000,0x200000,\nassets,data,0x40,0x200000,0xDE0000,\n")
+                 "otadata,data,ota,0xE000,0x2000,\napp0,app,ota_0,0x10000,0x200000,\n"
+                 "app1,app,ota_1,0x210000,0x200000,\nassets,data,0x40,0x400000,0xBE0000,\n")
         with self.assertRaisesRegex(ValueError, "overlap"):
+            layout(self.root)
+
+    def test_requires_two_matching_app_slots(self):
+        # Without a second slot of the same size, an update over Wi-Fi has nowhere to go.
+        self.put("firmware/AgentCompanion/partitions.csv",
+                 "factory,app,factory,0x10000,0x200000,\nassets,data,0x40,0x210000,0xDE0000,\n")
+        with self.assertRaisesRegex(ValueError, "required"):
+            layout(self.root)
+        self.put("firmware/AgentCompanion/partitions.csv",
+                 "otadata,data,ota,0xE000,0x2000,\napp0,app,ota_0,0x10000,0x200000,\n"
+                 "app1,app,ota_1,0x210000,0x100000,\nassets,data,0x40,0x410000,0xBE0000,\n")
+        with self.assertRaisesRegex(ValueError, "match app0"):
             layout(self.root)
 
 

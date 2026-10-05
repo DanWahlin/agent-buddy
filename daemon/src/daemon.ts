@@ -2,7 +2,7 @@ import {chmod, mkdir, unlink} from 'node:fs/promises';
 import {createConnection, createServer, type Socket} from 'node:net';
 import {dirname} from 'node:path';
 import {characterStates, hookEvents, type DaemonRequest} from './protocol.js';
-import {socketPath, statePath} from './paths.js';
+import {isNamedPipe, socketPath, statePath} from './paths.js';
 import {StateCoordinator} from './state-coordinator.js';
 import {StateStore} from './state-store.js';
 import {DeviceTransport} from './device-transport.js';
@@ -10,9 +10,10 @@ import {isConnectionMode, loadConnectionMode} from './connection-mode.js';
 import {CompanionService} from './companion-service.js';
 import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
-import {defaultAgentContext, normalizeAgentHook} from './agents/index.js';
+import {defaultAgentContext, normalizeAgentHook, otherAgentLocations} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
-import {desktopBackdrops, isDesktopBackdrop} from './display-settings.js';
+import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
+import {isUsageWindow, usageWindows} from './usage-tracker.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
@@ -20,21 +21,24 @@ export async function runDaemon(): Promise<void> {
   let lastAutoInstall = 0;
   let service: CompanionService | undefined;
   // A device that lost its pack (for example, an interrupted install) gets the preferred one back.
+  let settingsUrl: string | null = null;
   const transport = new DeviceTransport(() => {
     if (!service || transport.installing || Date.now() - lastAutoInstall < autoInstallRetryMs) return;
     lastAutoInstall = Date.now();
     service.restoreCharacter().catch(error => console.error(`[character] automatic install failed: ${
       error instanceof Error ? error.message : String(error)}`));
-  });
+  }, () => void service?.openSettings(settingsUrl));
   const store = new StateStore(statePath());
   const restored = await store.load();
   const agentContext = defaultAgentContext();
+  agentContext.locations = otherAgentLocations(agentContext);
   const badgeIcons = await loadAgentBadgeIcons(agentContext.dataDir);
   const coordinator = new StateCoordinator(state => transport.setState(state), {
     restored,
     onMutation: state => {
       store.schedule(state);
       service?.syncBadges();
+      service?.syncUsage();
     },
   });
   service = new CompanionService(transport, coordinator, agentContext, badgeIcons);
@@ -42,14 +46,16 @@ export async function runDaemon(): Promise<void> {
   void service.refreshCharacterPacks();
   await service.refreshWifiPairing();
   await service.refreshCharacterPreference();
+  void service.loadSavedRelease();
   transport.setState(coordinator.state);
   service.syncBadges();
+  service.startUsage();
   const path = socketPath();
-  await mkdir(dirname(path), {recursive: true, mode: 0o700});
+  const pipe = isNamedPipe(path);
+  if (!pipe) await mkdir(dirname(path), {recursive: true, mode: 0o700});
   await removeStaleSocket(path);
 
   const companion = service;
-  let settingsUrl: string | null = null;
   const server = createServer({allowHalfOpen: true},
     socket => handleSocket(socket, coordinator, transport, companion, () => settingsUrl));
   server.on('error', error => {
@@ -63,40 +69,55 @@ export async function runDaemon(): Promise<void> {
       resolve();
     });
   });
-  await chmod(path, 0o600);
+  if (!pipe) await chmod(path, 0o600);
   await transport.start(await loadConnectionMode());
   console.log(`[daemon] listening ${path}`);
   settingsUrl = await startSettingsServer(companion);
 
   const shutdown = async () => {
+    companion.stopUsage();
     coordinator.close();
     await store.flush(coordinator.snapshot());
     await transport.stop();
     await new Promise<void>(resolve => server.close(() => resolve()));
-    await unlink(path).catch(() => undefined);
+    if (!pipe) await unlink(path).catch(() => undefined);
   };
   process.once('SIGINT', () => void shutdown().then(() => process.exit(0)));
   process.once('SIGTERM', () => void shutdown().then(() => process.exit(0)));
+  // Windows sends SIGBREAK for Ctrl+Break and when a console closes.
+  if (process.platform === 'win32')
+    process.once('SIGBREAK', () => void shutdown().then(() => process.exit(0)));
 }
 
 export const agentHookTimeoutMs = 45_000;
 
-function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: DeviceTransport,
+export function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: DeviceTransport,
                       service: CompanionService, settingsUrl: () => string | null): void {
   socket.setEncoding('utf8');
   socket.setTimeout(2000, () => socket.destroy());
   socket.on('error', () => undefined);
   let input = '';
+  let handled = false;
+  // Requests end at the first newline. Windows named pipes cannot half-close reliably, so clients
+  // there keep the pipe open; Unix clients still half-close, and 'end' covers older clients.
+  const handleOnce = (text: string) => {
+    if (handled) return;
+    handled = true;
+    handleRequest(text);
+  };
   socket.on('data', chunk => {
     input += chunk;
-    if (input.length > 65536) socket.destroy();
+    const newline = input.indexOf('\n');
+    if (newline >= 0) handleOnce(input.slice(0, newline));
+    else if (input.length > 65536) socket.destroy();
   });
+  socket.on('end', () => handleOnce(input));
   const reply = (work: Promise<unknown>) => void work.then(
     result => respond(socket, result),
     error => respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)}));
-  socket.on('end', () => {
+  const handleRequest = (text: string) => {
     try {
-      const request = JSON.parse(input.trim()) as DaemonRequest;
+      const request = JSON.parse(text.trim()) as DaemonRequest;
       if (request.type === 'hook') {
         const agent = isAgentId(request.agent) ? request.agent : 'copilot';
         const eventName = typeof request.event === 'string' ? request.event : undefined;
@@ -112,7 +133,11 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
         transport.setState(request.state);
         respond(socket, {ok: true, state: request.state});
       } else if (request.type === 'status') {
-        respond(socket, service.status());
+        const command = request.client === 'desktop'
+          ? service.desktopSeen({
+            executable: request.executable, environment: request.environment, flasher: request.flasher,
+          }) : null;
+        respond(socket, command ? {...service.status(), desktopCommand: command} : service.status());
       } else if (request.type === 'agents') {
         respond(socket, service.agentStatuses());
       } else if (request.type === 'agentEnable' && isAgentId(request.agent)) {
@@ -139,10 +164,22 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
           throw new Error('Desktop visibility must be true or false.');
         if (request.backdrop !== undefined && !isDesktopBackdrop(request.backdrop))
           throw new Error(`Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
+        if (request.sounds !== undefined && typeof request.sounds !== 'boolean')
+          throw new Error('Desktop sounds must be on (true) or off (false).');
+        if (request.volume !== undefined && !isDesktopVolume(request.volume))
+          throw new Error('Desktop volume must be a whole number from 0 to 100.');
         if (request.character !== undefined && typeof request.character !== 'string')
           throw new Error('Desktop character must be a character id.');
-        const change = {visible: request.visible, backdrop: request.backdrop, character: request.character};
+        const change = {visible: request.visible, backdrop: request.backdrop, sounds: request.sounds,
+                        volume: request.volume, character: request.character};
         reply(service.setDesktop(change).then(() => ({ok: true, desktop: service.status().desktop})));
+      } else if (request.type === 'usage') {
+        if (request.enabled !== undefined && typeof request.enabled !== 'boolean')
+          throw new Error('Usage must be on (true) or off (false).');
+        if (request.window !== undefined && !isUsageWindow(request.window))
+          throw new Error(`Usage window must be one of: ${usageWindows.join(', ')}.`);
+        reply(service.setUsage({enabled: request.enabled, window: request.window})
+          .then(() => ({ok: true, usage: service.status().usage})));
       } else if (request.type === 'listCharacters') {
         reply(service.characters());
       } else if (request.type === 'settings') {
@@ -163,10 +200,11 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
     } catch (error) {
       respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)});
     }
-  });
+  };
 }
 
 function respond(socket: Socket, response: unknown): void {
+  if (socket.destroyed) return;
   socket.end(`${JSON.stringify(response)}\n`);
 }
 
@@ -183,6 +221,8 @@ async function removeStaleSocket(path: string): Promise<void> {
     });
   });
   if (active) throw new Error(`Agent Companion daemon is already listening at ${path}`);
+  // A named pipe goes away with its last handle, so there is no file to remove.
+  if (isNamedPipe(path)) return;
   try {
     await unlink(path);
   } catch (error) {

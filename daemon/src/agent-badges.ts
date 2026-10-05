@@ -27,7 +27,7 @@ export interface AgentBadgeStatusIcon {
 }
 
 const names: Record<AgentId, string> = {
-  copilot: 'GitHub Copilot CLI',
+  copilot: 'GitHub Copilot',
   claude: 'Claude Code',
   codex: 'Codex CLI',
   grok: 'Grok Build',

@@ -28,6 +28,9 @@ pub struct Region {
     pub cy: f64,
     pub rx: f64,
     pub ry: f64,
+    /// The case's two buttons; empty boxes when the case is not shown.
+    #[serde(default)]
+    pub buttons: [Rect; 2],
 }
 
 /// Leaving is stickier than arriving, so a cursor resting on the boundary does
@@ -44,7 +47,33 @@ const POLL_HIDDEN: Duration = Duration::from_millis(1000);
 /// "Near" is within this many CSS pixels of the window's edge.
 const NEAR: f64 = 120.0;
 
+/// A box the window also takes the mouse in: one of the case's buttons (the
+/// upper opens Settings, the lower mutes sounds). CSS pixels within the window,
+/// like the head.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Rect {
+    fn contains(&self, x: f64, y: f64, margin: f64) -> bool {
+        self.width > 0.0
+            && self.height > 0.0
+            && x >= self.x - margin
+            && x <= self.x + self.width + margin
+            && y >= self.y - margin
+            && y <= self.y + self.height + margin
+    }
+}
+
 pub fn inside(region: &Region, x: f64, y: f64, margin: f64) -> bool {
+    region.buttons.iter().any(|button| button.contains(x, y, margin)) || on_head(region, x, y, margin)
+}
+
+fn on_head(region: &Region, x: f64, y: f64, margin: f64) -> bool {
     let rx = region.rx + margin;
     let ry = region.ry + margin;
     if rx <= 0.0 || ry <= 0.0 {
@@ -243,7 +272,9 @@ impl Pointer {
 mod tests {
     use super::*;
 
-    const HEAD: Region = Region { cx: 100.0, cy: 100.0, rx: 60.0, ry: 50.0 };
+    const NO_BUTTONS: [Rect; 2] = [Rect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 }; 2];
+
+    const HEAD: Region = Region { cx: 100.0, cy: 100.0, rx: 60.0, ry: 50.0, buttons: NO_BUTTONS };
 
     #[test]
     fn the_centre_is_on_the_character() {
@@ -264,6 +295,26 @@ mod tests {
         assert!(inside(&HEAD, 164.0, 100.0, STICKY_MARGIN));
     }
 
+    /// The case's buttons take clicks too, for Settings and sounds, but the
+    /// case between them and the head still lets clicks through.
+    #[test]
+    fn the_case_buttons_take_the_mouse() {
+        let button = Rect { x: 170.0, y: 60.0, width: 12.0, height: 20.0 };
+        let region = Region { buttons: [button, Rect::default()], ..HEAD };
+        assert!(inside(&region, 175.0, 70.0, 0.0));
+        assert!(!inside(&region, 186.0, 70.0, 0.0));
+        assert!(inside(&region, 186.0, 70.0, STICKY_MARGIN));
+        assert!(!inside(&region, 175.0, 100.0, 0.0));
+        assert!(!inside(&HEAD, 175.0, 70.0, 0.0));
+    }
+
+    /// A page from before the buttons worked sends no `buttons` at all.
+    #[test]
+    fn a_region_without_buttons_still_reads() {
+        let region: Region = serde_json::from_str(r#"{"cx":1,"cy":2,"rx":3,"ry":4}"#).unwrap();
+        assert_eq!(region.buttons[0].width, 0.0);
+    }
+
     /// Before the page has reported, every click must pass through - not none.
     #[test]
     fn a_region_nobody_has_reported_yet_claims_nothing() {
@@ -277,7 +328,7 @@ mod tests {
     /// only place the sticky edge does any work.
     #[test]
     fn the_transitions_seen_in_use_are_the_ones_the_geometry_gives() {
-        let region = Region { cx: 130.0, cy: 120.0, rx: 88.4, ry: 78.0 };
+        let region = Region { cx: 130.0, cy: 120.0, rx: 88.4, ry: 78.0, buttons: NO_BUTTONS };
         let observed = [
             (144.0, 189.0, true), (41.0, 82.0, false),
             (54.0, 122.0, true), (57.0, 51.0, false),

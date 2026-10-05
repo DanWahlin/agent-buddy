@@ -4,19 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agent Companion Settings</title>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/styles.css">
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
 </head>
 <body>
   <header class="top">
     <div class="brand">
-      <span class="logo" aria-hidden="true"></span>
+      <img class="logo" src="/logo.svg" alt="" width="44" height="44">
       <div>
         <h1>Agent Companion</h1>
         <p id="summary">Connecting to the companion service…</p>
       </div>
     </div>
-    <span id="connection" class="pill offline">Offline</span>
+    <input id="theme-toggle" class="toggle theme-toggle" type="checkbox" role="switch" aria-label="Dark theme">
   </header>
 
   <main>
@@ -35,29 +36,38 @@
     <section class="card" aria-labelledby="status-title">
       <h2 id="status-title">Status</h2>
       <dl class="facts">
-        <div><dt>Connection</dt><dd id="fact-connection">—</dd></div>
-        <div><dt>Character</dt><dd id="fact-character">—</dd></div>
+        <div><dt>Device connection</dt><dd id="fact-connection">—</dd></div>
+        <div><dt>Usage</dt><dd id="fact-usage">—</dd></div>
         <div><dt>State</dt><dd id="fact-state">—</dd></div>
-        <div><dt>Agent sessions</dt><dd id="fact-sessions">—</dd></div>
       </dl>
-    </section>
-
-    <section class="card" aria-labelledby="agents-title">
-      <h2 id="agents-title">Agents</h2>
-      <label class="setting-row" for="badges-toggle">
-        <span>
-          <strong>Show agent badges on the device</strong>
-          <span class="hint">Small icons in the animation show which agent is working, needs you, or just finished.</span>
+      <div class="connection-control">
+        <span id="modes-label" class="control-label">Device connection:</span>
+        <span class="help" id="mode-help">
+          <button type="button" class="help-button" aria-label="About device connection" aria-describedby="mode-hint">?</button>
+          <span role="tooltip" id="mode-hint" class="tooltip">
+            <span data-mode="auto"><strong>Auto:</strong> Uses USB when the cable is connected, otherwise Wi-Fi.</span>
+            <span data-mode="wifi"><strong>Wi-Fi:</strong> Always uses Wi-Fi. A connected USB cable only provides power.</span>
+            <span data-mode="usb"><strong>USB:</strong> Only uses USB.</span>
+          </span>
         </span>
-        <input id="badges-toggle" class="toggle" type="checkbox" role="switch">
-      </label>
-      <p class="hint">Setup installs hooks for the agents it finds. Turn one off below without editing its config.</p>
-      <ul id="agents" class="agents" aria-live="polite"></ul>
+        <div class="segmented" role="radiogroup" aria-labelledby="modes-label" aria-describedby="mode-hint" id="modes">
+          <button type="button" role="radio" aria-checked="false" data-mode="auto">Auto</button>
+          <button type="button" role="radio" aria-checked="false" data-mode="wifi">Wi-Fi</button>
+          <button type="button" role="radio" aria-checked="false" data-mode="usb">USB</button>
+        </div>
+      </div>
     </section>
 
-    <section class="card" aria-labelledby="characters-title">
+    <div class="tabs" role="tablist" aria-label="Settings">
+      <button type="button" role="tab" id="tab-characters" aria-controls="panel-characters" aria-selected="true">Characters</button>
+      <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="false" tabindex="-1">Agents</button>
+      <button type="button" role="tab" id="tab-wifi" aria-controls="panel-wifi" aria-selected="false" tabindex="-1">Device</button>
+      <button type="button" role="tab" id="tab-desktop" aria-controls="panel-desktop" aria-selected="false" tabindex="-1">Desktop</button>
+    </div>
+
+    <section id="panel-characters" class="card panel" role="tabpanel" aria-labelledby="tab-characters" tabindex="0">
       <div class="card-head">
-        <h2 id="characters-title">Characters</h2>
+        <p class="hint">Install a character on the device, or add your own <code>.acpk</code> file.</p>
         <label class="button secondary" for="upload">Add character…</label>
         <input id="upload" type="file" accept=".acpk" class="visually-hidden">
       </div>
@@ -74,26 +84,49 @@
       <ul id="characters" class="grid" aria-live="polite"></ul>
     </section>
 
-    <section class="card" aria-labelledby="desktop-title">
-      <h2 id="desktop-title">Desktop companion</h2>
-      <label class="setting-row" for="desktop-toggle">
-        <span>
-          <strong>Show the character on the desktop</strong>
-          <span class="hint">The desktop app shows the same character and animation as the device. Turn this off to keep it on the device only.</span>
-        </span>
-        <input id="desktop-toggle" class="toggle" type="checkbox" role="switch">
-      </label>
-      <label class="setting-row" for="device-frame-toggle">
-        <span>
-          <strong>Show the device around the character</strong>
-          <span class="hint">A small copy of the device, with its screen, case and buttons. Turn this off to show only the character and its effects.</span>
-        </span>
-        <input id="device-frame-toggle" class="toggle" type="checkbox" role="switch">
-      </label>
+    <section id="panel-agents" class="card panel" role="tabpanel" aria-labelledby="tab-agents" tabindex="0" hidden>
+      <section class="group usage-group" aria-labelledby="usage-title">
+        <div class="group-head">
+          <h3 id="usage-title">AI credits and tokens</h3>
+          <span id="usage-preview" class="usage-preview" aria-live="polite"></span>
+        </div>
+        <p class="hint">At the bottom of the device's screen and in the desktop app: GitHub Copilot AI credits (AIC) while a Copilot session runs, otherwise tokens while another agent runs. Tokens are for Claude Code and Codex.</p>
+        <label class="setting-row" for="usage-toggle">
+          <span>
+            <strong>Show usage on the device</strong>
+            <span class="hint">Turn this off to hide the numbers on the device and the desktop.</span>
+          </span>
+          <input id="usage-toggle" class="toggle" type="checkbox" role="switch">
+        </label>
+        <div class="setting-row static">
+          <span>
+            <strong id="usage-window-label">Usage period</strong>
+            <span class="hint">Today and This month start at midnight and on the 1st, in this computer's time zone.</span>
+          </span>
+          <select id="usage-window" aria-labelledby="usage-window-label">
+            <option value="today">Today</option>
+            <option value="month">This month</option>
+            <option value="active">Active sessions</option>
+          </select>
+        </div>
+      </section>
+      <section class="group" aria-labelledby="agents-title">
+        <div class="group-head">
+          <h3 id="agents-title">Agents</h3>
+        </div>
+        <label class="setting-row" for="badges-toggle">
+          <span>
+            <strong>Show agent badges on the device</strong>
+            <span class="hint">Small icons in the animation show which agent is working, needs you, or just finished.</span>
+          </span>
+          <input id="badges-toggle" class="toggle" type="checkbox" role="switch">
+        </label>
+        <p class="hint">Setup installs hooks for the agents it finds. Turn one off below without editing its config.</p>
+        <ul id="agents" class="agents" aria-live="polite"></ul>
+      </section>
     </section>
 
-    <section class="card" aria-labelledby="wifi-title">
-      <h2 id="wifi-title">Wi-Fi</h2>
+    <section id="panel-wifi" class="card panel" role="tabpanel" aria-labelledby="tab-wifi" tabindex="0" hidden>
       <p class="hint" id="wifi-hint">
         Connect the device over USB, then enter a 2.4 GHz network. The password goes straight to
         the device and isn't stored on this computer.
@@ -114,18 +147,110 @@
         <label>Password <input id="password" name="password" type="password" maxlength="63" autocomplete="off"></label>
         <button type="submit" class="button">Connect device</button>
       </form>
-
-      <h3>Connection</h3>
-      <div class="segmented" role="radiogroup" aria-label="Connection mode" id="modes">
-        <button type="button" role="radio" aria-checked="false" data-mode="auto">Auto</button>
-        <button type="button" role="radio" aria-checked="false" data-mode="wifi">Wi-Fi only</button>
-        <button type="button" role="radio" aria-checked="false" data-mode="usb">USB only</button>
+      <div class="setting-row static firmware-row">
+        <span>
+          <strong>Device firmware <span id="firmware-state" class="pill offline">Checking…</span></strong>
+          <span class="hint" id="firmware-hint">Waiting for the companion service…</span>
+        </span>
+        <span class="row-actions">
+          <button type="button" id="firmware-update" disabled hidden>Update</button>
+        </span>
       </div>
-      <p class="hint" id="mode-hint"></p>
+      <div class="setting-row static usb-firmware-row">
+        <span>
+          <strong>Install over USB <span id="usb-firmware-state" class="pill offline">Checking…</span></strong>
+          <span class="hint" id="usb-firmware-hint">Waiting for the companion service…</span>
+          <span class="bar" id="usb-firmware-bar" role="progressbar" aria-labelledby="usb-firmware-state"
+                aria-valuemin="0" aria-valuemax="100" hidden><span></span></span>
+        </span>
+        <span class="row-actions">
+          <button type="button" id="usb-firmware-install" disabled>Install</button>
+        </span>
+      </div>
+    </section>
+
+    <section id="panel-desktop" class="card panel" role="tabpanel" aria-labelledby="tab-desktop" tabindex="0" hidden>
+      <div class="setting-row static">
+        <span>
+          <strong>Desktop app <span id="desktop-app-state" class="pill offline">Checking…</span></strong>
+          <span class="hint" id="desktop-app-hint">Waiting for the companion service…</span>
+        </span>
+        <span class="row-actions">
+          <button type="button" id="desktop-app-start" disabled>Start</button>
+          <button type="button" id="desktop-app-stop" class="secondary" disabled>Stop</button>
+        </span>
+      </div>
+      <label class="setting-row" for="desktop-toggle">
+        <span>
+          <strong>Show the character on the desktop</strong>
+          <span class="hint">The desktop app shows the same character and animation as the device. Turn this off to keep it on the device only. The app stays open.</span>
+        </span>
+        <input id="desktop-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <label class="setting-row" for="device-frame-toggle">
+        <span>
+          <strong>Show the device around the character</strong>
+          <span class="hint">A small copy of the device, with its screen, case and buttons. Turn this off to show only the character and its effects.</span>
+        </span>
+        <input id="device-frame-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <label class="setting-row" for="desktop-sounds-toggle">
+        <span>
+          <strong>Play sounds</strong>
+          <span class="hint">The desktop app plays the device's sounds when the character starts work, needs attention, finishes, or is tapped. Sounds are off until you turn them on. The lower button on the case also turns them on or off.</span>
+        </span>
+        <input id="desktop-sounds-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <div class="setting-row static">
+        <span>
+          <strong id="desktop-volume-title">Sound volume</strong>
+          <span class="hint">How loud the desktop app plays its sounds. A sound plays when you change it. The device keeps its own volume.</span>
+        </span>
+        <span class="volume-control">
+          <input id="desktop-volume" type="range" min="0" max="100" step="5" value="30"
+                 aria-labelledby="desktop-volume-title">
+          <output id="desktop-volume-value" for="desktop-volume">30%</output>
+        </span>
+      </div>
+      <section class="group uninstall-group" aria-labelledby="uninstall-title">
+        <div class="group-head">
+          <h3 id="uninstall-title">Uninstall</h3>
+        </div>
+        <p class="hint">Removes the desktop app, the companion service and the agent hooks from this computer. The firmware on the device stays.</p>
+        <label class="setting-row" for="uninstall-keep-data">
+          <span>
+            <strong>Keep my settings</strong>
+            <span class="hint">Keeps the Wi-Fi pairing, added characters and settings, for when you install again.</span>
+          </span>
+          <input id="uninstall-keep-data" class="toggle" type="checkbox" role="switch">
+        </label>
+        <div class="setting-row static">
+          <span>
+            <strong>Uninstall Agent Companion</strong>
+            <span class="hint" id="uninstall-hint">The desktop app closes, then its files go.</span>
+          </span>
+          <button type="button" id="uninstall" class="danger">Uninstall…</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="uninstalled" class="card" aria-labelledby="uninstalled-title" hidden>
+      <h2 id="uninstalled-title">Agent Companion is uninstalled</h2>
+      <p id="uninstalled-summary" class="hint"></p>
+      <ul id="uninstalled-steps" class="uninstalled-steps"></ul>
     </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="confirm" class="confirm" aria-labelledby="confirm-message">
+    <form method="dialog">
+      <p id="confirm-message"></p>
+      <div class="confirm-actions">
+        <button type="submit" value="cancel" class="secondary">Cancel</button>
+        <button type="submit" value="ok" id="confirm-ok" class="danger">Remove</button>
+      </div>
+    </form>
+  </dialog>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

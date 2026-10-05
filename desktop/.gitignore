@@ -6,8 +6,12 @@ dist-test/
 # Built artefacts
 engine/dist/
 apps/desktop/ui/webview.js
+apps/desktop/ui/logo.png
 # Cut from the character art by the desktop build.
 apps/desktop/src-tauri/icons/
+
+# The daemon, Node.js and packs that scripts/bundle-daemon.mjs puts in a release build.
+apps/desktop/src-tauri/daemon-runtime/
 
 # Rust build output. Cargo.lock is kept, as it should be for a binary.
 target/

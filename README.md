@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="images/logo.png" alt="A thin round ESP32 display with a friendly face and microcontroller graphic" width="360">
+  <img src="images/logo.png" alt="Agent Companion logo: a hexagon badge with a smiling screen face and an AI sparkle" width="300">
 </p>
 
 <h1 align="center">ESP32 Agent Companion</h1>
@@ -13,9 +13,9 @@
   <a href="https://github.com/DanWahlin/esp32-agent-companion/actions/workflows/build.yml"><img src="https://github.com/DanWahlin/esp32-agent-companion/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
 </p>
 
-ESP32 Agent Companion turns a
-[Waveshare ESP32-S3 1.75" round AMOLED touchscreen](https://www.amazon.com/dp/B0FBWDL117)
-into a character that reacts to your AI coding agents. When GitHub Copilot CLI,
+ESP32 Agent Companion works with the
+[Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C](https://www.amazon.com/dp/B0FBWDL117)
+and turns it into a character that reacts to your AI coding agents. When GitHub Copilot,
 Claude Code, Codex CLI, Grok Build, Hermes Agent, or OpenClaw starts working,
 needs your approval, or finishes, the character shows it, along with a small
 badge for the agent involved.
@@ -44,6 +44,7 @@ desktop, with or without the device.
 - [Using the device](#using-the-device)
 - [Agents](#agents)
 - [Agent badges](#agent-badges)
+- [AI credits and tokens](#ai-credits-and-tokens)
 - [Characters](#characters)
 - [Wi-Fi](#wi-fi)
 - [Update](#update)
@@ -58,19 +59,23 @@ desktop, with or without the device.
   by your agents' lifecycle hooks, with sessions from several agents combined.
 - **Agent badges:** small icons show which agent is working, waiting on you, or
   just finished.
-- **Six supported agents:** GitHub Copilot CLI, Claude Code, Codex CLI, Grok Build,
+- **Usage:** GitHub Copilot AI credits (`AIC`) and agent tokens, at the bottom
+  of the screen.
+- **Six supported agents:** GitHub Copilot, Claude Code, Codex CLI, Grok Build,
   Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
   ships with Copilot, and you can install OpenClaw, Claude, or your own pack over USB or Wi-Fi.
-- **Settings page:** a local web page for agents, badges, characters, Wi-Fi, and
-  the connection mode.
+- **Settings page:** a local web page for agents, badges, characters, Wi-Fi, the
+  connection mode, and the desktop app, with light and dark themes.
 - **Natural motion:** eight looking directions, blinks, touch reactions, and a
   sleep cycle after two idle minutes.
 - **Automatic orientation:** the onboard accelerometer keeps the character,
-  settings, and touch controls upright when the device is rotated.
+  settings, installation screens, firmware prompts, and touch controls upright
+  when the device is rotated.
 - **Wi-Fi or USB:** run it tethered to your computer or from any USB power source
   on the same network.
-- **Optional sound:** short local sound cues through the board's speaker connector.
+- **Optional sound:** short local sound cues through the board's speaker connector,
+  and the same cues from the desktop app when you turn them on.
 
 ## How it works
 
@@ -81,7 +86,8 @@ flowchart LR
     D -- USB serial or local Wi-Fi --> E["ESP32 companion<br/>(firmware + character pack)"]
 ```
 
-1. **Firmware** runs the animation on the device. You flash it once from a release.
+1. **Firmware** runs the animation on the device. Install it from the desktop
+   app, or flash it from a release.
 2. **Hooks** in each agent's config report events such as "started a tool",
    "needs permission", and "finished".
 3. **The companion daemon** runs in the background on your computer. It combines
@@ -93,62 +99,84 @@ flowchart LR
 | --- | --- |
 | Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262) |
 | Cable | A USB data cable (charge-only cables won't work) |
-| Computer | macOS or Linux. Windows works through [WSL 2](#windows-wsl-2). |
+| Computer | macOS, Linux, or Windows (x64 or Arm64). On Windows, the desktop app runs the companion service natively, and agents in [WSL 2](#windows-wsl-2) use it too. |
 | Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
-| Node.js and Git | [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git, for the companion daemon |
+| Node.js and Git | Only to run the companion daemon from the repository: [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git. The desktop app carries its own. |
 | Speaker (optional) | A small two-pin speaker, if your board or enclosure doesn't include one |
-| Desktop app (optional) | Nothing extra to download and run it. To build it from source: [Rust](https://rustup.rs/) 1.88 or newer. |
+| Desktop app | Nothing extra to download and run it. To build it from source, install [Rust](https://rustup.rs/) 1.90 or newer and the OS build dependencies. |
 
 ## Quick start
 
-Three parts. Each links to its full step below. No device? You can use only the
-desktop app: skip part 1, do part 2 without the USB check, then do part 3.
+**With the desktop app (recommended).** You need only the
+app. You do not need Python, Node.js, or a clone of the repository.
 
-**1. Put the firmware on the device** ([details](#step-1-flash-the-firmware)).
-Download the **`-firmware.zip`** from
-[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
-extract it, connect the device over USB, and run this in the extracted folder:
+1. Download the desktop app for your OS from
+   [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest):
+   `agent-companion-desktop-<version>-macos-universal.dmg`,
+   `agent-companion-desktop-<version>-windows-x64-setup.exe`,
+   `agent-companion-desktop-<version>-windows-arm64-setup.exe`,
+   `agent-companion-desktop-<version>-linux-x86_64.AppImage`, or
+   `agent-companion-desktop-<version>-linux-amd64.deb`.
+2. Open the app. It is not code-signed, so see
+   [Run the desktop app](#run-the-desktop-app) for the first-run step on your
+   OS. If no service is running, the first run installs
+   the companion service and your agents' hooks. Then it opens Settings.
+3. Connect the device with a USB data cable. In Settings, open the **Device**
+   tab. In the **Install over USB** row, select **Install v<version>**. The app
+   downloads the matching firmware release from GitHub, checks it, and writes it
+   to the device. The device restarts when the install finishes.
+4. In Settings, connect Wi-Fi on the **Device** tab if you want to untether the
+   device. Choose a character on the **Characters** tab.
 
-```bash
-python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python flash.py --list-ports                 # find your device's port
-.venv/bin/python flash.py --port /dev/cu.usbmodem2101  # use that port; type FLASH
-```
+Use the same **Install v<version>** button later to install the firmware again or
+to repair the device. The character on your desktop follows the device
+([details](#run-the-desktop-app)).
 
-This needs Python 3.10 or newer. Windows commands are in [Step 1](#step-1-flash-the-firmware).
+**Without the desktop app** (to change the code, or on Windows in WSL 2):
 
-**2. Start the companion service and open Settings**
-([details](#step-2-install-the-companion-daemon)). With the device still plugged in:
+1. Put the firmware on the device with `flash.py` from the release's
+   `esp32-agent-companion-v<version>-firmware.zip` asset. This needs
+   Python 3.10 or newer. Extract it, connect the device over USB, and run this
+   in the extracted folder:
 
-```bash
-git clone https://github.com/DanWahlin/esp32-agent-companion.git
-cd esp32-agent-companion
-npm run setup      # installs agent hooks, starts the service, opens Settings
-npm run status     # should say: Connected over USB
-npm run settings   # opens the Settings page again at any time
-```
+   ```bash
+   python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+   .venv/bin/python flash.py --list-ports                 # find your device's port
+   .venv/bin/python flash.py --port /dev/cu.usbmodem2101  # use that port; type FLASH
+   ```
+
+   Windows commands are in [Step 1](#step-1-flash-the-firmware).
+2. Start the companion service from the repository. This needs Node.js 24.11 or
+   newer:
+
+   ```bash
+   git clone https://github.com/DanWahlin/esp32-agent-companion.git
+   cd esp32-agent-companion
+   npm run setup      # installs agent hooks, starts the service, opens Settings
+   npm run status     # should say: Connected over USB
+   npm run settings   # opens the Settings page again at any time
+   ```
+
+3. Optional: show the character on your desktop. Download the app too, or build
+   and run it from the same folder (needs Rust): `npm run desktop`. The app
+   follows the service that runs from the repository.
 
 Restart any agent sessions that were already open, then start one and watch the
 character react ([Step 4](#step-4-try-it)).
 
-**3. Optional: put the character on your desktop too**
-([details](#run-the-desktop-app)). After step 2, download the
-**`agent-companion-desktop`** app for macOS, Windows or Linux from
-[Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
-It isn't code-signed, so see [Run the desktop app](#run-the-desktop-app) for the
-one-time step on your OS. Or build and run it from the same folder (needs Rust):
-
-```bash
-npm run desktop
-```
-
-It follows the companion service, so it shows what the device shows. Turn it off,
-or hide the device around it, under **Desktop companion** in Settings.
+To open Settings in the app's own window, click the upper button on the
+desktop character's case, press the BOOT button on the real device, or
+right-click the character and select **Settings**. The lower button
+turns the app's sounds on or off. Turn the character off, hide the device around
+it, or turn on sounds on the **Desktop** tab in Settings.
 
 ## Step 1: Flash the firmware
 
-You don't need Arduino tools or the source code for this step. If you'd rather
-build the firmware yourself, see [Build from source](docs/build-from-source.md).
+The easiest way is the desktop app: open Settings, go to the **Device** tab, and
+click **Install v<version>** in the **Install over USB** row (see [Quick start](#quick-start)).
+The steps below use `flash.py` instead, for computers without the desktop app.
+You don't need Arduino tools or the source code for them. If you'd rather build
+the firmware yourself, see [Build from source](docs/build-from-source.md).
 
 1. Check that you have Python 3.10 or newer:
 
@@ -161,7 +189,7 @@ build the firmware yourself, see [Build from source](docs/build-from-source.md).
    `brew install python`, then open a new terminal and check again.
 
 2. From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
-   download the file ending in **`-firmware.zip`** and extract it.
+   download `esp32-agent-companion-v<version>-firmware.zip` and extract it.
 3. Open a terminal in the extracted folder (it contains `flash.py`) and install
    the flashing tool:
 
@@ -225,8 +253,16 @@ around. Leave the cable plugged in for the next step.
 
 ## Step 2: Install the companion daemon
 
-The daemon connects your agents to the device and runs in the background. With
-the device plugged in over USB, clone the repository and run setup:
+The daemon connects your agents to the device and runs in the background.
+
+**With the desktop app.** Download the app and open it (see
+[Run the desktop app](#run-the-desktop-app)). If no daemon runs, the app installs
+the one it carries: the same service and hooks that setup below installs. It then
+opens Settings. Restart any agent sessions that were already open. On Linux, the
+serial port note below also applies.
+
+**From the repository.** With the device plugged in over USB, clone the
+repository and run setup:
 
 ```bash
 git clone https://github.com/DanWahlin/esp32-agent-companion.git
@@ -268,8 +304,13 @@ sudo usermod -aG dialout "$USER"
 <details>
 <summary><strong>Windows (WSL 2)</strong></summary>
 
-Run your agent CLIs and the daemon **inside the same WSL 2 distribution**. Hooks
-installed in WSL can't see agents running natively on Windows.
+The easiest way on Windows is the desktop app (see [Quick start](#quick-start)). Its
+service runs on Windows and installs hooks for agents on Windows and in running WSL 2
+distributions, and it uses the device's USB port with no extra steps.
+
+To run the daemon from a clone inside WSL instead, run your agent CLIs and the daemon
+**inside the same WSL 2 distribution**. Hooks installed in WSL can't see agents running
+natively on Windows.
 
 1. Install Node.js 24 LTS inside WSL.
 2. If systemd isn't enabled, add this to `/etc/wsl.conf`, then run `wsl --shutdown`
@@ -358,8 +399,16 @@ without a touch.
 | Character | Shows the installed character |
 | Character state | Previews Idle, Working, Complete, Needs attention, or Surprise |
 
+**Press the BOOT button** on the board to open the companion's Settings on your
+computer. This needs the daemon, connected over USB or Wi-Fi (over Wi-Fi, it can
+take up to three seconds). If the [desktop app](#desktop-agent-companion) is
+running, Settings opens in its window. If not, Settings opens in your browser.
+Don't use the PWR button for this: holding it turns the board off.
+
 Sound plays through the board's two-pin speaker connector. Connect a small speaker
-if your board or enclosure doesn't include one.
+if your board or enclosure doesn't include one. The [desktop app](#desktop-agent-companion)
+can play the same sounds through your computer; the device's volume does not
+change them.
 
 ## Agents
 
@@ -368,18 +417,52 @@ if the daemon or device isn't running, your agents keep working normally.
 
 | Agent | Hook location | One-time step |
 | --- | --- | --- |
-| GitHub Copilot CLI | `~/.copilot/hooks/agent-companion.json` | None |
+| GitHub Copilot (CLI and app) | `~/.copilot/hooks/agent-companion.json` | None |
 | Claude Code | `~/.claude/settings.json` | Accept Claude's folder-trust prompt if it asks |
 | Codex CLI | `~/.codex/hooks.json` | Approve the hooks in Codex with `/hooks` |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | None |
-| Hermes Agent | `~/.hermes/config.yaml` | Approve each hook the first time Hermes runs it |
+| Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | Approve each hook the first time Hermes runs it |
 | OpenClaw | A plugin registered with the `openclaw` CLI | Restart the OpenClaw Gateway |
 
-Setup edits only the hook entries it owns and keeps a `.bak` copy of each file it
-changes.
+Setup edits only the hook entries it owns. Before it changes a file, it keeps a
+copy beside it: `<file>.bak` holds the file as it was before the first change, and
+`<file>.agent-companion-<time>.bak` holds it as it was before each change (the
+last five are kept). It doesn't touch a file that has nothing to change, and it stops without
+changes if a file's `hooks` section is in a format it doesn't understand.
 
-The settings page's **Agents** card lists every supported agent with its detected
+Grok also runs the hooks in Claude's settings. If you use both, Grok can show a
+line such as `PreToolUse hook (global/settings) failed, ignored` for the Agent
+Companion Claude hook. This doesn't change the display, because Grok's own hook
+sends the events. To stop the message, add this to `~/.grok/config.toml`. Grok
+then skips all of your Claude hooks, not only this one:
+
+```toml
+[compat.claude]
+hooks = false
+```
+
+On Windows, Codex and Grok run their hooks in PowerShell, so setup writes the
+Windows hook command in the PowerShell form
+(`& 'node.exe' 'cli.js' hook <agent> <event>`). After an update from an older
+version, Settings shows these hooks as outdated. Click **Reinstall**, and then
+approve the Codex hooks again with `/hooks`.
+
+If you moved an agent's settings folder with its own variable (`COPILOT_HOME`,
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `HERMES_HOME` or `OPENCLAW_HOME`),
+setup uses that folder instead of the one in the table. Set the variable in your
+shell's startup file (for example, `~/.zshrc` or `~/.bashrc`): the service and the
+desktop app read it from there, and keep it. If you change it later, run setup
+again, or open a newer version of the desktop app.
+
+If you remove an agent's hook, it stays removed. Setup and desktop app updates
+don't add it back until you choose **Install hook** or run
+`npm run agents install <agent>`.
+
+The settings page's **Agents** tab lists every supported agent with its detected
 version and hook status. An agent that's driving the display is highlighted.
+The GitHub Copilot app runs its own Copilot CLI with the same `~/.copilot` folder,
+so one hook file covers the CLI and the app; on macOS, the card shows the version
+of each one that's installed.
 
 <p align="center">
   <img src="images/settings-agents.png" alt="Agents card with the badge switch and six agents, each with Disable, Reinstall, and Remove hook buttons" width="720">
@@ -391,6 +474,11 @@ version and hook status. An agent that's driving the display is highlighted.
 | **Install hook** / **Reinstall** | Writes (or rewrites) the hook into the agent's config |
 | **Remove hook** | Removes only this project's hook from the agent's config |
 
+A hook status of **outdated** means the hooks run another copy of the companion
+(for example, a repository install instead of the desktop app), a Node.js or
+companion file that no longer exists, or not all of the events. Choose
+**Reinstall** to fix it.
+
 The same actions are available from the command line:
 
 ```bash
@@ -400,6 +488,11 @@ npm run agents enable claude
 npm run agents install codex       # Install or reinstall one hook
 npm run agents uninstall codex     # Remove one hook
 ```
+
+Codex links each hook approval to the hook's position in `~/.codex/hooks.json`.
+If removing or reinstalling the companion's hook moves one of your own approved
+Codex hooks, Settings and `npm run agents` show a warning that names it. Open
+Codex, type `/hooks`, and approve it again.
 
 Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 `hermes hooks revoke "<command>"` with the command shown in its config.
@@ -432,7 +525,7 @@ Surprise don't show badges.
 </p>
 
 Badges are on by default. Turn them off with the **Show agent badges on the
-device** switch on the settings page's Agents card, or with `npm run badges off`
+device** switch on the settings page's Agents tab, or with `npm run badges off`
 (`npm run badges on` brings them back).
 
 <details>
@@ -450,9 +543,43 @@ for the icon and ring: `{ "color": "#RRGGBB" }`.
 
 </details>
 
+## AI credits and tokens
+
+The device can show how much your agents used, centered at the bottom of the
+screen:
+
+- **AIC:** GitHub Copilot AI credits, read from the `session.usage_checkpoint`
+  and `session.shutdown` events in `~/.copilot/session-state/`. This is the same
+  value that Copilot CLI shows as "AIC used", and it includes sub-agents. Copilot
+  writes it at the end of each turn, so the value changes when a turn ends. It
+  counts only the Copilot CLI and app sessions on this computer. It does not
+  include VS Code, the cloud agent, or other computers, so it is not your
+  account's bill.
+- **Tokens:** input plus output tokens for Claude Code (`~/.claude/projects/`)
+  and Codex CLI (`~/.codex/sessions/`). Cache reads are not counted. GitHub
+  Copilot tokens are not counted, because Copilot records them only when a
+  session stops cleanly, so the local count is not complete. Copilot has AIC.
+
+The device shows one line, for what is running now:
+
+- While a GitHub Copilot session runs, it shows `AIC` only.
+- While no Copilot session runs but another agent runs, it shows `Tokens` only.
+- While no agent runs, it shows no line.
+
+The settings page's Status card shows each value that has usage. Large values get commas
+(`AIC: 12,345`), then a short form (`Tokens: 1.2M`).
+
+Usage is on by default. On the settings page's Agents tab, use the **Show usage
+on the device** switch and choose the **Usage period**: **Today**, **This
+month**, or **Active sessions**. The Status card shows the same values in the
+**Usage** box. The desktop app shows the lines too.
+
+The device needs firmware with protocol 8 or later. Older firmware does not show
+usage, but everything else works.
+
 ## Characters
 
-The device holds one character at a time. The settings page's **Characters** card
+The device holds one character at a time. The settings page's **Characters** tab
 shows each character you can install, with the current one marked **Installed**.
 
 <p align="center">
@@ -474,8 +601,8 @@ npm run character copilot      # Switch back to Copilot
 ```
 
 You can also pass the path to any `.acpk` pack, such as one from a release's
-**`-characters.zip`**. The daemon remembers your choice. If an install is
-interrupted, the device shows **No character installed** until the daemon
+`esp32-agent-companion-v<version>-characters.zip` asset. The daemon remembers
+your choice. If an install is interrupted, the device shows **No character installed** until the daemon
 reinstalls your character, which it does as soon as the device reconnects.
 
 Some characters, such as Claude, need newer firmware than others. If the daemon
@@ -488,13 +615,14 @@ Wi-Fi lets the companion run from a wall adapter or any USB power source. Your
 computer and the device need to be on the same local network, and the device
 needs a 2.4 GHz network.
 
-**From the settings page (recommended).** Use the **Wi-Fi** card:
+**From the settings page (recommended).** Use the **Device** tab:
 
 <p align="center">
   <img src="images/settings-wifi.png" alt="Wi-Fi card with network name and password fields, a Connect device button, and the Auto, Wi-Fi only, and USB only connection modes" width="720">
 </p>
 
-1. Plug the device in over USB and set **Connection** to **Auto**.
+1. Plug the device in over USB and set **Device connection** (on the **Status**
+   card) to **Auto**.
 2. Choose your network from **Nearby network**, or type its name in **Or type a
    network name** if it's hidden or not listed. Enter the password, then select
    **Connect device**. The daemon sends the credentials over USB and pairs with the
@@ -525,8 +653,8 @@ npm run pair 12345678
 
 The setup network and code expire after ten minutes.
 
-**Connection modes.** Choose how the daemon reaches the device on the Wi-Fi card or
-with `npm run connection auto|wifi|usb`:
+**Connection modes.** Choose how the daemon reaches the device with **Device
+connection** on the settings page's **Status** card, or with `npm run connection auto|wifi|usb`:
 
 | Mode | Behavior |
 | --- | --- |
@@ -549,7 +677,9 @@ with `npm run connection auto|wifi|usb`:
 
 ## Update
 
-**Companion daemon.** From the repository folder, run:
+**Companion daemon.** If the desktop app installed it, install the new release
+of the app and open it: the app updates its copy of the service. If you set it
+up from the repository, run this in the repository folder:
 
 ```bash
 git pull
@@ -560,11 +690,29 @@ Setup installs any new dependencies, rebuilds the daemon, restarts the backgroun
 service, and installs hooks for any agents you've added. New or updated
 characters show up on the settings page on their own.
 
-**Firmware.** Reflash only when a release's notes mention firmware changes. Follow
-[Step 1](#step-1-flash-the-firmware) with the new release's **`-firmware.zip`**.
-Flashing keeps the device's Wi-Fi settings but puts the Copilot character back, so
-reinstall your character afterward from the settings page or with
-`npm run character <name>`.
+**Firmware.** Reflash only when a release's notes mention firmware changes. With
+the desktop app, update the app first. Then connect the device over USB, open the
+**Device** tab in Settings, and click **Install v<version>** in the
+**Install over USB** row. The button installs the firmware release that matches
+the companion service's version. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
+with the new release's `esp32-agent-companion-v<version>-firmware.zip`. Both
+ways keep the device's Wi-Fi settings but put the Copilot character back.
+Reinstall your character afterward from the settings page or with `npm run character <name>`.
+
+**Firmware over Wi-Fi.** When the device is on Wi-Fi and has firmware with
+protocol 9 or later, open the settings page's **Device** tab. The **Device
+firmware** row compares the device with the firmware that you built with
+`bash tools/arduino.sh build`. If they are different, click **Update**.
+Protocol 11 or later firmware then shows **Press BOOT to allow it**. Press the
+BOOT button on the device in 60 seconds. That press allows this update only and
+does not open Settings. The daemon then sends the new firmware over Wi-Fi, and
+the device restarts in about 15 seconds. This keeps your character and Wi-Fi
+settings. If the new firmware cannot join Wi-Fi in 90 seconds, the device goes
+back to the previous firmware.
+
+The first change to this firmware needs one USB flash, because it adds a second
+firmware slot to the partition table. Updates over Wi-Fi do not change the
+partition table, so a release that changes it also needs a USB flash.
 
 ## Command reference
 
@@ -606,16 +754,54 @@ Run these from the repository folder.
 1. Run `npm run status` and confirm the device is connected. It also lists any
    pending one-time agent steps.
 2. Restart agent sessions that were open before you ran setup.
-3. Check the settings page's **Agents** card: the agent should show
-   **hook installed** and **enabled**.
-4. If you installed the agent after running setup, run `npm run setup` again.
+3. Check the settings page's **Agents** tab: the agent should show
+   **hook installed** and **enabled**. If it shows **hook outdated**, choose
+   **Reinstall**.
+4. If you installed the agent after setup, or you removed its hook before,
+   choose **Install hook** for it on the **Agents** tab.
+
+</details>
+
+<details>
+<summary><strong>Install over USB fails or is not available</strong></summary>
+
+- **Needs the desktop app:** the desktop app writes the firmware. Open it, then
+  open Settings again. An older desktop app cannot install firmware; install the
+  latest one.
+- **No BOOT press needed:** a normal USB install resets the device into download
+  mode itself. Press BOOT only for the recovery step below.
+- **No USB device:** use a USB data cable, and close any serial monitor that uses
+  the port.
+- **Download failed:** the computer must reach GitHub. The app downloads the
+  release that matches the companion service's version.
+- **Connection problems while it writes:** disconnect the USB cable. Hold BOOT,
+  connect the cable, then release BOOT. Click **Install v<version>** again. If it
+  still fails, use [Step 1](#step-1-flash-the-firmware) or the
+  [Waveshare board guide](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75).
+
+</details>
+
+<details>
+<summary><strong>Wi-Fi firmware Update waits for BOOT or fails</strong></summary>
+
+- **Update is hidden:** build firmware first with `bash tools/arduino.sh build`.
+- **Update is not available:** the device must be on Wi-Fi and report firmware
+  protocol 9 or later.
+- **Press BOOT:** protocol 11 or later shows **Press BOOT to allow it**. Press
+  BOOT on the device within 60 seconds. This press approves the update only. It
+  does not open Settings.
+- **The request timed out:** click **Update** again, then press BOOT when the
+  device shows the prompt.
+- **The device went back:** the new firmware did not rejoin Wi-Fi within
+  90 seconds. Install the firmware over USB.
 
 </details>
 
 <details>
 <summary><strong>The settings page is blank or says the link expired</strong></summary>
 
-The page needs its private link. Run `npm run settings` to open it with the link.
+The page needs its private link. Open Settings from the desktop app, or run
+`npm run settings`, to open it with the link.
 
 </details>
 
@@ -625,7 +811,7 @@ The page needs its private link. Run `npm run settings` to open it with the link
 - Use a 2.4 GHz network; the device doesn't support 5 GHz.
 - Make sure your computer and the device are on the same network, and not a
   guest network with client isolation.
-- Changing networks from the computer uses USB, so set **Connection** to
+- Changing networks from the computer uses USB, so set **Device connection** to
   **Auto** with the cable plugged in first.
 
 </details>
@@ -640,6 +826,21 @@ The page needs its private link. Run `npm run settings` to open it with the link
 
 <details>
 <summary><strong>Uninstall</strong></summary>
+
+**From Settings.** Open Settings, select the **Desktop** tab,
+and select **Uninstall…** at the bottom. This removes the agent hooks, closes
+and deletes the desktop app, and removes and stops the companion service. It
+also deletes your settings, Wi-Fi pairing and added characters, unless you turn
+on **Keep my settings** first. The firmware on the device stays. Restart the
+agent sessions that are open after you uninstall.
+
+Settings does not delete these. It tells you what to do:
+
+- A desktop app that a package installed (`/usr/bin/agent-companion-desktop`).
+  Run `sudo apt remove agent-companion`.
+- A clone of this repository. The service and the app that you built there stay.
+
+**By hand.**
 
 1. Remove the hooks you installed, for example `npm run agents uninstall claude`
    for each agent.
@@ -680,55 +881,131 @@ time you build it.
 
 **The companion service drives it.** The desktop app follows the service over
 its local socket, so it shows the state and agent badges the device shows, with
-no hooks of its own. The settings page controls both:
+no hooks of its own. The settings page controls both (most of these are on its
+**Desktop** tab):
 
 | Setting | What it does |
 | --- | --- |
+| Desktop app | **Start** opens the desktop app and **Stop** closes it. See [Run the desktop app](#run-the-desktop-app). |
 | Characters | The character you install on the device is also shown on the desktop. With no device connected, choose **Show on desktop** instead. The device gets that character when it next connects without one. |
 | Show the character on the desktop | Turn it off to keep the character on the device only. |
 | Show the device around the character | On (default): a small copy of the device (screen, case and buttons), so it looks and reads exactly as it does on your desk. Off: only the character and its effects, straight on the desktop. |
+| Play sounds | Off (default). On: the desktop app plays the device's sound cues. The lower button on the case does the same. |
+| Sound volume | 30% (default). How loud the desktop app plays its sound cues, from 0% to 100%. A tick plays when you change it. Available when **Play sounds** is on. |
 | Show agent badges | The same switch for the device and the desktop. |
+| Show usage on the device | The same switch for the device and the desktop. See [AI credits and tokens](#ai-credits-and-tokens). |
 
 ### Run the desktop app
 
-You need the companion service running first ([step 2](#step-2-install-the-companion-daemon)).
-The app shows the character the service names, from the service's own packs.
+The app shows the character the companion service names, from the service's
+own packs.
+
+**The app carries the companion service.** When you open it
+and no service answers within 10 seconds, it installs the one it carries:
+
+- It copies the service, a Node.js runtime and the character packs to the
+  service's data folder (`~/Library/Application Support/ESP32 Agent Companion/runtime`
+  on macOS, `~/.local/state/esp32-agent-companion/runtime` on Linux,
+  `%LOCALAPPDATA%\ESP32 Agent Companion\runtime` on Windows).
+- From that copy, it installs your agents' hooks and the background service
+  (a LaunchAgent, a systemd user service, or on Windows a `Run` registry value
+  that starts the app's own launcher), as `npm run setup` does. The service
+  then starts when you sign in, with or without the app.
+- It opens Settings the first time.
+
+When you update the app, it updates its copy of the service. If a service from
+a clone of the repository runs, the app leaves it alone and follows it. To
+change back to the repository's service, run `npm run setup` in the clone.
+On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
 
 - **Download it** from [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
-  The app isn't code-signed, so each OS needs one extra step:
+  The app is not code-signed. Your OS can need one extra step:
 
   | OS | File | First run |
   | --- | --- | --- |
-  | macOS | `…-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
-  | Windows | `…-windows-x64-setup.exe` | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
-  | Linux | `…-linux-x86_64.AppImage` or `…-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./…-linux-amd64.deb`. |
+  | macOS | `agent-companion-desktop-<version>-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
+  | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for an Arm PC | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
+  | Linux | `agent-companion-desktop-<version>-linux-x86_64.AppImage` or `agent-companion-desktop-<version>-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./agent-companion-desktop-<version>-linux-amd64.deb`. |
 
   It has no Dock or taskbar button: use its menu bar or tray icon.
-- **Or build it from source** with [Rust](https://rustup.rs/) 1.88 or newer, from
+
+  On Linux:
+  - **Sounds** use GStreamer. The AppImage includes it. The `.deb` installs it.
+    If you build from source and hear no sounds, install
+    `gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio`
+    (Ubuntu) or `gst-plugins-base gst-plugins-good` (Arch, Omarchy).
+  - **GNOME shows no tray icons** without an extension. Install
+    [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/)
+    (Ubuntu includes it). Without the icon, open the app again to show a hidden
+    character, and use the upper button on the case for Settings.
+  - **The service is a systemd user service.** On a system without systemd,
+    the install stops and tells you the command that runs the service in a
+    terminal.
+- **Or build it from source** with [Rust](https://rustup.rs/) 1.90 or newer, from
   the repository folder. On Linux, install WebKitGTK first:
-  `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
-  (Ubuntu) or `sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator`
+  `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev gstreamer1.0-plugins-good`
+  (Ubuntu) or `sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator gst-plugins-good`
   (Arch, Omarchy).
 
   ```bash
   npm run desktop
   ```
 
+**Start and stop it from Settings.** On the settings page's **Desktop** tab,
+**Start** opens the app and **Stop** closes it. The service finds the app in
+these places:
+
+- Where the app last ran. Each time the app runs, it tells the service where it
+  is, so a download in any folder or a build from source works after you open it
+  one time.
+- Before it has run: `/Applications` or `~/Applications` (macOS),
+  `/usr/bin` (the Linux `.deb`), or a build in this repository
+  (`desktop/apps/desktop/src-tauri/target/release`).
+
+If the service can't find it (for example, an AppImage you haven't opened yet),
+**Start** stays off until you open the app one time yourself. Settings shows the
+app as running only while it follows the service, so an app from release 0.7.0
+or earlier shows as **Not running**. To remove the app and the service, see
+**Uninstall** above.
+
 The window has no frame and is always on top.
-- **Clicks** go through to whatever is behind it, except on the character.
+- **Clicks** go through to whatever is behind it, except on the character and
+  the case's buttons.
 - **Click the character** to poke it, as you tap the device. **Drag it** to move
   it. It remembers where you put it.
-- **Right-click the character** for **Hide**, **Open Settings…** and **Close**.
+- **Click the upper button on the device's case** to open Settings. Pressing
+  the BOOT button on the real device does the same.
+- **Click the lower button on the device's case** to turn sounds on or off. A
+  blue light on the button shows that sounds are on. See **Sounds** below.
+- **Right-click the character** for **Hide**, **Settings** and **Close**.
+- **Settings opens in a window of the app**, not in a browser tab. If the
+  Settings window is already open, the app brings it to the front. To use a
+  browser, run `npm run settings`.
 - **To bring it back after Hide**, open the app again (from Applications, Spotlight
   or your app launcher), or use its tray icon (the menu bar on macOS). If your
   menu bar is too full, macOS hides the icon, so opening the app again always works.
-- **The tray icon** has **Show/Hide Agent Companion**, **Character** (when no
-  device is connected), **Open Settings…**, **Bring Back to Centre** and **Quit**.
+- **The tray icon** has **Show Agent Companion** or **Hide Agent Companion**,
+  **Settings** and **Quit Agent Companion**. Choose the character in Settings.
 - **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
-  `--show`, `--hide` or `--quit` to control the running one.
+  `--show`, `--hide`, `--settings` or `--quit` to control the running one.
 
 Hide is for now; to keep it off the desktop for good, turn off **Show the
 character on the desktop** in Settings.
+
+**Sounds.** The desktop app plays the device's sound cues when the character
+starts work, needs attention, finishes, or is poked. The cues are the same WAV
+files as on the device. Sounds are **off** (muted) until you turn them on. To
+turn them on or off, do one of these:
+
+- Click the lower button on the case.
+- In Settings, select the **Desktop** tab and use **Play sounds**.
+
+The two always agree, because the companion service keeps the setting. To
+make the sounds softer or louder, for example when music plays, use the
+**Sound volume** slider below **Play sounds** (30% by default). A tick plays at
+the new level when you release the slider. These settings are for the desktop
+app only: the device keeps its own **Volume** in its on-screen menu. The app
+plays no sounds while the character is hidden.
 
 It runs on macOS, Windows and Linux. On Hyprland (including Omarchy) it floats,
 pins and un-borders its own window, so there's nothing to configure. On other

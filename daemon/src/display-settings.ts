@@ -2,6 +2,7 @@ import {mkdir, rename, writeFile} from 'node:fs/promises';
 import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {displaySettingsPath} from './paths.js';
+import {isUsageWindow, type UsageWindow} from './usage-tracker.js';
 
 // How the desktop character is framed: as the device itself, or on its own.
 export const desktopBackdrops = ['device', 'none'] as const;
@@ -12,13 +13,28 @@ export interface DisplaySettings {
   // Whether the desktop app shows its character; the device is unaffected.
   showDesktopCompanion: boolean;
   desktopBackdrop: DesktopBackdrop;
+  // Whether the desktop app plays the device's sound cues; off until turned on.
+  desktopSounds: boolean;
+  // The desktop app's sound volume, 0 to 100; the device keeps its own.
+  desktopVolume: number;
+  // AI credits and tokens at the bottom of the screen, on the device and the desktop.
+  showUsage: boolean;
+  usageWindow: UsageWindow;
 }
 
 export const defaultDisplaySettings: DisplaySettings = {
   showAgentBadges: true,
   showDesktopCompanion: true,
   desktopBackdrop: 'device',
+  desktopSounds: false,
+  desktopVolume: 30,
+  showUsage: true,
+  usageWindow: 'today',
 };
+
+export function isDesktopVolume(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 100;
+}
 
 export function isDesktopBackdrop(value: unknown): value is DesktopBackdrop {
   return typeof value === 'string' && (desktopBackdrops as readonly string[]).includes(value);
@@ -33,6 +49,10 @@ export function loadDisplaySettingsSync(path = displaySettingsPath()): DisplaySe
       showDesktopCompanion: parsed.showDesktopCompanion !== false,
       desktopBackdrop: isDesktopBackdrop(parsed.desktopBackdrop)
         ? parsed.desktopBackdrop : defaultDisplaySettings.desktopBackdrop,
+      desktopSounds: parsed.desktopSounds === true,
+      desktopVolume: isDesktopVolume(parsed.desktopVolume) ? parsed.desktopVolume : defaultDisplaySettings.desktopVolume,
+      showUsage: parsed.showUsage !== false,
+      usageWindow: isUsageWindow(parsed.usageWindow) ? parsed.usageWindow : defaultDisplaySettings.usageWindow,
     };
   } catch {
     return {...defaultDisplaySettings};

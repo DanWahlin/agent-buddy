@@ -7,10 +7,38 @@ import {
   type AgentBadgeActive,
   type AgentBadgeIconDefinition,
 } from './agent-badges.js';
+import {shouldSendUsage, usagePacket} from './usage-tracker.js';
 import {discoverWifiDevices, loadWifiConfig, type WifiConfig} from './wifi-config.js';
 
 const uploadChunkBytes = 16 * 1024;
 const uploadIdleTimeoutMs = 30000;
+// The device waits this long for the BOOT press; the daemon waits a little longer.
+const firmwareApprovalMs = 62000;
+const firmwareApprovalPollMs = 500;
+
+export type FirmwareApproval = 'none' | 'waiting' | 'allowed';
+
+// Protocol 11 and later firmware takes a Wi-Fi update only after a BOOT press on the device,
+// because the token alone travels over plain HTTP.
+export function needsFirmwareApproval(protocol: number): boolean {
+  return protocol >= 11;
+}
+
+// Polls the device until the person presses BOOT. `null` is a failed read, which is tried again;
+// `none` means the device stopped waiting.
+export async function waitForFirmwareApproval(
+    read: () => Promise<FirmwareApproval | null>, timeoutMs = firmwareApprovalMs,
+    intervalMs = firmwareApprovalPollMs): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const approval = await read().catch(() => null);
+    if (approval === 'allowed') return;
+    if (approval === 'none' || Date.now() >= deadline)
+      throw new Error('Nobody pressed the BOOT button on the device in 60 seconds, so the update stopped. '
+        + 'Click Update again, then press BOOT on the device.');
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+}
 
 export class WifiTransport {
   #config: WifiConfig | null = null;
@@ -22,17 +50,23 @@ export class WifiTransport {
   #protocol = 0;
   #iconSignature = '';
   #activeSignature = '';
+  #usageSignature: string | null = null;
   #scanTimer: NodeJS.Timeout | undefined;
   #scanActive = false;
   #commands = Promise.resolve();
   #character: string | null = null;
   #adaptivePatchRam = false;
+  #firmware: string | null = null;
   #ssidBase64: string | undefined;
   #installing = false;
+  #buttons: ButtonCount | null = null;
   readonly #changed: () => void;
+  readonly #button: (presses: number) => void;
 
-  constructor(changed: () => void = () => undefined) {
+  // `button` runs when the device's BOOT button count goes up, with the count since the device started.
+  constructor(changed: () => void = () => undefined, button: (presses: number) => void = () => undefined) {
     this.#changed = changed;
+    this.#button = button;
   }
 
   get connected(): boolean {
@@ -45,6 +79,11 @@ export class WifiTransport {
 
   get character(): string | null {
     return this.#connected ? this.#character : null;
+  }
+
+  // The first 16 hex digits of the firmware's ELF SHA-256; null before protocol 9.
+  get firmware(): string | null {
+    return this.#connected ? this.#firmware : null;
   }
 
   get adaptivePatchRam(): boolean {
@@ -133,19 +172,30 @@ export class WifiTransport {
       });
       if (!response.ok) return false;
       const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
-                                               patchRam?: string; ssidBase64?: string};
+                                               patchRam?: string; ssidBase64?: string; firmware?: string;
+                                               buttonPresses?: number};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
       this.#character = typeof status.character === 'string' ? status.character : null;
       this.#adaptivePatchRam = status.patchRam === 'adaptive';
+      this.#firmware = typeof status.firmware === 'string' && /^[0-9a-f]{16}$/.test(status.firmware)
+        ? status.firmware : null;
       this.#ssidBase64 = typeof status.ssidBase64 === 'string' ? status.ssidBase64 : undefined;
       const needsSync = !this.#connected || endpoint !== this.#endpoint || status.boot !== this.#boot;
+      // Protocol 10 and later count BOOT button presses.
+      if (Number.isInteger(status.buttonPresses) && Number(status.buttonPresses) >= 0) {
+        const buttons = {boot: status.boot!, presses: Number(status.buttonPresses)};
+        const pressed = buttonPressed(this.#buttons, buttons);
+        this.#buttons = buttons;
+        if (pressed) this.#button(buttons.presses);
+      }
       this.#endpoint = endpoint;
       this.#boot = status.boot!;
       this.#protocol = Number.isInteger(status.protocol) ? Number(status.protocol) : 0;
       if (needsSync) {
         this.#iconSignature = '';
         this.#activeSignature = '';
+        this.#usageSignature = null;
       }
       if (this.#enabled && needsSync) await this.#sendState(this.#desired);
       else this.#setConnection(true, endpoint);
@@ -156,10 +206,63 @@ export class WifiTransport {
   }
 
   async installCharacter(pack: Buffer, progress: InstallProgress = () => undefined): Promise<string> {
+    return parseUploadResponse(await this.#upload('/character', pack, {}, progress));
+  }
+
+  // Sends a firmware image (the app .bin). The device checks the MD5, restarts into it, and goes
+  // back to the old firmware if the new one cannot reach Wi-Fi.
+  async installFirmware(image: Buffer, md5: string, progress: InstallProgress = () => undefined,
+                        waitingForButton: () => void = () => undefined): Promise<void> {
+    if (needsFirmwareApproval(this.#protocol)) {
+      if (!this.#config || !this.#endpoint || !this.#connected)
+        throw new Error('The Agent Companion is not reachable over Wi-Fi.');
+      // Keeps the background scan from changing the endpoint during the wait.
+      this.#installing = true;
+      try {
+        await this.#requestFirmwareApproval(this.#endpoint, this.#config.token);
+        waitingForButton();
+        await waitForFirmwareApproval(() => this.#firmwareApproval(this.#endpoint!, this.#config!.token));
+      } finally {
+        this.#installing = false;
+      }
+    }
+    const body = await this.#upload('/firmware', image, {'X-Firmware-MD5': md5}, progress);
+    let result: {ok?: unknown; error?: unknown};
+    try {
+      result = JSON.parse(body) as typeof result;
+    } catch {
+      throw new Error('The device sent an invalid reply to the firmware update.');
+    }
+    if (result.ok !== true)
+      throw new Error(typeof result.error === 'string' ? result.error : 'The device did not accept the firmware.');
+  }
+
+  async #requestFirmwareApproval(endpoint: string, token: string): Promise<void> {
+    const response = await fetch(`${endpoint}/firmware/approval`, {
+      method: 'POST',
+      headers: {Authorization: `Bearer ${token}`},
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`The device did not start the firmware update: ${await response.text()}`);
+  }
+
+  async #firmwareApproval(endpoint: string, token: string): Promise<FirmwareApproval | null> {
+    const response = await fetch(`${endpoint}/status`, {
+      headers: {Authorization: `Bearer ${token}`},
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!response.ok) return null;
+    const approval = (await response.json() as {firmwareApproval?: unknown}).firmwareApproval;
+    return approval === 'none' || approval === 'waiting' || approval === 'allowed' ? approval : null;
+  }
+
+  async #upload(path: '/character' | '/firmware', data: Buffer, headers: Record<string, string>,
+                progress: InstallProgress): Promise<string> {
     if (!this.#config || !this.#endpoint || !this.#connected)
       throw new Error('The Agent Companion is not reachable over Wi-Fi.');
-    const endpoint = new URL(`${this.#endpoint}/character`);
+    const endpoint = new URL(`${this.#endpoint}${path}`);
     const token = this.#config.token;
+    const what = path === '/firmware' ? 'firmware' : 'character';
     this.#installing = true;
     try {
       const body = await new Promise<string>((resolve, reject) => {
@@ -168,7 +271,8 @@ export class WifiTransport {
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/octet-stream',
-            'Content-Length': pack.length,
+            'Content-Length': data.length,
+            ...headers,
           },
         }, response => {
           let text = '';
@@ -178,21 +282,21 @@ export class WifiTransport {
           response.on('error', reject);
         });
         request.setTimeout(uploadIdleTimeoutMs, () =>
-          request.destroy(new Error('Wi-Fi character upload timed out.')));
+          request.destroy(new Error(`Wi-Fi ${what} upload timed out.`)));
         request.on('error', reject);
         void (async () => {
-          for (let sent = 0; sent < pack.length; sent += uploadChunkBytes) {
-            const chunk = pack.subarray(sent, sent + uploadChunkBytes);
+          for (let sent = 0; sent < data.length; sent += uploadChunkBytes) {
+            const chunk = data.subarray(sent, sent + uploadChunkBytes);
             if (!request.write(chunk))
               await new Promise(drained => request.once('drain', drained));
-            progress(sent + chunk.length, pack.length);
+            progress(sent + chunk.length, data.length);
           }
           request.end();
         })().catch(reject);
       });
-      const result = parseUploadResponse(body);
+      // The device restarts after an upload; the scan finds it again.
       this.#setConnection(false, null);
-      return result;
+      return body;
     } finally {
       this.#installing = false;
     }
@@ -227,7 +331,24 @@ export class WifiTransport {
     }
   }
 
-  async #postBadge(path: '/icon' | '/agents', body: string): Promise<void> {
+  setUsage(lines: readonly string[]): void {
+    const signature = lines.join('|');
+    if (this.#installing || !this.#enabled || !this.#config || !this.#endpoint
+        || !shouldSendUsage(this.#protocol) || signature === this.#usageSignature) return;
+    this.#commands = this.#commands
+      .then(async () => {
+        if (!this.#config || !this.#endpoint || !shouldSendUsage(this.#protocol)
+            || signature === this.#usageSignature) return;
+        await this.#postBadge('/usage', usagePacket(signature ? signature.split('|') : []));
+        this.#usageSignature = signature;
+      })
+      .catch(error => {
+        console.error(`[wifi] ${this.#message(error)}`);
+        this.#setConnection(false, null);
+      });
+  }
+
+  async #postBadge(path: '/icon' | '/agents' | '/usage', body: string): Promise<void> {
     if (!this.#config || !this.#endpoint) return;
     const response = await fetch(`${this.#endpoint}${path}`, {
       method: 'POST',
@@ -243,10 +364,13 @@ export class WifiTransport {
     this.#connected = connected;
     this.#endpoint = endpoint;
     if (!connected) this.#boot = null;
+    // Presses made while the device could not be reached are old news when it comes back.
+    if (!connected) this.#buttons = null;
     if (!connected) {
       this.#protocol = 0;
       this.#iconSignature = '';
       this.#activeSignature = '';
+      this.#usageSignature = null;
     }
     if (changed) this.#changed();
   }
@@ -254,6 +378,16 @@ export class WifiTransport {
   #message(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+interface ButtonCount {
+  boot: number;
+  presses: number;
+}
+
+// The first status after a connection only sets the baseline; a restart sets the count back to 0.
+export function buttonPressed(previous: ButtonCount | null, current: ButtonCount): boolean {
+  return previous !== null && previous.boot === current.boot && current.presses > previous.presses;
 }
 
 export function parseUploadResponse(body: string): string {

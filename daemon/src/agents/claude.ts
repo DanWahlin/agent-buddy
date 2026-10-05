@@ -1,9 +1,11 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {updateJsonFile} from './file-utils.js';
+import {isRecord, updateJsonFile} from './file-utils.js';
 import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
-import {versionOf} from './commands.js';
-import type {AgentAdapter, AgentContext, NormalizedHook} from './types.js';
+import {isCompanionCli, hasCommand, versionOf} from './commands.js';
+import {claudeHome} from './homes.js';
+import {hookHealth, removeOurHooks, withOurHooks, type FoundHook} from './hook-config.js';
+import type {AgentAdapter, AgentContext, HookStatus, NormalizedHook} from './types.js';
 import type {HookPayload} from '../protocol.js';
 
 const events = [
@@ -19,37 +21,21 @@ export const claudeAdapter: AgentAdapter = {
     ? 'Install hooks, then accept Claude’s folder-trust prompt if it asks.'
     : undefined,
   detect(ctx) {
-    const configPath = claudeConfigPath(ctx.home);
+    const configPath = claudeConfigPath(ctx.home, ctx.env);
     const version = versionOf('claude', ctx);
-    return {installed: Boolean(version) || existsSync(configPath), version, configPath};
+    return {installed: hasCommand('claude', ctx) || existsSync(configPath), version, configPath};
   },
   hookStatus(ctx) {
-    return fileContainsOurHook(ctx) ? 'installed' : 'missing';
+    return claudeHookStatus(ctx);
   },
   async install(ctx) {
-    await updateJsonFile(claudeConfigPath(ctx.home), settings => {
-      const hooks = object(settings.hooks);
-      for (const event of events) {
-        const groups = removeOurGroups(array(hooks[event]), ctx);
-        groups.push(claudeGroup(ctx, event));
-        hooks[event] = groups;
-      }
-      settings.hooks = hooks;
-      return settings;
-    });
+    const path = claudeConfigPath(ctx.home, ctx.env);
+    await updateJsonFile(path, settings =>
+      withOurHooks(settings, path, events, hook => isOurHook(hook, ctx), event => claudeGroup(ctx, event)));
   },
   async uninstall(ctx) {
-    await updateJsonFile(claudeConfigPath(ctx.home), settings => {
-      const hooks = object(settings.hooks);
-      for (const key of Object.keys(hooks)) {
-        const groups = removeOurGroups(array(hooks[key]), ctx);
-        if (groups.length) hooks[key] = groups;
-        else delete hooks[key];
-      }
-      if (Object.keys(hooks).length) settings.hooks = hooks;
-      else delete settings.hooks;
-      return settings;
-    });
+    await updateJsonFile(claudeConfigPath(ctx.home, ctx.env), settings => removeOurHooks(settings, hook => isOurHook(hook, ctx)),
+                         {create: false});
   },
   normalize(nativeEvent, payload, receiptTime) {
     const name = String(nativeEvent ?? payload.hook_event_name ?? '');
@@ -67,8 +53,8 @@ export const claudeAdapter: AgentAdapter = {
   },
 };
 
-export function claudeConfigPath(home: string): string {
-  return join(home, '.claude', 'settings.json');
+export function claudeConfigPath(home: string, env: NodeJS.ProcessEnv = {}): string {
+  return join(claudeHome(home, env), 'settings.json');
 }
 
 function claudeGroup(ctx: AgentContext, event: string): Record<string, unknown> {
@@ -79,44 +65,35 @@ function claudeGroup(ctx: AgentContext, event: string): Record<string, unknown> 
   return group;
 }
 
-function removeOurGroups(groups: unknown[], ctx: AgentContext): unknown[] {
-  return groups.map(group => {
-    if (!group || typeof group !== 'object') return group;
-    const copy = {...group as Record<string, unknown>};
-    const hooks = array(copy.hooks).filter(hook => !isOurHook(hook, ctx));
-    if (!hooks.length) return null;
-    copy.hooks = hooks;
-    return copy;
-  }).filter(Boolean);
-}
-
+// A hook of any companion install, so a reinstall replaces another install's hooks.
 function isOurHook(value: unknown, ctx: AgentContext): boolean {
-  if (!value || typeof value !== 'object') return false;
-  const hook = value as Record<string, unknown>;
-  const args = Array.isArray(hook.args) ? hook.args : [];
+  if (!isRecord(value)) return false;
+  const args = Array.isArray(value.args) ? value.args : [];
   // Ignore `command`: the Node path changes with every Node upgrade or version manager switch.
-  return hook.type === 'command' && args[0] === ctx.cli && args[1] === 'hook' && args[2] === 'claude';
+  return value.type === 'command' && isCompanionCli(args[0], ctx) && args[1] === 'hook' && args[2] === 'claude';
 }
 
-function fileContainsOurHook(ctx: AgentContext): boolean {
+function claudeHookStatus(ctx: AgentContext): HookStatus {
+  let settings: unknown;
   try {
-    const settings = JSON.parse(readFileSync(claudeConfigPath(ctx.home), 'utf8')) as Record<string, unknown>;
-    const hooks = object(settings.hooks);
-    return Object.values(hooks).some(groups => array(groups)
-      .some(group => object(group).hooks && array(object(group).hooks).some(hook => isOurHook(hook, ctx))));
+    settings = JSON.parse(readFileSync(claudeConfigPath(ctx.home, ctx.env), 'utf8'));
   } catch {
-    return false;
+    return 'missing';
   }
+  const found: FoundHook[] = [];
+  const hooks = isRecord(settings) && isRecord(settings.hooks) ? settings.hooks : {};
+  for (const [event, groups] of Object.entries(hooks)) {
+    for (const group of Array.isArray(groups) ? groups : []) {
+      for (const hook of isRecord(group) && Array.isArray(group.hooks) ? group.hooks : []) {
+        if (!isOurHook(hook, ctx)) continue;
+        const handler = hook as {command?: unknown; args: unknown[]};
+        found.push({event, node: String(handler.command ?? ''), cli: String(handler.args[0])});
+      }
+    }
+  }
+  return hookHealth(found, events, ctx);
 }
 
 function notification(payload: HookPayload, receiptTime: number, type = 'permission_prompt'): NormalizedHook[] {
   return [{event: 'notification', payload: namespacePayload('claude', attentionPayload(payload, receiptTime, type))}];
-}
-
-function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function array(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
 }

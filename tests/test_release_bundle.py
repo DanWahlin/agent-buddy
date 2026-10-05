@@ -34,8 +34,10 @@ class ReleaseBundleTests(unittest.TestCase):
         self.root = Path(directory.name)
         self.put("firmware/AgentCompanion/partitions.csv",
                  "nvs,data,nvs,0x9000,0x5000,\n"
-                 "factory,app,factory,0x10000,0x200000,\n"
-                 "assets,data,0x40,0x210000,0xDE0000,\n")
+                 "otadata,data,ota,0xE000,0x2000,\n"
+                 "app0,app,ota_0,0x10000,0x200000,\n"
+                 "app1,app,ota_1,0x210000,0x200000,\n"
+                 "assets,data,0x40,0x410000,0xBE0000,\n")
         self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
         for pack_id in ("copilot", "openclaw"):
             self.put(f"build/characters/{pack_id}.acpk", tiny_pack(pack_id))
@@ -92,7 +94,7 @@ class ReleaseBundleTests(unittest.TestCase):
                          package_release.checksum_file(dict(zip((firmware.name, characters.name), original))))
         manifest = flash_release.verify_bundle(extracted)
         self.assertEqual([image["offset"] for image in manifest["images"]],
-                         [0, 0x8000, 0xe000, 0x10000, 0x210000])
+                         [0, 0x8000, 0xe000, 0x10000, 0x410000])
         self.assertEqual(manifest["images"][2]["size"], 8192)
         with mock.patch.object(flash_release, "require_dependencies", side_effect=AssertionError("dependency probe")), \
                 mock.patch.object(flash_release.subprocess, "run", side_effect=AssertionError("hardware")):
@@ -205,7 +207,7 @@ class ReleaseBundleTests(unittest.TestCase):
         self.put("build/firmware/AgentCompanion.ino.bin", b"x" * (0x200000 + 1))
         with self.assertRaisesRegex(ValueError, "exceeds"):
             firmware_artifacts.record(self.root)
-        self.put("build/characters/copilot.acpk", b"x" * (0xDE0000 + 1))
+        self.put("build/characters/copilot.acpk", b"x" * (0xBE0000 + 1))
         with self.assertRaisesRegex(ValueError, "exceeds the assets partition"):
             firmware_artifacts.snapshot(self.root)
 
@@ -220,13 +222,15 @@ class ReleaseBundleTests(unittest.TestCase):
 
     def test_layout_is_read_not_reexported(self):
         self.put("firmware/AgentCompanion/partitions.csv",
-                 "factory,app,factory,0x10000,0x200000,\n"
-                 "assets,data,0x40,0x220000,0xDD0000,\n")
+                 "otadata,data,ota,0xE000,0x2000,\n"
+                 "app0,app,ota_0,0x10000,0x200000,\n"
+                 "app1,app,ota_1,0x210000,0x200000,\n"
+                 "assets,data,0x40,0x420000,0xBD0000,\n")
         firmware_artifacts.snapshot(self.root)
         firmware_artifacts.record(self.root)
         extracted, _, _ = self.bundle()
         image = flash_release.verify_bundle(extracted)["images"][-1]
-        self.assertEqual((image["offset"], image["max_size"]), (0x220000, 0xDD0000))
+        self.assertEqual((image["offset"], image["max_size"]), (0x420000, 0xBD0000))
 
     def test_file_change_during_packaging_is_rejected(self):
         original_check = firmware_artifacts.check
@@ -262,7 +266,7 @@ class ReleaseBundleTests(unittest.TestCase):
             expected = [sys.executable, "-m", "esptool", "--chip", "esp32s3", "--port", "COM7",
                         "--baud", "460800", "write-flash", "--flash-mode", "keep",
                         "--flash-freq", "keep", "--flash-size", "16MB"]
-            for offset, filename in zip((0, 0x8000, 0xe000, 0x10000, 0x210000), flash_release.IMAGE_NAMES):
+            for offset, filename in zip((0, 0x8000, 0xe000, 0x10000, 0x410000), flash_release.IMAGE_NAMES):
                 expected.extend((hex(offset), str(extracted / filename)))
             run.assert_called_once_with(expected, check=True)
             self.assertNotIn("erase-flash", expected)

@@ -20,6 +20,11 @@ serde_json = "1"
 tauri-plugin-single-instance = "2"
 # Tauri's own async runtime, made small: one worker, not one per core.
 tokio = { version = "1", features = ["rt-multi-thread"] }
+# Installs release firmware over USB (--flash-firmware). Without the CLI
+# feature it is the flashing library only; serialport without libudev.
+espflash = { version = "~4.5", default-features = false, features = ["serialport"] }
+serialport = { version = "4.7", default-features = false }
+sha2 = "0.11"
 
 # macOS: read the cursor from any thread, without a round trip to the main
 # thread. Already in the build through Tauri.
@@ -29,6 +34,10 @@ core-graphics = "0.25"
 # you're typing in. Already in the build through Tauri.
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+
+# Windows: the companion service's launcher (src/launcher.rs). Already in the build through Tauri.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [[bin]]
 name = "agent-companion-desktop"

@@ -327,6 +327,14 @@ AC_EXPORT int ac_badge_active(const char* packet) {
   lastError = engine->badges.error();
   return 0;
 }
+// The usage lines from the daemon's '$' packet, without the '$': "AIC: 902|Tokens: 1.2M",
+// or empty to clear them. They draw centered at the bottom, as on the device.
+AC_EXPORT int ac_usage(const char* packet) {
+  if (!engine) return 0;
+  if (engine->badges.setUsagePacket(packet)) return 1;
+  lastError = engine->badges.error();
+  return 0;
+}
 
 // Steps the engine by `seconds` and renders a frame. Returns a pointer to
 // width x height RGBA pixels, or null on error. `key` asks for transparency
@@ -374,6 +382,10 @@ AC_EXPORT void ac_forget() {
 
 // Whether the last ac_frame differed from the one before it.
 AC_EXPORT int ac_changed() { return engine && engine->changed ? 1 : 0; }
+
+// The mode the last ac_frame showed (CharacterMode), or -1 with no character.
+// The device plays its sound cue when this changes, so the desktop does too.
+AC_EXPORT int ac_shown_mode() { return engine ? static_cast<int>(engine->state.mode) : -1; }
 
 // The rectangles the last ac_frame changed: ac_dirty_count() of them, each
 // four int32 (x, y, width, height) at ac_dirty_rects().
