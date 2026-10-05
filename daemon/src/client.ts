@@ -1,6 +1,14 @@
-import {createConnection} from 'node:net';
+import {createConnection, type Socket} from 'node:net';
 import type {DaemonRequest} from './protocol.js';
-import {socketPath} from './paths.js';
+import {isNamedPipe, socketPath} from './paths.js';
+
+// Unix clients half-close so older daemons, which wait for 'end', still answer. Windows named
+// pipes do not half-close reliably, so there the daemon answers at the newline instead.
+function sendRequest(socket: Socket, request: DaemonRequest): void {
+  const line = `${JSON.stringify(request)}\n`;
+  if (isNamedPipe(socketPath())) socket.write(line);
+  else socket.end(line);
+}
 
 // Reads newline-delimited JSON replies; the last message is the result.
 export function streamDaemon(request: DaemonRequest, onMessage: (message: unknown) => void,
@@ -14,7 +22,7 @@ export function streamDaemon(request: DaemonRequest, onMessage: (message: unknow
       reject(new Error('Agent Companion daemon did not respond.'));
     }, timeoutMs);
     socket.setEncoding('utf8');
-    socket.on('connect', () => socket.end(`${JSON.stringify(request)}\n`));
+    socket.on('connect', () => sendRequest(socket, request));
     socket.on('data', chunk => {
       buffer += chunk;
       for (let newline = buffer.indexOf('\n'); newline >= 0; newline = buffer.indexOf('\n')) {
@@ -48,7 +56,7 @@ export function streamDaemon(request: DaemonRequest, onMessage: (message: unknow
   });
 }
 
-const notRunning = 'The companion service is not running. Run "npm run setup" from the repository root.';
+const notRunning = 'The companion service is not running. Start the Agent Companion app, or run "npm run setup" from the repository root.';
 
 function daemonError(error: NodeJS.ErrnoException): Error {
   return error.code === 'ENOENT' || error.code === 'ECONNREFUSED' ? new Error(notRunning) : error;
@@ -63,7 +71,7 @@ export function requestDaemon(request: DaemonRequest, timeoutMs = 500): Promise<
       reject(new Error('Agent Companion daemon did not respond.'));
     }, timeoutMs);
     socket.setEncoding('utf8');
-    socket.on('connect', () => socket.end(`${JSON.stringify(request)}\n`));
+    socket.on('connect', () => sendRequest(socket, request));
     socket.on('data', chunk => {
       buffer += chunk;
       if (buffer.length <= 65536) return;

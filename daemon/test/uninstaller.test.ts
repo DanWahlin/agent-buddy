@@ -88,7 +88,8 @@ test('the plan never removes the home folder or a path without the project name'
   for (const path of plan.remove) assert.match(path.slice('/Users/agent-companion'.length), /agent[- ]?companion|agentcompanion/i);
 });
 
-test('the script quotes every path and runs the commands in order', async () => {
+test('the script quotes every path and runs the commands in order', {skip: process.platform === 'win32' && 'needs /bin/sh'},
+     async () => {
   const folder = await mkdtemp(join(tmpdir(), 'agent-companion-uninstall-'));
   try {
     const odd = join(folder, "it's agent companion");
@@ -97,7 +98,7 @@ test('the script quotes every path and runs the commands in order', async () => 
     await writeFile(join(odd, 'file'), 'x');
     await writeFile(kept, 'x');
     const log = join(folder, 'log');
-    const script = uninstallScript({before: [['sh', '-c', `echo before >> '${log}'`]], remove: [odd],
+    const script = uninstallScript({platform: 'linux', before: [['sh', '-c', `echo before >> '${log}'`]], remove: [odd],
                                     after: [['sh', '-c', `echo after >> '${log}'`]], manual: []});
     assert.match(script, /^sleep 1\n/);
     assert.ok(script.includes(`'${folder}/it'\\''s agent companion'`));
@@ -108,4 +109,48 @@ test('the script quotes every path and runs the commands in order', async () => 
   } finally {
     await rm(folder, {recursive: true, force: true});
   }
+});
+
+const windows: UninstallContext = {
+  platform: 'win32',
+  home: 'C:\\Users\\Dan',
+  uid: -1,
+  dataDir: 'C:\\Users\\Dan\\AppData\\Local\\ESP32 Agent Companion',
+  socketPath: '\\\\.\\pipe\\esp32-agent-companion-Dan',
+  serviceRoot: 'C:\\Users\\Dan\\AppData\\Local\\ESP32 Agent Companion\\runtime',
+  app: 'C:\\Users\\Dan\\AppData\\Local\\Agent Companion\\agent-companion-desktop.exe',
+  keepData: false,
+  appData: 'C:\\Users\\Dan\\AppData\\Roaming',
+  localAppData: 'C:\\Users\\Dan\\AppData\\Local',
+};
+
+test('the Windows plan removes the logon start, stops the launcher, and removes its own folders only', () => {
+  const plan = createUninstallPlan(windows);
+  const local = 'C:\\Users\\Dan\\AppData\\Local';
+  assert.deepEqual(plan.before, [['reg.exe', 'delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+                                  '/v', 'ESP32 Agent Companion', '/f']]);
+  for (const path of [`${local}\\ESP32 Agent Companion`, `${local}\\ESP32 Agent Companion\\runtime`,
+                      `${local}\\ESP32 Agent Companion\\service.json`, `${local}\\dev.agentcompanion.desktop`,
+                      'C:\\Users\\Dan\\AppData\\Roaming\\dev.agentcompanion.desktop',
+                      'C:\\Users\\Dan\\.copilot\\hooks\\agent-companion.json.bak'])
+    assert.ok(plan.remove.includes(path), path);
+  // Not the pipe, and not the app the Windows installer put in place.
+  assert.ok(!plan.remove.some(path => path.includes('pipe') || path.endsWith('.exe')));
+  assert.match(plan.manual.join('\n'), /Installed apps/);
+  const script = uninstallScript(plan);
+  assert.ok(script.indexOf("'reg.exe' 'delete'") < script.indexOf('ServiceStop'));
+  assert.ok(script.indexOf('ServiceStop') < script.indexOf('Remove-Item'));
+  assert.ok(script.includes("'C:\\Users\\Dan\\AppData\\Local\\ESP32 Agent Companion'"));
+});
+
+test('the Windows plan keeps paths outside this project and quotes PowerShell quotes', () => {
+  const odd = createUninstallPlan({...windows, home: 'C:\\Users\\O\u2019Brien', app: null,
+                                   dataDir: 'C:\\Users\\O\u2019Brien\\AppData\\Local\\ESP32 Agent Companion',
+                                   serviceRoot: 'D:\\src\\agent-companion', appData: undefined, localAppData: undefined});
+  assert.ok(odd.remove.every(path => /agent[- ]?companion|agentcompanion/i.test(path)));
+  assert.ok(uninstallScript(odd).includes("O\u2019\u2019Brien"));
+  assert.match(odd.manual.join('\n'), /D:\\src\\agent-companion/);
+  const home = createUninstallPlan({...windows, home: 'C:\\Users\\agent-companion',
+                                    dataDir: 'C:\\Users\\agent-companion\\x', app: null});
+  assert.ok(!home.remove.includes('C:\\Users\\agent-companion\\x'));
 });

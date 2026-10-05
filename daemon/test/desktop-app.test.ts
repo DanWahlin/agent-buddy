@@ -8,6 +8,9 @@ import {
   type SavedDesktopApp,
 } from '../src/desktop-app.js';
 
+// Windows has no POSIX permission bits, so mode checks run only on macOS and Linux.
+const posix = process.platform !== 'win32';
+
 type Exited = (code: number | null) => void;
 
 async function withApp(run: (app: DesktopApp, clock: {now: number}, launched: SavedDesktopApp[], path: string,
@@ -49,7 +52,7 @@ test('start needs a location the app reported, and remembers it', async () => {
     await app.saved();
     const saved = JSON.parse(await readFile(path, 'utf8'));
     assert.deepEqual(saved, {executable: '/Applications/Agent Companion.app', environment: {DISPLAY: ':0'}});
-    assert.equal((await stat(path)).mode & 0o777, 0o600);
+    if (posix) assert.equal((await stat(path)).mode & 0o777, 0o600);
 
     await app.start();
     assert.equal(launched.length, 0, 'a running app is not started again');
@@ -105,7 +108,14 @@ test('the usual locations cover the downloads and a build in the repository', ()
     '/repo/desktop/apps/desktop/src-tauri/target/debug/agent-companion-desktop',
   ]);
   assert.equal(defaultDesktopAppLocations('linux', '/home/me', '/repo')[0], '/usr/bin/agent-companion-desktop');
-  assert.deepEqual(defaultDesktopAppLocations('win32', 'C:\\Users\\me', 'C:\\repo'), []);
+  assert.deepEqual(defaultDesktopAppLocations('win32', 'C:\\Users\\me', 'C:\\repo',
+                                              {LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local'}), [
+    'C:\\Users\\me\\AppData\\Local\\Agent Companion\\agent-companion-desktop.exe',
+    'C:\\Program Files\\Agent Companion\\agent-companion-desktop.exe',
+    'C:\\repo\\desktop\\apps\\desktop\\src-tauri\\target\\release\\agent-companion-desktop.exe',
+    'C:\\repo\\desktop\\apps\\desktop\\src-tauri\\target\\debug\\agent-companion-desktop.exe',
+  ]);
+  assert.deepEqual(defaultDesktopAppLocations('freebsd', '/home/me', '/repo'), []);
 });
 
 test('stop tells the app to close on its next request', async () => {

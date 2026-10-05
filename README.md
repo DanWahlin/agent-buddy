@@ -96,25 +96,27 @@ flowchart LR
 | --- | --- |
 | Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262) |
 | Cable | A USB data cable (charge-only cables won't work) |
-| Computer | macOS or Linux for the companion service and the easiest desktop app flow. Windows runs the service through [WSL 2](#windows-wsl-2), and the desktop app is display-only. |
+| Computer | macOS, Linux, or Windows (x64 or Arm64). On Windows, the desktop app runs the companion service natively, and agents in [WSL 2](#windows-wsl-2) use it too. |
 | Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
-| Node.js and Git | Only to run the companion daemon from the repository: [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git. The desktop app for macOS and Linux carries its own. |
+| Node.js and Git | Only to run the companion daemon from the repository: [Node.js 24 LTS](https://nodejs.org/) (24.11 or newer) and Git. The desktop app carries its own. |
 | Speaker (optional) | A small two-pin speaker, if your board or enclosure doesn't include one |
 | Desktop app | Nothing extra to download and run it. To build it from source, install [Rust](https://rustup.rs/) 1.90 or newer and the OS build dependencies. |
 
 ## Quick start
 
-**With the desktop app (recommended on macOS and Linux).** You need only the
+**With the desktop app (recommended).** You need only the
 app. You do not need Python, Node.js, or a clone of the repository.
 
 1. Download the desktop app for your OS from
    [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest):
    `agent-companion-desktop-<version>-macos-universal.dmg`,
+   `agent-companion-desktop-<version>-windows-x64-setup.exe`,
+   `agent-companion-desktop-<version>-windows-arm64-setup.exe`,
    `agent-companion-desktop-<version>-linux-x86_64.AppImage`, or
    `agent-companion-desktop-<version>-linux-amd64.deb`.
 2. Open the app. It is not code-signed, so see
    [Run the desktop app](#run-the-desktop-app) for the first-run step on your
-   OS. On macOS and Linux, if no service is running, the first run installs
+   OS. If no service is running, the first run installs
    the companion service and your agents' hooks. Then it opens Settings.
 3. Connect the device with a USB data cable. In Settings, open the **Device**
    tab. In the **Install over USB** row, select **Install v<version>**. The app
@@ -161,7 +163,7 @@ character react ([Step 4](#step-4-try-it)).
 
 To open Settings in the app's own window, click the upper button on the
 desktop character's case, press the BOOT button on the real device, or
-right-click the character and select **Open Settings…**. The lower button
+right-click the character and select **Settings**. The lower button
 turns the app's sounds on or off. Turn the character off, hide the device around
 it, or turn on sounds on the **Desktop** tab in Settings.
 
@@ -250,7 +252,7 @@ around. Leave the cable plugged in for the next step.
 
 The daemon connects your agents to the device and runs in the background.
 
-**With the desktop app (macOS and Linux).** Download the app and open it (see
+**With the desktop app.** Download the app and open it (see
 [Run the desktop app](#run-the-desktop-app)). If no daemon runs, the app installs
 the one it carries: the same service and hooks that setup below installs. It then
 opens Settings. Restart any agent sessions that were already open. On Linux, the
@@ -299,8 +301,13 @@ sudo usermod -aG dialout "$USER"
 <details>
 <summary><strong>Windows (WSL 2)</strong></summary>
 
-Run your agent CLIs and the daemon **inside the same WSL 2 distribution**. Hooks
-installed in WSL can't see agents running natively on Windows.
+The easiest way on Windows is the desktop app (see [Quick start](#quick-start)). Its
+service runs on Windows and installs hooks for agents on Windows and in running WSL 2
+distributions, and it uses the device's USB port with no extra steps.
+
+To run the daemon from a clone inside WSL instead, run your agent CLIs and the daemon
+**inside the same WSL 2 distribution**. Hooks installed in WSL can't see agents running
+natively on Windows.
 
 1. Install Node.js 24 LTS inside WSL.
 2. If systemd isn't enabled, add this to `/etc/wsl.conf`, then run `wsl --shutdown`
@@ -407,18 +414,52 @@ if the daemon or device isn't running, your agents keep working normally.
 
 | Agent | Hook location | One-time step |
 | --- | --- | --- |
-| GitHub Copilot | `~/.copilot/hooks/agent-companion.json` | None |
+| GitHub Copilot (CLI and app) | `~/.copilot/hooks/agent-companion.json` | None |
 | Claude Code | `~/.claude/settings.json` | Accept Claude's folder-trust prompt if it asks |
 | Codex CLI | `~/.codex/hooks.json` | Approve the hooks in Codex with `/hooks` |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | None |
-| Hermes Agent | `~/.hermes/config.yaml` | Approve each hook the first time Hermes runs it |
+| Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | Approve each hook the first time Hermes runs it |
 | OpenClaw | A plugin registered with the `openclaw` CLI | Restart the OpenClaw Gateway |
 
-Setup edits only the hook entries it owns and keeps a `.bak` copy of each file it
-changes.
+Setup edits only the hook entries it owns. Before it changes a file, it keeps a
+copy beside it: `<file>.bak` holds the file as it was before the first change, and
+`<file>.agent-companion-<time>.bak` holds it as it was before each change (the
+last five are kept). It doesn't touch a file that has nothing to change, and it stops without
+changes if a file's `hooks` section is in a format it doesn't understand.
+
+Grok also runs the hooks in Claude's settings. If you use both, Grok can show a
+line such as `PreToolUse hook (global/settings) failed, ignored` for the Agent
+Companion Claude hook. This doesn't change the display, because Grok's own hook
+sends the events. To stop the message, add this to `~/.grok/config.toml`. Grok
+then skips all of your Claude hooks, not only this one:
+
+```toml
+[compat.claude]
+hooks = false
+```
+
+On Windows, Codex and Grok run their hooks in PowerShell, so setup writes the
+Windows hook command in the PowerShell form
+(`& 'node.exe' 'cli.js' hook <agent> <event>`). After an update from an older
+version, Settings shows these hooks as outdated. Click **Reinstall**, and then
+approve the Codex hooks again with `/hooks`.
+
+If you moved an agent's settings folder with its own variable (`COPILOT_HOME`,
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `HERMES_HOME` or `OPENCLAW_HOME`),
+setup uses that folder instead of the one in the table. Set the variable in your
+shell's startup file (for example, `~/.zshrc` or `~/.bashrc`): the service and the
+desktop app read it from there, and keep it. If you change it later, run setup
+again, or open a newer version of the desktop app.
+
+If you remove an agent's hook, it stays removed. Setup and desktop app updates
+don't add it back until you choose **Install hook** or run
+`npm run agents install <agent>`.
 
 The settings page's **Agents** tab lists every supported agent with its detected
 version and hook status. An agent that's driving the display is highlighted.
+The GitHub Copilot app runs its own Copilot CLI with the same `~/.copilot` folder,
+so one hook file covers the CLI and the app; on macOS, the card shows the version
+of each one that's installed.
 
 <p align="center">
   <img src="images/settings-agents.png" alt="Agents card with the badge switch and six agents, each with Disable, Reinstall, and Remove hook buttons" width="720">
@@ -430,6 +471,11 @@ version and hook status. An agent that's driving the display is highlighted.
 | **Install hook** / **Reinstall** | Writes (or rewrites) the hook into the agent's config |
 | **Remove hook** | Removes only this project's hook from the agent's config |
 
+A hook status of **outdated** means the hooks run another copy of the companion
+(for example, a repository install instead of the desktop app), a Node.js or
+companion file that no longer exists, or not all of the events. Choose
+**Reinstall** to fix it.
+
 The same actions are available from the command line:
 
 ```bash
@@ -439,6 +485,11 @@ npm run agents enable claude
 npm run agents install codex       # Install or reinstall one hook
 npm run agents uninstall codex     # Remove one hook
 ```
+
+Codex links each hook approval to the hook's position in `~/.codex/hooks.json`.
+If removing or reinstalling the companion's hook moves one of your own approved
+Codex hooks, Settings and `npm run agents` show a warning that names it. Open
+Codex, type `/hooks`, and approve it again.
 
 Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 `hermes hooks revoke "<command>"` with the command shown in its config.
@@ -701,9 +752,10 @@ Run these from the repository folder.
    pending one-time agent steps.
 2. Restart agent sessions that were open before you ran setup.
 3. Check the settings page's **Agents** tab: the agent should show
-   **hook installed** and **enabled**.
-4. If you installed the agent after setup, choose **Install hook** for it on the
-   **Agents** tab, or run `npm run setup` again.
+   **hook installed** and **enabled**. If it shows **hook outdated**, choose
+   **Reinstall**.
+4. If you installed the agent after setup, or you removed its hook before,
+   choose **Install hook** for it on the **Agents** tab.
 
 </details>
 
@@ -772,7 +824,7 @@ The page needs its private link. Open Settings from the desktop app, or run
 <details>
 <summary><strong>Uninstall</strong></summary>
 
-**From Settings (macOS and Linux).** Open Settings, select the **Desktop** tab,
+**From Settings.** Open Settings, select the **Desktop** tab,
 and select **Uninstall…** at the bottom. This removes the agent hooks, closes
 and deletes the desktop app, and removes and stops the companion service. It
 also deletes your settings, Wi-Fi pairing and added characters, unless you turn
@@ -845,22 +897,23 @@ no hooks of its own. The settings page controls both (most of these are on its
 The app shows the character the companion service names, from the service's
 own packs.
 
-**The app on macOS and Linux carries the companion service.** When you open it
+**The app carries the companion service.** When you open it
 and no service answers within 10 seconds, it installs the one it carries:
 
 - It copies the service, a Node.js runtime and the character packs to the
   service's data folder (`~/Library/Application Support/ESP32 Agent Companion/runtime`
-  on macOS, `~/.local/state/esp32-agent-companion/runtime` on Linux).
+  on macOS, `~/.local/state/esp32-agent-companion/runtime` on Linux,
+  `%LOCALAPPDATA%\ESP32 Agent Companion\runtime` on Windows).
 - From that copy, it installs your agents' hooks and the background service
-  (a LaunchAgent or systemd user service), as `npm run setup` does. The service
+  (a LaunchAgent, a systemd user service, or on Windows a `Run` registry value
+  that starts the app's own launcher), as `npm run setup` does. The service
   then starts when you sign in, with or without the app.
 - It opens Settings the first time.
 
 When you update the app, it updates its copy of the service. If a service from
 a clone of the repository runs, the app leaves it alone and follows it. To
 change back to the repository's service, run `npm run setup` in the clone.
-The app on Windows carries no service, because the service runs only in
-[WSL 2](#windows-wsl-2).
+On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
 
 - **Download it** from [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
   The app is not code-signed. Your OS can need one extra step:
@@ -868,14 +921,27 @@ The app on Windows carries no service, because the service runs only in
   | OS | File | First run |
   | --- | --- | --- |
   | macOS | `agent-companion-desktop-<version>-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
-  | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe` | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
+  | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for an Arm PC | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
   | Linux | `agent-companion-desktop-<version>-linux-x86_64.AppImage` or `agent-companion-desktop-<version>-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./agent-companion-desktop-<version>-linux-amd64.deb`. |
 
   It has no Dock or taskbar button: use its menu bar or tray icon.
+
+  On Linux:
+  - **Sounds** use GStreamer. The AppImage includes it. The `.deb` installs it.
+    If you build from source and hear no sounds, install
+    `gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio`
+    (Ubuntu) or `gst-plugins-base gst-plugins-good` (Arch, Omarchy).
+  - **GNOME shows no tray icons** without an extension. Install
+    [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/)
+    (Ubuntu includes it). Without the icon, open the app again to show a hidden
+    character, and use the upper button on the case for Settings.
+  - **The service is a systemd user service.** On a system without systemd,
+    the install stops and tells you the command that runs the service in a
+    terminal.
 - **Or build it from source** with [Rust](https://rustup.rs/) 1.90 or newer, from
   the repository folder. On Linux, install WebKitGTK first:
-  `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
-  (Ubuntu) or `sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator`
+  `sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev gstreamer1.0-plugins-good`
+  (Ubuntu) or `sudo pacman -S --needed webkit2gtk-4.1 libayatana-appindicator gst-plugins-good`
   (Arch, Omarchy).
 
   ```bash
@@ -908,7 +974,7 @@ The window has no frame and is always on top.
   the BOOT button on the real device does the same.
 - **Click the lower button on the device's case** to turn sounds on or off. A
   blue light on the button shows that sounds are on. See **Sounds** below.
-- **Right-click the character** for **Hide**, **Open Settings…** and **Close**.
+- **Right-click the character** for **Hide**, **Settings** and **Close**.
 - **Settings opens in a window of the app**, not in a browser tab. If the
   Settings window is already open, the app brings it to the front. To use a
   browser, run `npm run settings`.
@@ -916,7 +982,7 @@ The window has no frame and is always on top.
   or your app launcher), or use its tray icon (the menu bar on macOS). If your
   menu bar is too full, macOS hides the icon, so opening the app again always works.
 - **The tray icon** has **Show Agent Companion** or **Hide Agent Companion**,
-  **Open Settings…** and **Quit Agent Companion**. Choose the character in Settings.
+  **Settings** and **Quit Agent Companion**. Choose the character in Settings.
 - **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
   `--show`, `--hide`, `--settings` or `--quit` to control the running one.
 

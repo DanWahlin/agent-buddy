@@ -47,7 +47,7 @@ default), so the button and the **Play sounds** switch in Settings agree. The
 100, 30 by default); the page plays a tick when the volume changes.
 
 **Quit from the tray.** With no title bar and no taskbar button, the tray is
-the only way out. Its menu has Show/Hide, *Open Settings…* and *Quit*.
+the only way out. Its menu has Show/Hide, *Settings* and *Quit*.
 
 Where it was put is remembered, and checked on the way back up: a position is
 only restored if enough of the window would land on a monitor that exists

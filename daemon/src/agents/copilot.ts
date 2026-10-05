@@ -1,8 +1,10 @@
-import {existsSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {writeTextAtomically, removeFile} from './file-utils.js';
+import {isRecord, writeTextAtomically, removeFile} from './file-utils.js';
 import {canonicalEvent, normalized} from './normalize.js';
 import {versionOf} from './commands.js';
+import {copilotHome} from './homes.js';
+import {hookHealth, type FoundHook} from './hook-config.js';
 import type {AgentAdapter, AgentContext, HookStatus} from './types.js';
 
 export const copilotAdapter: AgentAdapter = {
@@ -10,17 +12,17 @@ export const copilotAdapter: AgentAdapter = {
   name: 'GitHub Copilot',
   hint: status => status === 'missing' ? 'Run setup to install the Copilot hook file.' : undefined,
   detect(ctx) {
-    const configPath = copilotHookPath(ctx.home);
-    return {installed: true, version: versionOf('copilot', ctx), configPath};
+    const configPath = copilotHookPath(ctx.home, ctx.env);
+    return {installed: true, version: copilotVersions(versionOf('copilot', ctx), copilotAppVersion(ctx)), configPath};
   },
   hookStatus(ctx) {
-    return hasCopilotHooks(ctx) ? 'installed' : 'missing';
+    return copilotHookStatus(ctx);
   },
   async install(ctx) {
-    await writeTextAtomically(copilotHookPath(ctx.home), `${JSON.stringify(createCopilotHooks(ctx.node, ctx.cli), null, 2)}\n`);
+    await writeTextAtomically(copilotHookPath(ctx.home, ctx.env), `${JSON.stringify(createCopilotHooks(ctx.node, ctx.cli), null, 2)}\n`);
   },
   async uninstall(ctx) {
-    await removeFile(copilotHookPath(ctx.home));
+    await removeFile(copilotHookPath(ctx.home, ctx.env));
   },
   normalize(nativeEvent, payload, receiptTime) {
     const event = canonicalEvent(nativeEvent, payload);
@@ -30,8 +32,33 @@ export const copilotAdapter: AgentAdapter = {
   },
 };
 
-export function copilotHookPath(home: string): string {
-  return join(home, '.copilot', 'hooks', 'agent-companion.json');
+export function copilotHookPath(home: string, env: NodeJS.ProcessEnv = {}): string {
+  return join(copilotHome(home, env), 'hooks', 'agent-companion.json');
+}
+
+// The GitHub Copilot app runs its own Copilot CLI with the same ~/.copilot folder, so
+// the CLI and the app share one hook file. Settings shows the version of each one found.
+export function copilotVersions(cli: string | undefined, app: string | undefined): string | undefined {
+  const parts = [
+    cli && `CLI ${cli.replace(/^GitHub Copilot CLI\s*/i, '')}`,
+    app && `app ${app}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
+export function copilotAppVersion(ctx: AgentContext,
+  folders = ['/Applications', join(ctx.home, 'Applications')]): string | undefined {
+  if (ctx.platform !== 'darwin') return undefined;
+  for (const folder of folders) {
+    try {
+      const plist = readFileSync(join(folder, 'GitHub Copilot.app', 'Contents', 'Info.plist'), 'utf8');
+      const version = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1]?.trim();
+      if (version) return version;
+    } catch {
+      // Not in this folder.
+    }
+  }
+  return undefined;
 }
 
 export function createCopilotHooks(node: string, cli: string): object {
@@ -62,7 +89,25 @@ export function createCopilotHooks(node: string, cli: string): object {
   };
 }
 
-function hasCopilotHooks(ctx: AgentContext): boolean {
-  if (!existsSync(copilotHookPath(ctx.home))) return false;
-  return true;
+// The file is ours alone, so a file without readable companion hooks is 'outdated', not 'missing'.
+function copilotHookStatus(ctx: AgentContext): HookStatus {
+  const path = copilotHookPath(ctx.home, ctx.env);
+  if (!existsSync(path)) return 'missing';
+  const found: FoundHook[] = [];
+  try {
+    const root = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    const hooks = isRecord(root) && isRecord(root.hooks) ? root.hooks : {};
+    for (const [event, entries] of Object.entries(hooks)) {
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        if (!isRecord(entry) || !Array.isArray(entry.args)) continue;
+        const [cli, verb, agent] = entry.args as unknown[];
+        if (typeof cli !== 'string' || verb !== 'hook' || agent !== 'copilot') continue;
+        found.push({event, node: String(entry.exec ?? ''), cli});
+      }
+    }
+  } catch {
+    return 'outdated';
+  }
+  const events = Object.keys((createCopilotHooks('', '') as {hooks: object}).hooks);
+  return found.length ? hookHealth(found, events, ctx) : 'outdated';
 }

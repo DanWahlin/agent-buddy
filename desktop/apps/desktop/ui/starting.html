@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Companion</title>
+<!-- Shown by the app, in the middle of the screen, while it waits for the
+     companion service. The app closes it when the service answers. -->
+<style>
+  :root {
+    --bg: #0d1117;
+    --glow: #10264f;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #3d7ef7;
+    --track: #30363d;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f8fa; --glow: #d6e9ff; --text: #1f2328; --muted: #59636e; --track: #d0d7de; color-scheme: light; }
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 0 30px;
+    box-sizing: border-box;
+    background: radial-gradient(circle at 20% 30%, var(--glow), var(--bg) 70%);
+    color: var(--text);
+    font: 14px/1.5 system-ui, "Segoe UI", ui-sans-serif, sans-serif;
+    user-select: none;
+    cursor: default;
+  }
+  img { width: 88px; height: 88px; flex: none; }
+  body > div { flex: 1; min-width: 0; }
+  h1 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+  p { margin: 0; color: var(--muted); }
+  .bar { margin-top: 16px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .bar span { display: block; width: 35%; height: 100%; border-radius: 2px; background: var(--accent); animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  .slow .bar { display: none; }
+  @media (prefers-reduced-motion: reduce) { .bar span { animation: none; width: 100%; } }
+</style>
+</head>
+<body>
+  <img src="logo.png" alt="">
+  <div>
+    <h1 id="title">Starting Agent Companion</h1>
+    <p id="detail">The companion service is starting. This can take a few seconds.</p>
+    <div class="bar"><span></span></div>
+  </div>
+  <script>
+    // The service can take longer the first time, while the app copies it.
+    setTimeout(() => {
+      document.getElementById('detail').textContent =
+        'This is taking longer than usual. The first start can take up to a minute.';
+    }, 15000);
+    setTimeout(() => {
+      document.body.classList.add('slow');
+      document.getElementById('title').textContent = 'The companion service did not start';
+      document.getElementById('detail').textContent =
+        'Quit Agent Companion from its tray icon and open it again. If this keeps happening, restart your computer.';
+    }, 60000);
+  </script>
+</body>
+</html>

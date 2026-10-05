@@ -518,7 +518,8 @@ export function pickPort(ports: readonly PortInfo[], preferred?: string,
                          platform: NodeJS.Platform = process.platform): UsbPort | null {
   const candidate = ports.find(port => port.path === preferred)
     ?? ports.find(port => port.vendorId?.toLowerCase() === '303a' && isLikelyEsp32Port(port.path, platform))
-    ?? ports.find(port => isLikelyEsp32Port(port.path, platform));
+    // Windows lists Bluetooth links as COM ports too; only a USB port has a vendor ID.
+    ?? ports.find(port => isLikelyEsp32Port(port.path, platform) && (platform !== 'win32' || Boolean(port.vendorId)));
   if (!candidate) return null;
   const pid = Number.parseInt(candidate.productId ?? '', 16);
   return {
@@ -530,5 +531,6 @@ export function pickPort(ports: readonly PortInfo[], preferred?: string,
 export function isLikelyEsp32Port(
     path: string, platform: NodeJS.Platform = process.platform): boolean {
   if (platform === 'darwin') return /^\/dev\/(?:cu|tty)\.usbmodem/i.test(path);
+  if (platform === 'win32') return /^COM\d+$/i.test(path);
   return /^\/dev\/tty(?:ACM|USB)\d+$/i.test(path);
 }

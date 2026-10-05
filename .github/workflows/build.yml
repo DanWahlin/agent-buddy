@@ -116,11 +116,34 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  daemon-windows:
+    # The companion service on native Windows: named pipes, the Run key, PowerShell
+    # hooks, %LOCALAPPDATA% paths and WSL path mapping. The Rust launcher's tests run
+    # on Windows in desktop.yml.
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: daemon
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: daemon/package-lock.json
+      - run: npm ci
+      - name: Test companion daemon
+        run: npm test
+
   desktop:
     # The desktop app, ready to run: no Rust or Emscripten needed to use it.
     # Built on tags (and by hand), as the release is the only place it ships.
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    # On macOS and Linux the app carries the daemon, with the release's own character packs.
+    # The app carries the daemon, with the release's own character packs.
     needs: build
     strategy:
       fail-fast: false
@@ -130,6 +153,10 @@ jobs:
             target: universal-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            arch: x64
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
           # The oldest supported Ubuntu, so the AppImage runs on most distributions.
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
@@ -163,16 +190,16 @@ jobs:
         working-directory: .
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          # GStreamer plays the sounds; the AppImage bundles these plugins (bundleMediaFramework).
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-alsa
       - run: npm ci
       - name: Download the character packs
-        if: runner.os != 'Windows'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-bundles
           path: ${{ runner.temp }}/release-bundles
       - name: Bundle the daemon
-        if: runner.os != 'Windows'
         working-directory: .
         run: |
           mkdir -p build/characters
@@ -181,10 +208,7 @@ jobs:
       - name: Build the app
         working-directory: desktop/apps/desktop
         run: |
-          # Windows has no daemon to carry: it runs in WSL 2.
-          daemon=()
-          [ "${{ runner.os }}" = Windows ] || daemon=(--config src-tauri/tauri.daemon.conf.json)
-          npm run bundle -- --target ${{ matrix.target }} "${daemon[@]}" \
+          npm run bundle -- --target ${{ matrix.target }} --config src-tauri/tauri.daemon.conf.json \
             --config "{\"version\":\"$(cat ../../../VERSION)\"}"
       - name: Package
         run: |
@@ -194,7 +218,7 @@ jobs:
           mkdir -p dist-release
           case "${{ runner.os }}" in
             macOS)   cp "$bundle"/dmg/*.dmg "$name-macos-universal.dmg" ;;
-            Windows) cp "$bundle"/nsis/*-setup.exe "$name-windows-x64-setup.exe" ;;
+            Windows) cp "$bundle"/nsis/*-setup.exe "$name-windows-${{ matrix.arch }}-setup.exe" ;;
             Linux)   cp "$bundle"/appimage/*.AppImage "$name-linux-x86_64.AppImage"
                      cp "$bundle"/deb/*.deb "$name-linux-amd64.deb" ;;
           esac
@@ -202,12 +226,12 @@ jobs:
       - name: Upload the app
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: desktop-${{ runner.os }}
+          name: desktop-${{ matrix.target }}
           path: desktop/dist-release/*
           if-no-files-found: error
 
   release:
-    needs: [build, desktop]
+    needs: [build, daemon-windows, desktop]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
@@ -248,7 +272,7 @@ jobs:
 
             ### The device
 
-            On macOS and Linux, download the desktop app (below) and open it. It installs the companion service and opens Settings.
+            Download the desktop app for your OS (below) and open it. It installs the companion service and opens Settings.
             Connect the device over USB, and click **Install** on the **Device** tab: the app downloads this release's firmware, checks it, and writes it to the device.
 
             Without the desktop app, download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
@@ -259,8 +283,8 @@ jobs:
 
             ### The desktop app
 
-            The same character, with the same animation, in a small window on your desktop. On macOS and Linux it
-            carries the companion service: when no service runs, it installs it with your agents' hooks, so you need
+            The same character, with the same animation, in a small window on your desktop. It carries the
+            companion service: when no service runs, it installs it with your agents' hooks, so you need
             no clone of the repository and no Node.js. If a service from a clone runs, the app follows that one.
 
             > [!TIP]
@@ -283,19 +307,20 @@ jobs:
 
             Then open it from Applications. It has no Dock icon: look for it in the menu bar.
 
-            #### 🪟 Windows (x64)
+            #### 🪟 Windows (x64 and Arm64)
 
             | File | Description |
             | --- | --- |
-            | `agent-companion-desktop-*-windows-x64-setup.exe` | Windows installer |
+            | `agent-companion-desktop-*-windows-x64-setup.exe` | Windows installer for Intel and AMD PCs |
+            | `agent-companion-desktop-*-windows-arm64-setup.exe` | Windows installer for Arm PCs (Snapdragon) |
 
             The app isn't code-signed, so Windows may flag it:
             1. If your browser warns about the download, choose **Keep**.
             2. When you see **Windows protected your PC**, choose **More info**.
             3. Then choose **Run anyway**.
 
-            The companion service doesn't run on Windows itself (use [WSL 2](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#windows-wsl-2)),
-            so on Windows the desktop app shows the character but can't follow your agents yet.
+            The app installs the companion service for your Windows account and starts it when you sign in.
+            Agents that run in WSL 2 can use it too: install their hooks from **Settings**.
 
             #### 🐧 Linux (x86_64)
 

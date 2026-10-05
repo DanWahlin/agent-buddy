@@ -13,6 +13,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 const POLL: Duration = Duration::from_millis(400);
+#[cfg(unix)]
 const TIMEOUT: Duration = Duration::from_millis(1500);
 const MAX_REPLY_BYTES: u64 = 256 * 1024;
 const MAX_BADGES: usize = 4;
@@ -74,14 +75,13 @@ impl Snapshot {
 
 /// Where the daemon listens. Mirrors `daemon/src/paths.ts`.
 ///
-/// The daemon has no Windows build (its README sends Windows users to WSL 2),
-/// so on Windows there is nothing to follow.
+/// On Windows that is a named pipe per user, not a file.
 pub fn socket_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("AGENT_COMPANION_SOCKET") {
         return Some(PathBuf::from(path));
     }
     if cfg!(windows) {
-        return None;
+        return Some(PathBuf::from(windows_pipe_name(&std::env::var("USERNAME").ok()?)));
     }
     let home = PathBuf::from(std::env::var_os("HOME")?);
     if cfg!(target_os = "macos") {
@@ -120,7 +120,50 @@ pub fn request(path: &std::path::Path, body: &Value) -> Option<Value> {
     serde_json::from_str(reply.trim()).ok()
 }
 
-#[cfg(not(unix))]
+/// The pipe name `paths.ts` builds from the user name. Node counts UTF-16
+/// units, so a character outside that safe set becomes one `_` per unit.
+pub fn windows_pipe_name(user: &str) -> String {
+    let mut safe = String::new();
+    for c in user.chars() {
+        if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+            safe.push(c);
+        } else {
+            safe.extend(std::iter::repeat('_').take(c.len_utf16()));
+        }
+    }
+    safe.truncate(64);
+    if safe.is_empty() {
+        safe.push_str("user");
+    }
+    format!(r"\\.\pipe\esp32-agent-companion-{safe}")
+}
+
+/// One request, one newline-delimited JSON reply. A named pipe cannot
+/// half-close, so the daemon answers at the newline and then ends the pipe.
+#[cfg(windows)]
+pub fn request(path: &std::path::Path, body: &Value) -> Option<Value> {
+    const ERROR_PIPE_BUSY: i32 = 231;
+    let mut pipe = None;
+    for _ in 0..10 {
+        match std::fs::OpenOptions::new().read(true).write(true).open(path) {
+            Ok(file) => {
+                pipe = Some(file);
+                break;
+            }
+            Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY) => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return None,
+        }
+    }
+    let mut pipe = pipe?;
+    pipe.write_all(format!("{body}\n").as_bytes()).ok()?;
+    let mut reply = String::new();
+    pipe.take(MAX_REPLY_BYTES).read_to_string(&mut reply).ok()?;
+    serde_json::from_str(reply.trim()).ok()
+}
+
+#[cfg(not(any(unix, windows)))]
 pub fn request(_path: &std::path::Path, _body: &Value) -> Option<Value> {
     None
 }
@@ -333,6 +376,15 @@ pub fn settings_url() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_windows_pipe_name_matches_the_daemon() {
+        assert_eq!(windows_pipe_name("Dan"), r"\\.\pipe\esp32-agent-companion-Dan");
+        assert_eq!(windows_pipe_name("Dan W"), r"\\.\pipe\esp32-agent-companion-Dan_W");
+        assert_eq!(windows_pipe_name("dé😀"), r"\\.\pipe\esp32-agent-companion-d___");
+        assert_eq!(windows_pipe_name(""), r"\\.\pipe\esp32-agent-companion-user");
+        assert_eq!(windows_pipe_name(&"a".repeat(80)).len(), r"\\.\pipe\esp32-agent-companion-".len() + 64);
+    }
 
     #[test]
     fn a_status_gives_the_character_visibility_backdrop_and_badges() {

@@ -145,6 +145,13 @@ function renderAgents() {
     meta.textContent = `${detected} · hook ${agent.hookStatus} · ${agent.enabled ? 'enabled' : 'disabled'}`
       + `${agent.activeSessions ? ` · ${agent.activeSessions} active` : ''}`;
     body.append(title, meta);
+    if (agent.locations?.length) body.append(agentLocations(agent.locations));
+    if (agent.hookStatus === 'outdated') {
+      const badge = document.createElement('span');
+      badge.className = 'badge action approve';
+      badge.textContent = 'Hook outdated';
+      title.after(badge);
+    }
     if (agent.action) {
       const badge = document.createElement('span');
       badge.className = `badge action ${agent.action.kind}`;
@@ -156,17 +163,24 @@ function renderAgents() {
       hint.textContent = agent.hint;
       body.append(hint);
     }
+    if (agent.warning) {
+      const warning = document.createElement('p');
+      warning.className = 'hint agent-warning';
+      warning.setAttribute('role', 'alert');
+      warning.textContent = agent.warning;
+      body.append(warning);
+    }
 
     const actions = document.createElement('div');
     actions.className = 'actions agent-actions';
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'secondary';
-    toggle.textContent = agent.enabled ? 'Disable' : 'Enable';
+    sizedLabel(toggle, agent.enabled ? 'Disable' : 'Enable', 'Disable');
     toggle.addEventListener('click', () => agentAction(agent.id, agent.enabled ? 'disable' : 'enable'));
     const install = document.createElement('button');
     install.type = 'button';
-    install.textContent = agent.installed ? 'Reinstall' : 'Install hook';
+    sizedLabel(install, agent.installed ? 'Reinstall' : 'Install hook', 'Install hook');
     install.disabled = !agent.detected && agent.id !== 'copilot';
     install.addEventListener('click', () => agentAction(agent.id, 'install'));
     const remove = document.createElement('button');
@@ -182,13 +196,51 @@ function renderAgents() {
   }
 }
 
+// Where the agent can run (Windows and each WSL distribution), with the hook status in each.
+// Install and Remove act on all of them.
+function agentLocations(locations) {
+  const list = document.createElement('ul');
+  list.className = 'agent-locations';
+  for (const location of locations) {
+    const row = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'agent-location-name';
+    name.textContent = location.name;
+    const detail = document.createElement('span');
+    detail.className = `agent-location-status ${location.hookStatus}`;
+    detail.textContent = [location.detected ? 'detected' : 'not detected', `hook ${location.hookStatus}`,
+      ...(location.running ? [] : ['not running'])].join(' · ');
+    row.append(name, detail);
+    if (location.hint) {
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = location.hint;
+      row.append(hint);
+    }
+    list.append(row);
+  }
+  return list;
+}
+
+// The button keeps the width of its widest label, so the buttons next to it
+// don't move when the label changes.
+function sizedLabel(button, label, widest) {
+  const text = document.createElement('span');
+  text.textContent = label;
+  button.classList.add('sized');
+  button.dataset.widest = widest;
+  button.replaceChildren(text);
+}
+
 async function agentAction(id, action) {
   try {
     const path = action === 'remove' ? `/api/agents/${encodeURIComponent(id)}`
       : `/api/agents/${encodeURIComponent(id)}/${action}`;
     status.agents = await api(path, {method: action === 'remove' ? 'DELETE' : 'POST'});
     renderAgents();
-    toast('Agent settings updated.', 'success');
+    const warning = status.agents.find(agent => agent.id === id)?.warning;
+    if (warning) toast(warning, 'error');
+    else toast('Agent settings updated.', 'success');
   } catch (error) {
     toast(error.message, 'error');
   }

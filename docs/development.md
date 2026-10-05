@@ -203,8 +203,10 @@ npm run status
 
 The daemon has adapter modules under `daemon/src/agents/`. Each adapter owns
 detection, hook install/uninstall, hook status, and native-event normalization.
-Hook file edits are read-modify-write and create a `.bak` beside a previous file
-the first time the companion changes it. Our entries are identified by the
+Hook file edits are read-modify-write. They skip the write when nothing changes, and
+never create a file on uninstall. Before a change, they create a `.bak` beside a
+previous file (only the first time) and a `<file>.agent-companion-<time>.bak` copy
+(mode 600, the last five are kept). Our entries are identified by the
 compiled `cli.js` path plus `hook <agent>` arguments, so reinstalling doesn't
 duplicate commands and uninstalling doesn't remove another tool's hook.
 
@@ -212,9 +214,9 @@ duplicate commands and uninstalling doesn't remove another tool's hook.
 | --- | --- | --- | --- |
 | GitHub Copilot | `~/.copilot/hooks/agent-companion.json` | Existing v1 event names map directly. The old `hook <event>` command still works and is treated as Copilot. | Restart GitHub Copilot after setup. |
 | Claude Code | `~/.claude/settings.json` | `PermissionRequest`, `Elicitation`, and selected notifications become Needs attention. `AskUserQuestion` and `ExitPlanMode` are treated as waiting for the user. | Claude may ask for folder trust. |
-| Codex CLI | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. |
-| Grok Build | `~/.grok/hooks/agent-companion.json` | Permission and elicitation notifications become Needs attention. `Stop` only completes when its reason is `end_turn`; channel shutdown clears. | Grok's hook directory is trusted. Claude hooks invoked by Grok are ignored when Grok's own hook is installed and enabled. |
-| Hermes Agent | `~/.hermes/config.yaml` | `pre_llm_call` starts work, `pre_tool_call`/`post_tool_call` track tools, `pre_approval_request` surfaces attention, and turn `on_session_end` completes. | Hermes asks you to approve the shell hook the first time it runs. Don't pre-seed its allowlist. |
+| Codex CLI | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. On Windows, Codex runs hooks in its session shell (PowerShell), so `commandWindows` uses `& '<node>' '<cli>' hook codex <event>`; the old cmd.exe form shows as `outdated`. |
+| Grok Build | `~/.grok/hooks/agent-companion.json` | Permission and elicitation notifications become Needs attention. `Stop` only completes when its reason is `end_turn`; channel shutdown clears. | Grok's hook directory is trusted. Claude hooks invoked by Grok are ignored when Grok's own hook is installed and enabled. Grok passes only `command` (not `args`) for Claude hooks, so it reports the companion Claude hook as failed; the agent card's note gives the `[compat.claude] hooks = false` fix. On Windows, Grok runs hooks in PowerShell, so the command uses `& '<node>' '<cli>' hook grok <event>`; the old double-quoted form shows as `outdated`. |
+| Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | `pre_llm_call` starts work, `pre_tool_call`/`post_tool_call` track tools, `pre_approval_request` surfaces attention, and turn `on_session_end` completes. | Hermes asks you to approve the shell hook the first time it runs. Don't pre-seed its allowlist. |
 | OpenClaw | `<daemon data>/integrations/openclaw-plugin/` | Native plugin forwards lifecycle events directly to the daemon socket. Gateway WebSocket approvals aren't implemented yet. | Installer links/enables the plugin through `openclaw` only when the command is on `PATH`. |
 
 Agent enablement lives in `agents.json` beside `state.json`. Missing entries

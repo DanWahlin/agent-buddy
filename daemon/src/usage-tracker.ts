@@ -2,6 +2,7 @@ import {mkdir, open, readdir, readFile, rename, stat, writeFile} from 'node:fs/p
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {usageCachePath} from './paths.js';
+import {claudeHome, codexHome, copilotHome} from './agents/homes.js';
 
 // How far back usage counts: since local midnight, since the 1st of the month, or only the
 // sessions that are active now (each one in full).
@@ -40,6 +41,8 @@ interface Candidate {
 
 export interface UsageTrackerOptions {
   home?: string;
+  // The agents' own folder variables, such as CODEX_HOME.
+  env?: NodeJS.ProcessEnv;
   cachePath?: string;
   now?: () => number;
 }
@@ -61,6 +64,7 @@ const UUID_FILE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 // Copilot log is read once. The positions are saved, so a restart does not read it again.
 export class UsageTracker {
   readonly #home: string;
+  readonly #env: NodeJS.ProcessEnv;
   readonly #cachePath: string;
   readonly #now: () => number;
   #files = new Map<string, FileRecord>();
@@ -69,6 +73,7 @@ export class UsageTracker {
 
   constructor(options: UsageTrackerOptions = {}) {
     this.#home = options.home ?? homedir();
+    this.#env = options.env ?? (options.home ? {} : process.env);
     this.#cachePath = options.cachePath ?? usageCachePath();
     this.#now = options.now ?? Date.now;
   }
@@ -152,10 +157,10 @@ export class UsageTracker {
       if (info.mtimeMs >= monthStart || active.has(`${source}:${session}`))
         found.push({path, source, session, size: info.size});
     };
-    const copilot = join(this.#home, '.copilot', 'session-state');
+    const copilot = join(copilotHome(this.#home, this.#env), 'session-state');
     for (const session of await names(copilot))
       await consider(join(copilot, session, 'events.jsonl'), 'copilot', session);
-    const claude = join(this.#home, '.claude', 'projects');
+    const claude = join(claudeHome(this.#home, this.#env), 'projects');
     for (const project of await names(claude)) {
       const projectDir = join(claude, project);
       for (const entry of await names(projectDir)) {
@@ -171,7 +176,7 @@ export class UsageTracker {
     }
     // Codex files sessions by the day they started (year/month/day). A session that started in an
     // earlier month can still be in use, so look at all of them; the file time picks which to read.
-    const codex = join(this.#home, '.codex', 'sessions');
+    const codex = join(codexHome(this.#home, this.#env), 'sessions');
     for (const year of await names(codex)) {
       for (const month of await names(join(codex, year))) {
         const monthDir = join(codex, year, month);

@@ -3,19 +3,21 @@ import {EventEmitter} from 'node:events';
 import {homedir, userInfo} from 'node:os';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {
-  adapters,
   agentStatuses,
   markAgentSeen,
   defaultAgentContext,
   installAgent,
   isAgentEnabled,
   namespaceAgentPayload,
+  removeAllAgentHooks,
   setAgentEnabled,
+  setAgentHookRemoved,
   uninstallAgent,
   type AgentContext,
   type AgentId,
   type AgentStatus,
 } from './agents/index.js';
+import {copilotHome} from './agents/homes.js';
 import {
   addCharacterPack,
   isCharacterName,
@@ -175,6 +177,8 @@ export class CompanionService extends EventEmitter {
   readonly #transport: DeviceTransport;
   readonly #coordinator: StateCoordinator;
   readonly #agentContext: AgentContext;
+  // Warnings from the last hook install or removal, shown in Settings until the next one.
+  readonly #agentWarnings = new Map<AgentId, string>();
   readonly #lastAgentEvents = new Map<AgentId, number>();
   readonly #badgeIcons: AgentBadgeIconDefinition[];
   readonly #characterBuilder: Pick<CharacterPackBuilder, 'refresh'>;
@@ -347,7 +351,13 @@ export class CompanionService extends EventEmitter {
   }
 
   agentStatuses(): AgentStatus[] {
-    return agentStatuses(this.#agentContext, this.#coordinator.agentActivity(), this.#lastAgentEvents);
+    return agentStatuses(this.#agentContext, this.#coordinator.agentActivity(), this.#lastAgentEvents)
+      .map(agent => this.#agentWarnings.has(agent.id) ? {...agent, warning: this.#agentWarnings.get(agent.id)} : agent);
+  }
+
+  #setAgentWarnings(id: AgentId, warnings: string[]): void {
+    if (warnings.length) this.#agentWarnings.set(id, warnings.join(' '));
+    else this.#agentWarnings.delete(id);
   }
 
   handleHook(agent: AgentId, event: HookEvent, payload: HookPayload): boolean {
@@ -382,13 +392,15 @@ export class CompanionService extends EventEmitter {
   }
 
   async installAgentHook(id: AgentId): Promise<AgentStatus[]> {
-    await installAgent(id, this.#agentContext);
+    this.#setAgentWarnings(id, await installAgent(id, this.#agentContext));
+    await setAgentHookRemoved(id, false);
     this.emit('change');
     return this.agentStatuses();
   }
 
   async uninstallAgentHook(id: AgentId): Promise<AgentStatus[]> {
-    await uninstallAgent(id, this.#agentContext);
+    this.#setAgentWarnings(id, await uninstallAgent(id, this.#agentContext));
+    await setAgentHookRemoved(id, true);
     this.emit('change');
     return this.agentStatuses();
   }
@@ -497,23 +509,15 @@ export class CompanionService extends EventEmitter {
   // Removes the agent hooks now. Then, after a short time, closes the desktop app and starts a
   // script that removes the app, this service and (unless keepData) its data, and stops the service.
   async uninstall(keepData: boolean, run: (plan: UninstallPlan) => void = runUninstall): Promise<UninstallResult> {
-    if (process.platform !== 'darwin' && process.platform !== 'linux')
-      throw new Error('Uninstall from Settings works on macOS and Linux only. See "Uninstall" in the README.');
+    const platform = process.platform;
+    if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32')
+      throw new Error('Uninstall from Settings works on macOS, Linux and Windows only. See "Uninstall" in the README.');
     if (this.#uninstalling) throw new Error('The uninstall is already in progress.');
     this.#uninstalling = true;
-    const manual: string[] = [];
-    for (const adapter of adapters) {
-      try {
-        // Only hooks that are there, so an agent without hooks does not get new, empty config files.
-        if (['missing', 'unsupported'].includes(adapter.hookStatus(this.#agentContext))) continue;
-        await uninstallAgent(adapter.id, this.#agentContext);
-      } catch (error) {
-        manual.push(`Remove the ${adapter.name} hook yourself: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+    const manual = await removeAllAgentHooks(this.#agentContext);
     const home = homedir();
     const plan = createUninstallPlan({
-      platform: process.platform,
+      platform,
       home,
       uid: process.getuid?.() ?? userInfo().uid,
       dataDir: defaultDataDirectory(process.platform, home, process.env),
@@ -521,9 +525,12 @@ export class CompanionService extends EventEmitter {
       serviceRoot: this.#service.root,
       app: this.#desktopApp.location(),
       keepData,
+      copilotHome: copilotHome(home, process.env),
       configHome: process.env.XDG_CONFIG_HOME,
       dataHome: process.env.XDG_DATA_HOME,
       cacheHome: process.env.XDG_CACHE_HOME,
+      appData: process.env.APPDATA,
+      localAppData: process.env.LOCALAPPDATA,
     });
     console.log(`[uninstall] hooks removed; removing ${plan.remove.length} paths in ${uninstallDelayMs} ms`);
     setTimeout(() => void this.#finishUninstall(plan, run), uninstallDelayMs);

@@ -2,7 +2,7 @@ import {chmod, mkdir, unlink} from 'node:fs/promises';
 import {createConnection, createServer, type Socket} from 'node:net';
 import {dirname} from 'node:path';
 import {characterStates, hookEvents, type DaemonRequest} from './protocol.js';
-import {socketPath, statePath} from './paths.js';
+import {isNamedPipe, socketPath, statePath} from './paths.js';
 import {StateCoordinator} from './state-coordinator.js';
 import {StateStore} from './state-store.js';
 import {DeviceTransport} from './device-transport.js';
@@ -10,7 +10,7 @@ import {isConnectionMode, loadConnectionMode} from './connection-mode.js';
 import {CompanionService} from './companion-service.js';
 import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
-import {defaultAgentContext, normalizeAgentHook} from './agents/index.js';
+import {defaultAgentContext, normalizeAgentHook, otherAgentLocations} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
 import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
@@ -31,6 +31,7 @@ export async function runDaemon(): Promise<void> {
   const store = new StateStore(statePath());
   const restored = await store.load();
   const agentContext = defaultAgentContext();
+  agentContext.locations = otherAgentLocations(agentContext);
   const badgeIcons = await loadAgentBadgeIcons(agentContext.dataDir);
   const coordinator = new StateCoordinator(state => transport.setState(state), {
     restored,
@@ -50,7 +51,8 @@ export async function runDaemon(): Promise<void> {
   service.syncBadges();
   service.startUsage();
   const path = socketPath();
-  await mkdir(dirname(path), {recursive: true, mode: 0o700});
+  const pipe = isNamedPipe(path);
+  if (!pipe) await mkdir(dirname(path), {recursive: true, mode: 0o700});
   await removeStaleSocket(path);
 
   const companion = service;
@@ -67,7 +69,7 @@ export async function runDaemon(): Promise<void> {
       resolve();
     });
   });
-  await chmod(path, 0o600);
+  if (!pipe) await chmod(path, 0o600);
   await transport.start(await loadConnectionMode());
   console.log(`[daemon] listening ${path}`);
   settingsUrl = await startSettingsServer(companion);
@@ -78,30 +80,44 @@ export async function runDaemon(): Promise<void> {
     await store.flush(coordinator.snapshot());
     await transport.stop();
     await new Promise<void>(resolve => server.close(() => resolve()));
-    await unlink(path).catch(() => undefined);
+    if (!pipe) await unlink(path).catch(() => undefined);
   };
   process.once('SIGINT', () => void shutdown().then(() => process.exit(0)));
   process.once('SIGTERM', () => void shutdown().then(() => process.exit(0)));
+  // Windows sends SIGBREAK for Ctrl+Break and when a console closes.
+  if (process.platform === 'win32')
+    process.once('SIGBREAK', () => void shutdown().then(() => process.exit(0)));
 }
 
 export const agentHookTimeoutMs = 45_000;
 
-function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: DeviceTransport,
+export function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: DeviceTransport,
                       service: CompanionService, settingsUrl: () => string | null): void {
   socket.setEncoding('utf8');
   socket.setTimeout(2000, () => socket.destroy());
   socket.on('error', () => undefined);
   let input = '';
+  let handled = false;
+  // Requests end at the first newline. Windows named pipes cannot half-close reliably, so clients
+  // there keep the pipe open; Unix clients still half-close, and 'end' covers older clients.
+  const handleOnce = (text: string) => {
+    if (handled) return;
+    handled = true;
+    handleRequest(text);
+  };
   socket.on('data', chunk => {
     input += chunk;
-    if (input.length > 65536) socket.destroy();
+    const newline = input.indexOf('\n');
+    if (newline >= 0) handleOnce(input.slice(0, newline));
+    else if (input.length > 65536) socket.destroy();
   });
+  socket.on('end', () => handleOnce(input));
   const reply = (work: Promise<unknown>) => void work.then(
     result => respond(socket, result),
     error => respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)}));
-  socket.on('end', () => {
+  const handleRequest = (text: string) => {
     try {
-      const request = JSON.parse(input.trim()) as DaemonRequest;
+      const request = JSON.parse(text.trim()) as DaemonRequest;
       if (request.type === 'hook') {
         const agent = isAgentId(request.agent) ? request.agent : 'copilot';
         const eventName = typeof request.event === 'string' ? request.event : undefined;
@@ -184,10 +200,11 @@ function handleSocket(socket: Socket, coordinator: StateCoordinator, transport: 
     } catch (error) {
       respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)});
     }
-  });
+  };
 }
 
 function respond(socket: Socket, response: unknown): void {
+  if (socket.destroyed) return;
   socket.end(`${JSON.stringify(response)}\n`);
 }
 
@@ -204,6 +221,8 @@ async function removeStaleSocket(path: string): Promise<void> {
     });
   });
   if (active) throw new Error(`Agent Companion daemon is already listening at ${path}`);
+  // A named pipe goes away with its last handle, so there is no file to remove.
+  if (isNamedPipe(path)) return;
   try {
     await unlink(path);
   } catch (error) {

@@ -13,6 +13,7 @@
 mod daemon;
 mod flasher;
 mod hyprland;
+mod launcher;
 mod packs;
 mod placement;
 mod pointer;
@@ -52,6 +53,8 @@ struct App {
     tray: Mutex<Option<tauri::tray::TrayIcon>>,
     /// The tray's Show/Hide item, whose label follows the window.
     visibility: Mutex<Option<MenuItem<Wry>>>,
+    /// Whether this build carries the companion service and starts it itself.
+    bundled: AtomicBool,
     /// The address the Settings window loaded. The lock also stops two quick
     /// clicks from making two windows.
     settings: Mutex<Option<String>>,
@@ -82,6 +85,9 @@ fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
         // companion service names, from the service's own packs.
         let message = if app.daemon.lock().unwrap().is_some() {
             "The companion service has no character pack to show yet."
+        } else if app.bundled.load(Ordering::Relaxed) {
+            // The window in the middle of the screen says the service is starting.
+            return;
         } else {
             "Waiting for the companion service. Start it with: npm run setup"
         };
@@ -288,6 +294,47 @@ fn show_settings(handle: &AppHandle, address: String) {
     }
 }
 
+/// The label of the window that says the companion service is starting.
+const STARTING: &str = "starting";
+
+/// While a release build waits for its companion service, say so in a small
+/// window in the middle of the screen: the character has nothing to show yet,
+/// and its own window may be in a corner. The window closes when the service
+/// answers. A service that answers at once gets no window at all.
+fn show_starting(handle: AppHandle, app: Arc<App>) {
+    if !app.bundled.load(Ordering::Relaxed) {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        if app.daemon.lock().unwrap().is_some() || handle.get_webview_window(STARTING).is_some() {
+            return;
+        }
+        // Off the main thread, as making a webview from it deadlocks on Windows.
+        let built = WebviewWindowBuilder::new(&handle, STARTING, WebviewUrl::App("starting.html".into()))
+            .title("Agent Companion")
+            .inner_size(440.0, 250.0)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .always_on_top(true)
+            .center()
+            .build();
+        let window = match built {
+            Ok(window) => window,
+            Err(error) => return eprintln!("[starting] could not open the window: {error}"),
+        };
+        while app.daemon.lock().unwrap().is_none() {
+            // Closed by the user.
+            if handle.get_webview_window(STARTING).is_none() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        let _ = window.close();
+    });
+}
+
 /// The case's lower button mutes and unmutes the page's sounds. The daemon
 /// keeps the setting, so Settings shows the same. Off the main thread, as the
 /// daemon is asked over a socket.
@@ -305,7 +352,7 @@ fn show_context_menu(window: WebviewWindow) {
     let handle = window.app_handle();
     let build = || -> tauri::Result<Menu<Wry>> {
         let hide = MenuItem::with_id(handle, "context:hide", "Hide", true, None::<&str>)?;
-        let settings = MenuItem::with_id(handle, "context:settings", "Open Settings…", true, None::<&str>)?;
+        let settings = MenuItem::with_id(handle, "context:settings", "Settings", true, None::<&str>)?;
         let separator = tauri::menu::PredefinedMenuItem::separator(handle)?;
         let close = MenuItem::with_id(handle, "context:close", "Close", true, None::<&str>)?;
         Menu::with_items(handle, &[&hide, &settings, &separator, &close])
@@ -372,6 +419,10 @@ fn main() {
     if let Some(options) = flasher::options(&args) {
         std::process::exit(flasher::run(options));
     }
+    // Windows starts the companion service through this binary at sign-in; no window either.
+    if let Some(mode) = launcher::options(&args) {
+        std::process::exit(launcher::run(mode));
+    }
 
     #[cfg(target_os = "linux")]
     linux_environment();
@@ -404,6 +455,7 @@ fn main() {
         current: Mutex::new(None),
         tray: Mutex::new(None),
         visibility: Mutex::new(None),
+        bundled: AtomicBool::new(false),
         settings: Mutex::new(None),
     });
 
@@ -418,6 +470,10 @@ fn main() {
         // full for its icon to show.
         .plugin(tauri_plugin_single_instance::init(move |handle, args, _cwd| {
             let Some(window) = handle.get_webview_window("main") else { return };
+            // Starting the app again also starts the service again if it stopped.
+            let resources = handle.path().resource_dir().ok();
+            std::thread::spawn(move || service::ensure(resources));
+            show_starting(handle.clone(), again.clone());
             match Command::from_args(&args) {
                 Command::Show => set_user_hidden(&again, &window, false),
                 Command::Hide => set_user_hidden(&again, &window, true),
@@ -498,6 +554,8 @@ fn main() {
             // when no other one runs. A new user then sees Settings, as
             // `npm run setup` shows it, once the new service answers.
             let resources = handle.path().resource_dir().ok();
+            setup.bundled.store(service::bundled(resources.as_deref()), Ordering::Relaxed);
+            show_starting(handle.handle().clone(), setup.clone());
             let welcome = handle.handle().clone();
             std::thread::spawn(move || {
                 if !service::ensure(resources) {
@@ -590,11 +648,15 @@ fn linux_environment() {
     // its own window, or keep it above others, and a pet needs all three; GTK's
     // X11 backend (XWayland) can. Hyprland answers all three over its IPC
     // (hyprland.rs), so there it stays native. A backend the user chose wins.
-    if std::env::var_os("WAYLAND_DISPLAY").is_some()
-        && std::env::var_os("GDK_BACKEND").is_none()
-        && !hyprland::available()
-    {
-        std::env::set_var("GDK_BACKEND", "x11");
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() && !hyprland::available() {
+        match std::env::var("GDK_BACKEND") {
+            Err(_) => std::env::set_var("GDK_BACKEND", "x11"),
+            Ok(backend) if backend.starts_with("wayland") => eprintln!(
+                "[desktop] GDK_BACKEND={backend}: on this Wayland desktop the character cannot follow \
+                 the cursor, move itself or stay above other windows. Unset GDK_BACKEND to use XWayland."
+            ),
+            Ok(_) => {}
+        }
     }
     // WebKitGTK's DMA-BUF renderer draws a blank window on NVIDIA's driver.
     if std::path::Path::new("/proc/driver/nvidia/version").exists()
@@ -621,7 +683,7 @@ fn settle_on_hyprland(window: &WebviewWindow) {
 /// With no title bar and no taskbar button, the tray is the only way in.
 fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>) -> tauri::Result<()> {
     let visibility = MenuItem::with_id(handle, "visibility", "Hide Agent Companion", true, None::<&str>)?;
-    let settings = MenuItem::with_id(handle, "settings", "Open Settings…", true, None::<&str>)?;
+    let settings = MenuItem::with_id(handle, "settings", "Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(handle, "quit", "Quit Agent Companion", true, None::<&str>)?;
     let menu = Menu::with_items(handle, &[&visibility, &settings, &quit])?;
 

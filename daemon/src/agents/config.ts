@@ -2,20 +2,21 @@ import {chmod, mkdir, readFile, rename, writeFile} from 'node:fs/promises';
 import {existsSync, readFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {agentsConfigPath} from '../paths.js';
-import {uniqueTemporaryPath} from './file-utils.js';
+import {recordOf, uniqueTemporaryPath} from './file-utils.js';
 import type {AgentId} from './types.js';
 
 export interface AgentsConfig {
   enabled: Partial<Record<AgentId, boolean>>;
   // When each agent's hooks first reached the daemon; proves the hooks are loaded.
   seen?: Partial<Record<AgentId, number>>;
+  // Agents whose hooks the user removed. Setup and app updates don't add these hooks back.
+  removed?: Partial<Record<AgentId, boolean>>;
 }
 
 export async function loadAgentsConfig(path = agentsConfigPath()): Promise<AgentsConfig> {
   try {
     const value = JSON.parse(await readFile(path, 'utf8')) as Partial<AgentsConfig>;
-    return {enabled: object(value.enabled) as Partial<Record<AgentId, boolean>>,
-            seen: object(value.seen) as Partial<Record<AgentId, number>>};
+    return fromJson(value);
   } catch {
     return {enabled: {}};
   }
@@ -24,8 +25,7 @@ export async function loadAgentsConfig(path = agentsConfigPath()): Promise<Agent
 export function loadAgentsConfigSync(path = agentsConfigPath()): AgentsConfig {
   try {
     const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<AgentsConfig>;
-    return {enabled: object(value.enabled) as Partial<Record<AgentId, boolean>>,
-            seen: object(value.seen) as Partial<Record<AgentId, number>>};
+    return fromJson(value);
   } catch {
     return {enabled: {}};
   }
@@ -58,6 +58,8 @@ export function isAgentEnabledSync(id: AgentId, detected = true, path = agentsCo
   return configured ?? detected;
 }
 
-function object(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+function fromJson(value: Partial<AgentsConfig>): AgentsConfig {
+  return {enabled: recordOf(value.enabled) as Partial<Record<AgentId, boolean>>,
+          seen: recordOf(value.seen) as Partial<Record<AgentId, number>>,
+          removed: recordOf(value.removed) as Partial<Record<AgentId, boolean>>};
 }

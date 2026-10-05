@@ -2,9 +2,9 @@ import {spawn} from 'node:child_process';
 import {constants, existsSync, readFileSync} from 'node:fs';
 import {access, chmod, mkdir, rename, writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
-import {dirname, isAbsolute, join} from 'node:path';
+import {dirname, isAbsolute, posix, win32} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {desktopAppPath} from './paths.js';
+import {desktopAppPath, windowsLocalAppData} from './paths.js';
 
 // The desktop app asks for status about every 400 ms, so a longer gap means it has gone.
 const seenWithinMs = 3000;
@@ -190,9 +190,18 @@ export class DesktopApp {
 }
 
 // The download's usual install locations come first, then a build in this repository.
-export function defaultDesktopAppLocations(platform: NodeJS.Platform, home: string, repository: string): string[] {
+export function defaultDesktopAppLocations(platform: NodeJS.Platform, home: string, repository: string,
+                                           env: NodeJS.ProcessEnv = process.env): string[] {
+  const program = platform === 'win32' ? 'agent-companion-desktop.exe' : 'agent-companion-desktop';
+  const {join} = platform === 'win32' ? win32 : posix;
   const build = (profile: string) =>
-    join(repository, 'desktop', 'apps', 'desktop', 'src-tauri', 'target', profile, 'agent-companion-desktop');
+    join(repository, 'desktop', 'apps', 'desktop', 'src-tauri', 'target', profile, program);
+  if (platform === 'win32') {
+    const programFiles = env.ProgramFiles?.trim() || 'C:\\Program Files';
+    // The installer is per user by default; a per-machine install goes to Program Files.
+    return [join(windowsLocalAppData(home, env), 'Agent Companion', program),
+            join(programFiles, 'Agent Companion', program), build('release'), build('debug')];
+  }
   if (platform === 'darwin')
     return ['/Applications/Agent Companion.app', join(home, 'Applications', 'Agent Companion.app'),
             build('release'), build('debug')];
@@ -222,7 +231,7 @@ export function parseDesktopAppReport(report: DesktopAppReport): SavedDesktopApp
 // A macOS app bundle's program is inside it; an AppImage or plain binary runs as it is.
 export function desktopFlasherPath(executable: string, platform: NodeJS.Platform): string {
   return platform === 'darwin' && /\.app\/?$/.test(executable)
-    ? join(executable.replace(/\/+$/, ''), 'Contents', 'MacOS', 'agent-companion-desktop') : executable;
+    ? posix.join(executable.replace(/\/+$/, ''), 'Contents', 'MacOS', 'agent-companion-desktop') : executable;
 }
 
 function isSafeValue(value: string): boolean {

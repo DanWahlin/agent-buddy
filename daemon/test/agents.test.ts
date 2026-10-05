@@ -1,35 +1,52 @@
 import assert from 'node:assert/strict';
-import {existsSync} from 'node:fs';
-import {lstat, mkdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {existsSync, readdirSync} from 'node:fs';
+import {chmod, lstat, mkdir, readFile, rm, stat, symlink, writeFile} from 'node:fs/promises';
+import {dirname, join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 import {parseDocument} from 'yaml';
-import {claudeAdapter} from '../src/agents/claude.js';
+import {claudeAdapter, claudeConfigPath} from '../src/agents/claude.js';
 import {codexAdapter} from '../src/agents/codex.js';
-import {copilotAdapter} from '../src/agents/copilot.js';
-import {grokAdapter} from '../src/agents/grok.js';
+import {codexQuote} from '../src/agents/commands.js';
+import {copilotAdapter, copilotAppVersion, copilotVersions} from '../src/agents/copilot.js';
+import {grokAdapter, runsClaudeHooks} from '../src/agents/grok.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
 import {openclawAdapter} from '../src/agents/openclaw.js';
-import {defaultAgentContext, shouldIgnoreGrokClaudeHook} from '../src/agents/index.js';
+import {agentStatuses, defaultAgentContext, installDetectedAgents, setAgentHookRemoved,
+        shouldIgnoreGrokClaudeHook} from '../src/agents/index.js';
+import {loadAgentsConfig} from '../src/agents/config.js';
 import {StateCoordinator} from '../src/state-coordinator.js';
 import type {AgentContext} from '../src/agents/types.js';
 
-async function fixture(): Promise<{home: string; ctx: AgentContext; cleanup: () => Promise<void>}> {
+// Windows has no POSIX permission bits, so mode checks run only on macOS and Linux.
+const posix = process.platform !== 'win32';
+
+// Creates the files, so the hook status checks find this install's Node.js and CLI on disk.
+async function touch(...paths: string[]): Promise<void> {
+  for (const path of paths) {
+    await mkdir(dirname(path), {recursive: true});
+    await writeFile(path, '');
+  }
+}
+
+async function fixture(): Promise<{root: string; home: string; ctx: AgentContext; cleanup: () => Promise<void>}> {
   const root = join(process.cwd(), '.test-output', `agents-${randomUUID()}`);
   const home = join(root, 'home');
   await mkdir(home, {recursive: true});
+  const node = join(root, 'node bin', 'node');
+  const cli = join(root, 'agent companion', 'daemon', 'dist', 'src', 'cli.js');
+  await touch(node, cli);
   const ctx = defaultAgentContext({
     home,
-    node: '/opt/node/bin/node',
-    cli: '/repo/agent companion/daemon/dist/src/cli.js',
+    node,
+    cli,
     platform: 'darwin',
     env: {PATH: ''},
     dataDir: join(root, 'data'),
     socketPath: join(root, 'daemon.sock'),
     runCommand: async () => ({stdout: '', status: 0}),
   });
-  return {home, ctx, cleanup: async () => rm(root, {recursive: true, force: true})};
+  return {root, home, ctx, cleanup: async () => rm(root, {recursive: true, force: true})};
 }
 
 test('Claude install is merge-safe, idempotent, backed up, and removable', async () => {
@@ -205,6 +222,33 @@ test('Hermes install preserves YAML comments and removes only companion commands
   }
 });
 
+test('Grok tells the user how to stop it from running the Claude hook', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  try {
+    assert.equal(grokAdapter.note?.(ctx), undefined);
+    await grokAdapter.install(ctx);
+    assert.equal(grokAdapter.note?.(ctx), undefined, 'no note without the Claude hook');
+    await claudeAdapter.install(ctx);
+    assert.match(grokAdapter.note?.(ctx) ?? '', /\[compat\.claude\] hooks = false to .*config\.toml/);
+    assert.equal(runsClaudeHooks(ctx), true);
+    const config = join(home, '.grok', 'config.toml');
+    for (const text of ['[compat.claude]\nskills = true\nhooks = false # off\n', '[compat]\nclaude.hooks = false\n',
+                        'compat.claude.hooks = false\n', '[compat]\nclaude = { hooks = false }\n']) {
+      await writeFile(config, text);
+      assert.equal(runsClaudeHooks(ctx), false, text);
+      assert.equal(grokAdapter.note?.(ctx), undefined, text);
+    }
+    for (const text of ['[compat.claude]\nhooks = true\n', '[compat.cursor]\nhooks = false\n',
+                        '# [compat.claude]\n# hooks = false\n', '[compat.claude]\nmcps = false\n']) {
+      await writeFile(config, text);
+      assert.equal(runsClaudeHooks(ctx), true, text);
+    }
+    assert.equal(runsClaudeHooks({...ctx, env: {...ctx.env, GROK_CLAUDE_HOOKS_ENABLED: 'false'}}), false);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('Grok drop-in and OpenClaw plugin install without touching other files', async () => {
   const {home, ctx, cleanup} = await fixture();
   try {
@@ -224,8 +268,11 @@ test('Grok drop-in and OpenClaw plugin install without touching other files', as
     const withCli = {...ctx, env: {PATH: bin},
       runCommand: async (_command: string, args: string[]) => { calls.push(args); return {stdout: '', status: 0}; }};
     await openclawAdapter.install(withCli);
-    assert.match(await readFile(join(ctx.dataDir, 'integrations', 'openclaw-plugin', 'index.js'), 'utf8'),
-                 /agent: 'openclaw'/);
+    const plugin = await readFile(join(ctx.dataDir, 'integrations', 'openclaw-plugin', 'index.js'), 'utf8');
+    assert.match(plugin, /agent: 'openclaw'/);
+    const pipeTest = new RegExp(plugin.match(/\(\/(.+?)\/i\.test\(socketPath\)/)?.[1] ?? '$^', 'i');
+    assert.equal(pipeTest.test('\\\\.\\pipe\\esp32-agent-companion-Dan'), true);
+    assert.equal(pipeTest.test('/tmp/daemon.sock'), false);
     assert.deepEqual(calls.map(args => args.slice(0, 2)), [['plugins', 'install'], ['plugins', 'enable'], ['config', 'set']]);
     await assert.rejects(openclawAdapter.install({...withCli, runCommand: async () => { throw new Error('boom'); }}), /boom/);
     assert.equal(openclawAdapter.hookStatus(withCli), 'missing');
@@ -348,8 +395,10 @@ test('agents report the one-time step they still need', async () => {
   process.env.AGENT_COMPANION_AGENTS_CONFIG = config;
   try {
     await mkdir(join(home, '.codex'), {recursive: true});
-    const ctx = {home, node: '/abs/node', cli: '/abs/cli.js', platform: 'darwin' as const, env: {PATH: ''},
+    const ctx = {home, node: join(home, 'node'), cli: join(home, 'daemon', 'dist', 'src', 'cli.js'),
+                 platform: 'darwin' as const, env: {PATH: ''},
                  dataDir: home, socketPath: join(home, 'daemon.sock')};
+    await touch(ctx.node, ctx.cli);
     await codexAdapter.install(ctx);
     const codex = () => agentStatuses(ctx, new Map(), new Map()).find(agent => agent.id === 'codex');
     assert.equal(codex()?.action?.kind, 'approve');
@@ -368,5 +417,365 @@ test('agents report the one-time step they still need', async () => {
     if (previous === undefined) delete process.env.AGENT_COMPANION_AGENTS_CONFIG;
     else process.env.AGENT_COMPANION_AGENTS_CONFIG = previous;
     await rm(home, {recursive: true, force: true});
+  }
+});
+
+async function withAgentsConfig<T>(path: string, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.AGENT_COMPANION_AGENTS_CONFIG;
+  process.env.AGENT_COMPANION_AGENTS_CONFIG = path;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.AGENT_COMPANION_AGENTS_CONFIG;
+    else process.env.AGENT_COMPANION_AGENTS_CONFIG = previous;
+  }
+}
+
+test('hook status reads the hooks: stale, partial, or broken hooks are outdated, not installed', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, hermesAdapter]) {
+      assert.equal(adapter.hookStatus(ctx), 'missing', adapter.id);
+      await adapter.install(ctx);
+      assert.notEqual(adapter.hookStatus(ctx), 'missing', adapter.id);
+      assert.notEqual(adapter.hookStatus(ctx), 'outdated', adapter.id);
+    }
+
+    // Hooks that run another companion install.
+    const other = {...ctx, cli: join(root, 'other', 'daemon', 'dist', 'src', 'cli.js')};
+    await touch(other.cli);
+    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, hermesAdapter]) {
+      await adapter.install(other);
+      assert.equal(adapter.hookStatus(ctx), 'outdated', adapter.id);
+      await adapter.install(ctx);
+    }
+
+    // The Node.js that the hooks run is gone (for example, after a Node.js upgrade).
+    await rm(ctx.node);
+    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, hermesAdapter])
+      assert.equal(adapter.hookStatus(ctx), 'outdated', adapter.id);
+    await touch(ctx.node);
+
+    // An event is missing.
+    const settings = join(home, '.claude', 'settings.json');
+    const claude = JSON.parse(await readFile(settings, 'utf8'));
+    delete claude.hooks.Stop;
+    await writeFile(settings, JSON.stringify(claude));
+    assert.equal(claudeAdapter.hookStatus(ctx), 'outdated');
+
+    // Our own hook file holds something that isn't our hooks.
+    for (const [adapter, path] of [[copilotAdapter, join(home, '.copilot', 'hooks', 'agent-companion.json')],
+                                   [grokAdapter, join(home, '.grok', 'hooks', 'agent-companion.json')]] as const) {
+      for (const content of ['not json', '{}\n', '{"version": 1, "hooks": {}}\n']) {
+        await writeFile(path, content);
+        assert.equal(adapter.hookStatus(ctx), 'outdated', `${adapter.id}: ${content}`);
+      }
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
+test('hooks of another install show as installed-but-outdated and can be removed', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const other = {...ctx, cli: join(root, 'other', 'daemon', 'dist', 'src', 'cli.js')};
+    await touch(other.cli);
+    for (const adapter of [claudeAdapter, codexAdapter, hermesAdapter]) await adapter.install(other);
+    const statuses = await withAgentsConfig(join(home, 'agents.json'), async () =>
+      agentStatuses(ctx, new Map(), new Map()));
+    for (const id of ['claude', 'codex', 'hermes']) {
+      const status = statuses.find(agent => agent.id === id);
+      assert.equal(status?.hookStatus, 'outdated', id);
+      assert.equal(status?.installed, true, id);
+      assert.match(status?.hint ?? '', /Reinstall/, id);
+    }
+    for (const adapter of [claudeAdapter, codexAdapter, hermesAdapter]) {
+      await adapter.uninstall(ctx);
+      assert.equal(adapter.hookStatus(ctx), 'missing', adapter.id);
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
+test('uninstall creates no file and changes no file that has none of our hooks', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  try {
+    for (const adapter of [claudeAdapter, codexAdapter, hermesAdapter, copilotAdapter, grokAdapter]) await adapter.uninstall(ctx);
+    for (const path of ['.claude/settings.json', '.codex/hooks.json', '.hermes/config.yaml',
+                        '.copilot/hooks/agent-companion.json', '.grok/hooks/agent-companion.json'])
+      assert.equal(existsSync(join(home, path)), false, path);
+
+    const files = {
+      [join(home, '.claude', 'settings.json')]: '{\n    "model": "sonnet",\n    "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "x"}]}]}\n}',
+      [join(home, '.codex', 'hooks.json')]: '{"hooks": {}}',
+      [join(home, '.hermes', 'config.yaml')]: 'hooks:   # mine\n  pre_tool_call: [{command: x}]\n',
+    };
+    for (const [path, content] of Object.entries(files)) {
+      await mkdir(dirname(path), {recursive: true});
+      await writeFile(path, content, {mode: 0o644});
+      await chmod(path, 0o644);
+    }
+    for (const adapter of [claudeAdapter, codexAdapter, hermesAdapter]) await adapter.uninstall(ctx);
+    for (const [path, content] of Object.entries(files)) {
+      assert.equal(await readFile(path, 'utf8'), content, path);
+      assert.equal(existsSync(`${path}.bak`), false, path);
+      if (posix) assert.equal((await stat(path)).mode & 0o777, 0o644, path);
+    }
+
+    // A real edit keeps the file's own permissions too.
+    await claudeAdapter.install(ctx);
+    const claude = join(home, '.claude', 'settings.json');
+    if (posix) assert.equal((await stat(claude)).mode & 0o777, 0o644);
+    // A reinstall with nothing to change doesn't rewrite the file.
+    const before = await readFile(claude, 'utf8');
+    await chmod(claude, 0o640);
+    await claudeAdapter.install(ctx);
+    assert.equal(await readFile(claude, 'utf8'), before);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('install refuses hook values it does not understand, and uninstall keeps them', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  try {
+    const settings = join(home, '.claude', 'settings.json');
+    await mkdir(dirname(settings), {recursive: true});
+    for (const content of ['{"hooks": "off"}', '{"hooks": {"Stop": "x"}}']) {
+      await writeFile(settings, content);
+      await assert.rejects(claudeAdapter.install(ctx), /left unchanged/);
+      assert.equal(await readFile(settings, 'utf8'), content);
+    }
+
+    // An event we don't use holds something odd, and a group has no `hooks` list: both stay.
+    await writeFile(settings, JSON.stringify({hooks: {Custom: 'keep', Stop: [{matcher: 'odd'}]}}));
+    await claudeAdapter.install(ctx);
+    await claudeAdapter.uninstall(ctx);
+    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).hooks, {Custom: 'keep', Stop: [{matcher: 'odd'}]});
+
+    // A group that mixes our handler with the user's keeps the user's handler.
+    const mixed = {hooks: {Stop: [{hooks: [{type: 'command', command: 'mine'},
+      {type: 'command', command: ctx.node, args: [ctx.cli, 'hook', 'claude', 'Stop']}]}]}};
+    await writeFile(settings, JSON.stringify(mixed));
+    await claudeAdapter.uninstall(ctx);
+    assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).hooks, {Stop: [{hooks: [{type: 'command', command: 'mine'}]}]});
+
+    const hermes = join(home, '.hermes', 'config.yaml');
+    await mkdir(dirname(hermes), {recursive: true});
+    for (const content of ['hooks: off\n', 'hooks:\n  pre_tool_call: off\n']) {
+      await writeFile(hermes, content);
+      await assert.rejects(hermesAdapter.install(ctx), /left unchanged/);
+      assert.equal(await readFile(hermes, 'utf8'), content);
+    }
+    await writeFile(hermes, 'hooks:\n  custom: keep\n');
+    await hermesAdapter.install(ctx);
+    await hermesAdapter.uninstall(ctx);
+    assert.equal(parseDocument(await readFile(hermes, 'utf8')).getIn(['hooks', 'custom']), 'keep');
+    assert.doesNotMatch(await readFile(hermes, 'utf8'), /hook hermes/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a Codex reinstall keeps every group at its position, so approvals stay valid', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const hooksPath = join(home, '.codex', 'hooks.json');
+    await mkdir(dirname(hooksPath), {recursive: true});
+    await writeFile(hooksPath, JSON.stringify({hooks: {PreToolUse: [{hooks: [{type: 'command', command: 'first'}]}]}}));
+    await codexAdapter.install(ctx);
+    const installed = JSON.parse(await readFile(hooksPath, 'utf8'));
+    installed.hooks.PreToolUse.push({hooks: [{type: 'command', command: 'added later'}]});
+    await writeFile(hooksPath, JSON.stringify(installed));
+    const other = {...ctx, cli: join(root, 'other', 'daemon', 'dist', 'src', 'cli.js')};
+    for (const install of [other, ctx]) {
+      await codexAdapter.install(install);
+      const groups = JSON.parse(await readFile(hooksPath, 'utf8')).hooks.PreToolUse as Array<{hooks: Array<{command: string}>}>;
+      assert.equal(groups.length, 3);
+      assert.equal(groups[0]?.hooks[0]?.command, 'first');
+      assert.ok(groups[1]?.hooks[0]?.command.includes(codexQuote(install.cli)));
+      assert.equal(groups[2]?.hooks[0]?.command, 'added later');
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
+test('setup does not add back hooks the user removed', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  try {
+    await mkdir(join(home, '.claude'), {recursive: true});
+    await writeFile(join(home, '.claude', 'settings.json'), '{}\n');
+    await withAgentsConfig(join(home, 'agents.json'), async () => {
+      await setAgentHookRemoved('copilot', true);
+      assert.deepEqual((await loadAgentsConfig()).removed, {copilot: true});
+      const results = await installDetectedAgents(ctx);
+      const copilot = results.find(result => result.id === 'copilot');
+      assert.equal(copilot?.installed, false);
+      assert.match(copilot?.message ?? '', /agents install copilot/);
+      assert.equal(copilotAdapter.hookStatus(ctx), 'missing');
+      assert.equal(results.find(result => result.id === 'claude')?.installed, true);
+
+      await setAgentHookRemoved('copilot', false);
+      assert.deepEqual((await loadAgentsConfig()).removed, {});
+      await installDetectedAgents(ctx);
+      assert.equal(copilotAdapter.hookStatus(ctx), 'installed');
+    });
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a reinstall removes stale companion hooks under events it does not install', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const gone = {...ctx, node: join(root, 'removed', 'node')};
+    const claude = join(home, '.claude', 'settings.json');
+    const codex = join(home, '.codex', 'hooks.json');
+    await mkdir(dirname(claude), {recursive: true});
+    await mkdir(dirname(codex), {recursive: true});
+    await writeFile(claude, JSON.stringify({hooks: {PreCompact: [{hooks: [
+      {type: 'command', command: 'mine'},
+      {type: 'command', command: gone.node, args: [ctx.cli, 'hook', 'claude', 'PreCompact']}]}]}}));
+    await writeFile(codex, JSON.stringify({hooks: {OldEvent: [{hooks: [
+      {type: 'command', command: `"${gone.node}" "${ctx.cli}" hook codex OldEvent`}]}]}}));
+    await claudeAdapter.install(ctx);
+    await codexAdapter.install(ctx);
+    assert.equal(claudeAdapter.hookStatus(ctx), 'installed');
+    assert.notEqual(codexAdapter.hookStatus(ctx), 'outdated');
+    assert.deepEqual(JSON.parse(await readFile(claude, 'utf8')).hooks.PreCompact,
+                     [{hooks: [{type: 'command', command: 'mine'}]}]);
+    assert.equal(JSON.parse(await readFile(codex, 'utf8')).hooks.OldEvent, undefined);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('each change keeps a timestamped copy, and only the last five copies stay', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  try {
+    const settings = join(home, '.claude', 'settings.json');
+    await mkdir(dirname(settings), {recursive: true});
+    await writeFile(settings, '{"model": "original"}\n', {mode: 0o644});
+    const copies = () => readdirSync(dirname(settings)).filter(name => /^settings\.json\.agent-companion-.+\.bak$/.test(name)).sort();
+    for (let change = 0; change < 7; change += 1) {
+      await claudeAdapter.install({...ctx, node: join(home, `node-${change}`)});
+      await new Promise(resolve => setTimeout(resolve, 2));
+    }
+    assert.equal(copies().length, 5);
+    assert.match(await readFile(join(dirname(settings), copies().at(-1)!), 'utf8'), /node-5/);
+    if (posix) assert.equal((await stat(join(dirname(settings), copies()[0]!))).mode & 0o777, 0o600);
+    assert.equal(await readFile(`${settings}.bak`, 'utf8'), '{"model": "original"}\n');
+    if (posix) assert.equal((await stat(`${settings}.bak`)).mode & 0o777, 0o600);
+    // No change, no copy.
+    await claudeAdapter.install({...ctx, node: join(home, 'node-6')});
+    assert.match(await readFile(join(dirname(settings), copies().at(-1)!), 'utf8'), /node-5/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('removing the Codex hook names the user\'s approved hooks that moved', async () => {
+  const {home, ctx, cleanup} = await fixture();
+  try {
+    const hooksPath = join(home, '.codex', 'hooks.json');
+    await mkdir(dirname(hooksPath), {recursive: true});
+    assert.deepEqual(await codexAdapter.install(ctx), []);
+    const installed = JSON.parse(await readFile(hooksPath, 'utf8'));
+    installed.hooks.Stop.push({hooks: [{type: 'command', command: 'approved-stop'}]});
+    installed.hooks.SessionStart.push({hooks: [{type: 'command', command: 'not-approved'}]});
+    await writeFile(hooksPath, JSON.stringify(installed));
+    await writeFile(join(home, '.codex', 'config.toml'), `[hooks.state."${hooksPath}:stop:1:0"]\ntrusted_hash = "a"\n`);
+    const warnings = await codexAdapter.uninstall(ctx);
+    assert.equal(warnings?.length, 1);
+    assert.match(warnings?.[0] ?? '', /\/hooks/);
+    assert.match(warnings?.[0] ?? '', /Stop: approved-stop/);
+    assert.doesNotMatch(warnings?.[0] ?? '', /not-approved/);
+    assert.deepEqual(await codexAdapter.uninstall(ctx), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('agent versions come from a background probe, and a found command counts as detected', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const bin = join(root, 'bin');
+    await mkdir(bin, {recursive: true});
+    const windows = process.platform === 'win32';
+    if (windows) {
+      await writeFile(join(bin, 'hermes.cmd'),
+                      '@echo off\r\nping -n 1 -w 200 127.0.0.1 >nul\r\necho Hermes Agent v1.2.3\r\necho more details\r\n');
+    } else {
+      const hermes = join(bin, 'hermes');
+      await writeFile(hermes, '#!/bin/sh\nsleep 0.2\necho "Hermes Agent v1.2.3"\necho "more details"\n');
+      await chmod(hermes, 0o755);
+    }
+    // cmd.exe runs a .cmd file, so Windows needs ComSpec and System32 too.
+    const system = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+    const withBin = windows
+      ? {...ctx, platform: 'win32' as const,
+         env: {PATH: `${bin};${system}`, PATHEXT: '.CMD;.EXE', ComSpec: join(system, 'cmd.exe')}}
+      : {...ctx, env: {PATH: bin}};
+    const first = hermesAdapter.detect(withBin);
+    assert.equal(first.installed, true);
+    assert.equal(first.version, undefined);
+    for (let tries = 0; tries < 50 && !hermesAdapter.detect(withBin).version; tries++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(hermesAdapter.detect(withBin).version, 'Hermes Agent v1.2.3');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('Copilot shows the versions of the CLI and the GitHub Copilot app', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const apps = join(root, 'Applications');
+    const contents = join(apps, 'GitHub Copilot.app', 'Contents');
+    await mkdir(contents, {recursive: true});
+    await writeFile(join(contents, 'Info.plist'),
+      '<plist><dict><key>CFBundleShortVersionString</key>\n\t<string>1.1.26</string></dict></plist>');
+    assert.equal(copilotAppVersion(ctx, [join(root, 'none'), apps]), '1.1.26');
+    assert.equal(copilotAppVersion({...ctx, platform: 'linux'}, [apps]), undefined);
+    assert.equal(copilotAppVersion(ctx, [join(root, 'none')]), undefined);
+    assert.equal(copilotVersions('GitHub Copilot CLI 1.0.91', '1.1.26'), 'CLI 1.0.91 · app 1.1.26');
+    assert.equal(copilotVersions(undefined, '1.1.26'), 'app 1.1.26');
+    assert.equal(copilotVersions('GitHub Copilot CLI 1.0.91', undefined), 'CLI 1.0.91');
+    assert.equal(copilotVersions(undefined, undefined), undefined);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('each agent\'s own folder variable moves the files the hooks go in', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const env = {
+      PATH: '', COPILOT_HOME: join(root, 'copilot'), CLAUDE_CONFIG_DIR: join(root, 'claude'),
+      CODEX_HOME: join(root, 'codex'), GROK_HOME: join(root, 'grok'), HERMES_HOME: join(root, 'hermes'),
+    };
+    const moved = {...ctx, env};
+    for (const adapter of [copilotAdapter, claudeAdapter, codexAdapter, grokAdapter]) await adapter.install(moved);
+    assert.ok(existsSync(join(root, 'copilot', 'hooks', 'agent-companion.json')));
+    assert.ok(existsSync(join(root, 'claude', 'settings.json')));
+    assert.ok(existsSync(join(root, 'codex', 'hooks.json')));
+    assert.ok(existsSync(join(root, 'grok', 'hooks', 'agent-companion.json')));
+    for (const folder of ['.copilot', '.claude', '.codex', '.grok']) assert.equal(existsSync(join(home, folder)), false);
+    assert.equal(copilotAdapter.hookStatus(moved), 'installed');
+    assert.equal(copilotAdapter.hookStatus(ctx), 'missing');
+    // Codex approves a hook by its file's full path, so the key names the moved file.
+    const status = await codexAdapter.detect(moved);
+    assert.equal(status.configPath, join(root, 'codex', 'hooks.json'));
+
+    // "~" is the home folder; an empty or relative value is not used.
+    assert.equal(claudeConfigPath(home, {CLAUDE_CONFIG_DIR: '~/claude-work'}), join(home, 'claude-work', 'settings.json'));
+    assert.equal(claudeConfigPath(home, {CLAUDE_CONFIG_DIR: '  '}), join(home, '.claude', 'settings.json'));
+    assert.equal(claudeConfigPath(home, {CLAUDE_CONFIG_DIR: 'relative'}), join(home, '.claude', 'settings.json'));
+  } finally {
+    await cleanup();
   }
 });

@@ -6,6 +6,9 @@ import test from 'node:test';
 import {StateStore} from '../src/state-store.js';
 import type {PersistedCoordinatorState} from '../src/state-coordinator.js';
 
+// Windows has no POSIX permission bits, so mode checks run only on macOS and Linux.
+const posix = process.platform !== 'win32';
+
 const saved: PersistedCoordinatorState = {
   version: 1,
   sessions: [{
@@ -27,8 +30,10 @@ test('atomically persists private daemon state', async t => {
   const store = new StateStore(path);
   await store.flush(saved);
   assert.deepEqual(await store.load(), saved);
-  assert.equal((await stat(path)).mode & 0o777, 0o600);
-  assert.equal((await stat(join(directory, 'nested'))).mode & 0o777, 0o700);
+  if (posix) {
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+    assert.equal((await stat(join(directory, 'nested'))).mode & 0o777, 0o700);
+  }
 });
 
 test('quarantines malformed persistence rather than failing startup', async t => {

@@ -161,6 +161,18 @@ test('Codex tokens leave cached input out of its running totals', async () => {
   });
 });
 
+test('usage follows CODEX_HOME and the other agent folder variables', async () => {
+  await withHome(async (home, cachePath) => {
+    const day = join(home, 'work', 'codex', 'sessions', String(year), String(month + 1).padStart(2, '0'), '15');
+    await mkdir(day, {recursive: true});
+    await writeFile(join(day, 'rollout-2026-10-15T08-00-00-0199aaaa-bbbb-4ccc-8ddd-eeeeffff0002.jsonl'),
+      codexLine(today(8), 1000, 400, 50));
+    const tracker = new UsageTracker({home, env: {CODEX_HOME: join(home, 'work', 'codex')}, cachePath, now: () => now});
+    await tracker.refresh();
+    assert.deepEqual(tracker.totals('today'), {aic: null, tokens: 650});
+  });
+});
+
 test('numbers stay short enough for the bottom of the screen', () => {
   assert.equal(formatAic(0.04), '0');
   assert.equal(formatAic(2.46), '2.5');

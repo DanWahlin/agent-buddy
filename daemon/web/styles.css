@@ -214,8 +214,19 @@ button:focus-visible, .button:focus-within, input:focus-visible, select:focus-vi
   flex: none;
 }
 .agent-body .hint { margin: .25rem 0 0; }
+.agent-body .agent-warning { color: var(--warn); }
+.agent-locations { list-style: none; margin: .35rem 0 0; padding: 0; font-size: .85rem; }
+.agent-locations li { display: flex; flex-wrap: wrap; gap: .1rem .5rem; padding: .15rem 0; }
+.agent-locations li + li { border-top: 1px solid var(--border); }
+.agent-location-name { font-weight: 500; }
+.agent-location-status { color: var(--muted); }
+.agent-location-status.outdated { color: var(--warn); }
+.agent-locations .hint { flex-basis: 100%; margin: 0; }
 .agent-actions { flex-wrap: wrap; justify-content: flex-end; }
 .agent-actions button { flex: 0 0 auto; }
+button.sized { display: inline-grid; justify-items: center; }
+button.sized > span, button.sized::after { grid-area: 1 / 1; }
+button.sized::after { content: attr(data-widest); visibility: hidden; }
 
 .switch {
   display: flex;

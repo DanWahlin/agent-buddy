@@ -37,37 +37,13 @@ await esbuild.build({
 console.log('built the page with the device engine');
 
 /**
- * The app icon, cut from Copilot's approved centre pose: the character looking
- * straight out. The source is drawn on black, so the backdrop is flooded away
- * from the edges, which keeps the dark parts inside the face.
+ * The app icon, made from the project logo at the top of the README
+ * (images/logo.png), which has a transparent background.
  */
 async function appIcon() {
   const { default: sharp } = await import('sharp');
-  const source = join(repository, 'characters', 'copilot', 'source', 'generated-sprites', 'approved-center.png');
-  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width, height } = info;
-  const background = new Uint8Array(width * height);
-  const queue = [];
-  const push = index => {
-    if (background[index]) return;
-    const at = index * 4;
-    if (Math.max(data[at], data[at + 1], data[at + 2]) > 24) return;
-    background[index] = 1;
-    queue.push(index);
-  };
-  for (let x = 0; x < width; x++) { push(x); push((height - 1) * width + x); }
-  for (let y = 0; y < height; y++) { push(y * width); push(y * width + width - 1); }
-  while (queue.length) {
-    const index = queue.pop();
-    const x = index % width;
-    if (x > 0) push(index - 1);
-    if (x < width - 1) push(index + 1);
-    if (index >= width) push(index - width);
-    if (index < width * (height - 1)) push(index + width);
-  }
-  for (let i = 0; i < width * height; i++) if (background[i]) data[i * 4 + 3] = 0;
-  const face = await sharp(data, { raw: { width, height, channels: 4 } })
-    .trim({ threshold: 0 }).png().toBuffer();
+  const face = await sharp(join(repository, 'images', 'logo.png'))
+    .ensureAlpha().trim({ threshold: 0 }).png().toBuffer();
 
   // Every size Windows asks for, drawn at that size, so the tray is not blurred.
   const sizes = [16, 24, 32, 48, 64, 128, 256];
@@ -95,7 +71,11 @@ async function appIcon() {
   const icons = join(here, 'src-tauri', 'icons');
   await mkdir(icons, { recursive: true });
   await writeFile(join(icons, 'icon.ico'), Buffer.concat([header, ...entries, ...images]));
-  await writeFile(join(icons, 'icon.png'), images[images.length - 1]);
-  console.log('app icon cut from copilot, at ' + sizes.join('/'));
+  // macOS and Linux make their icons from this one, so it is larger than the .ico's largest.
+  await writeFile(join(icons, 'icon.png'), await sharp(face)
+    .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer());
+  // The logo for the page that says the companion service is starting.
+  await writeFile(join(ui, 'logo.png'), images[sizes.indexOf(128)]);
+  console.log('app icon made from the project logo, at ' + sizes.join('/'));
 }
 await appIcon();

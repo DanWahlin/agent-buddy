@@ -14,12 +14,12 @@
 //! dispatch is sent in the Lua form first and the classic form if that fails,
 //! the same way Omarchy's own scripts do, so both old and new versions work.
 
-use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::Value;
 
+#[cfg(unix)]
 const TIMEOUT: Duration = Duration::from_millis(500);
 
 /// This window, as Hyprland sees it.
@@ -48,6 +48,7 @@ pub fn available() -> bool {
 
 #[cfg(unix)]
 fn request(command: &str) -> Option<String> {
+    use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     let mut stream = UnixStream::connect(socket()?).ok()?;
     stream.set_read_timeout(Some(TIMEOUT)).ok()?;

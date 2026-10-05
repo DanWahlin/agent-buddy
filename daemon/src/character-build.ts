@@ -4,6 +4,7 @@ import {readdir, stat} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {promisify} from 'node:util';
 import {builtInCharacterDirectory} from './character-pack.js';
+import {findExecutable} from './agents/commands.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,6 +21,7 @@ export interface CharacterBuildOptions {
 export class CharacterPackBuilder {
   readonly #root: string | undefined;
   readonly #python: string;
+  readonly #pythonOptions: string[];
   readonly #timeoutMs: number;
   readonly #log: (message: string) => void;
   #built: string | undefined;
@@ -27,7 +29,7 @@ export class CharacterPackBuilder {
 
   constructor(options: CharacterBuildOptions = {}) {
     this.#root = 'root' in options ? options.root : defaultRoot();
-    this.#python = options.python ?? 'python3';
+    [this.#python, this.#pythonOptions] = options.python ? [options.python, []] : defaultPython();
     this.#timeoutMs = options.timeoutMs ?? 120_000;
     this.#log = options.log ?? (message => console.error(message));
   }
@@ -44,7 +46,8 @@ export class CharacterPackBuilder {
     if (!root || !script || !existsSync(script) || !existsSync(join(root, 'characters'))) return;
     try {
       if (await packFingerprint(root) === this.#built) return;
-      await execFileAsync(this.#python, [script, 'build'], {cwd: root, timeout: this.#timeoutMs});
+      await execFileAsync(this.#python, [...this.#pythonOptions, script, 'build'],
+                          {cwd: root, timeout: this.#timeoutMs, windowsHide: true});
       this.#built = await packFingerprint(root);
       console.log('[character] rebuilt character packs');
     } catch (error) {
@@ -53,6 +56,15 @@ export class CharacterPackBuilder {
         detail || (error instanceof Error ? error.message : String(error))}`);
     }
   }
+}
+
+// Windows has the "py" launcher or python.exe; "python3" there is often a Microsoft Store shortcut.
+export function defaultPython(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env,
+                              exists?: (path: string) => boolean): [string, string[]] {
+  if (platform !== 'win32') return ['python3', []];
+  const py = findExecutable('py', env, platform, exists);
+  if (py) return [py, ['-3']];
+  return [findExecutable('python', env, platform, exists) ?? 'python', []];
 }
 
 // A custom pack directory isn't tied to a checkout, so there is nothing to rebuild.

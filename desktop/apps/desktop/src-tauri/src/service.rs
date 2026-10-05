@@ -10,6 +10,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -17,11 +18,27 @@ use serde_json::{json, Value};
 use crate::daemon;
 
 const RUNTIME: &str = "daemon-runtime";
+/// The Node.js program at the top of the runtime folder.
+const NODE: &str = if cfg!(windows) { "node.exe" } else { "node" };
 /// How long a daemon has to answer before the app installs its own. The
 /// service manager restarts a daemon that stops within a few seconds.
 const WAIT_FOR_DAEMON: Duration = Duration::from_secs(10);
 const RETRY: Duration = Duration::from_secs(2);
 const SHELL_TIMEOUT: Duration = Duration::from_secs(5);
+/// Set while `ensure` runs, so a second start of the app does not install
+/// the service again while the first start does.
+static ENSURING: AtomicBool = AtomicBool::new(false);
+/// PATH, then the variables that move an agent's settings folder. The hook
+/// installer must see the same values as the agents, and the service keeps them.
+const SHELL_VARIABLES: [&str; 7] = [
+    "PATH",
+    "COPILOT_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
+    "GROK_HOME",
+    "HERMES_HOME",
+    "OPENCLAW_HOME",
+];
 
 #[derive(Debug, PartialEq)]
 pub enum Action {
@@ -34,15 +51,25 @@ pub enum Action {
 }
 
 /// What to do with the daemon that answered (or did not), given where this
-/// app installs its copy and the version it carries.
-pub fn decide(status: Option<&Value>, installed: &Path, version: &str) -> Action {
+/// app installs its copy and the version it carries. `rebuilt` is true when
+/// the copy is from another build of the same version.
+pub fn decide(status: Option<&Value>, installed: &Path, version: &str, rebuilt: bool) -> Action {
     let Some(status) = status else { return Action::Wait };
     let service = status.get("service");
     let root = service.and_then(|it| it.get("root")).and_then(Value::as_str);
     let running = service.and_then(|it| it.get("version")).and_then(Value::as_str);
     match root {
-        Some(root) if same_path(Path::new(root), installed) && running != Some(version) => Action::Install,
+        Some(root) if same_path(Path::new(root), installed) && (running != Some(version) || rebuilt) => Action::Install,
         _ => Action::Leave,
+    }
+}
+
+/// True when the bundled runtime has a `BUILD_HASH` file and the copy has another one.
+fn rebuilt(bundled: &Path, installed: &Path) -> bool {
+    let read = |folder: &Path| std::fs::read_to_string(folder.join("BUILD_HASH")).ok().map(|it| it.trim().to_string());
+    match read(bundled) {
+        Some(build) => read(installed).as_deref() != Some(build.as_str()),
+        None => false,
     }
 }
 
@@ -57,7 +84,9 @@ fn same_path(a: &Path, b: &Path) -> bool {
 /// `daemon/src/paths.ts`.
 pub fn data_directory() -> Option<PathBuf> {
     if cfg!(windows) {
-        return None;
+        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).filter(|it| it.is_absolute())
+            .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join("AppData").join("Local")))?;
+        return Some(local.join("ESP32 Agent Companion"));
     }
     let home = PathBuf::from(std::env::var_os("HOME")?);
     if cfg!(target_os = "macos") {
@@ -72,7 +101,22 @@ pub fn data_directory() -> Option<PathBuf> {
 /// Start the daemon this app carries, when no other daemon runs. Blocks for
 /// up to `WAIT_FOR_DAEMON`, so call it off the main thread. Returns true when
 /// it installed a service where none ran, so the user is new to the app.
+/// Whether this build carries the companion service: a release build does,
+/// a build run from the repository does not.
+pub fn bundled(resources: Option<&Path>) -> bool {
+    resources.is_some_and(|it| it.join(RUNTIME).join("VERSION").is_file())
+}
+
 pub fn ensure(resources: Option<PathBuf>) -> bool {
+    if ENSURING.swap(true, Ordering::AcqRel) {
+        return false;
+    }
+    let result = ensure_once(resources);
+    ENSURING.store(false, Ordering::Release);
+    result
+}
+
+fn ensure_once(resources: Option<PathBuf>) -> bool {
     let Some(bundled) = resources.map(|it| it.join(RUNTIME)) else { return false };
     let Ok(version) = std::fs::read_to_string(bundled.join("VERSION")) else { return false };
     let version = version.trim().to_string();
@@ -81,7 +125,7 @@ pub fn ensure(resources: Option<PathBuf>) -> bool {
     let started = Instant::now();
     let upgrade = loop {
         let status = daemon::request(&socket, &json!({ "type": "status" }));
-        match decide(status.as_ref(), &installed, &version) {
+        match decide(status.as_ref(), &installed, &version, rebuilt(&bundled, &installed)) {
             Action::Leave => return false,
             Action::Install => break true,
             Action::Wait if started.elapsed() >= WAIT_FOR_DAEMON => break false,
@@ -103,14 +147,18 @@ pub fn ensure(resources: Option<PathBuf>) -> bool {
 
 fn install(bundled: &Path, installed: &Path, version: &str) -> Result<(), String> {
     let current = std::fs::read_to_string(installed.join("VERSION")).ok();
-    if current.as_deref().map(str::trim) != Some(version) || !installed.join("node").is_file() {
+    if current.as_deref().map(str::trim) != Some(version) || rebuilt(bundled, installed) || !installed.join(NODE).is_file() {
         replace(bundled, installed).map_err(|error| format!("could not copy the service: {error}"))?;
     }
-    let output = Command::new(installed.join("node"))
-        .arg(installed.join("daemon/dist/src/install.js"))
+    let mut command = Command::new(installed.join(NODE));
+    command
+        .arg(installed.join("daemon").join("dist").join("src").join("install.js"))
         .current_dir(installed.join("daemon"))
-        .env("PATH", user_path())
-        .stdin(Stdio::null())
+        .envs(user_environment())
+        .stdin(Stdio::null());
+    #[cfg(windows)]
+    crate::launcher::service_command(&mut command);
+    let output = command
         .output()
         .map_err(|error| format!("could not run the installer: {error}"))?;
     for line in String::from_utf8_lossy(&output.stdout).lines() {
@@ -142,11 +190,32 @@ fn replace(bundled: &Path, installed: &Path) -> std::io::Result<()> {
         .stderr(Stdio::null())
         .status();
     if installed.exists() {
-        std::fs::rename(installed, &old)?;
+        // Windows cannot rename a folder while a program in it runs. The
+        // installer starts the service again.
+        #[cfg(windows)]
+        if !crate::launcher::stop_service() {
+            eprintln!("[service] the old companion service did not stop");
+        }
+        rename(installed, &old)?;
     }
-    std::fs::rename(&staging, installed)?;
+    rename(&staging, installed)?;
     let _ = std::fs::remove_dir_all(&old);
     Ok(())
+}
+
+/// On Windows, a program that just stopped, or a virus scanner, can keep a
+/// file open for a short time, so try again.
+fn rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    let tries = if cfg!(windows) { 20 } else { 1 };
+    let mut result = std::fs::rename(from, to);
+    for _ in 1..tries {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+        result = std::fs::rename(from, to);
+    }
+    result
 }
 
 fn create_private_dir(path: &Path) -> std::io::Result<()> {
@@ -176,21 +245,33 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The user's own PATH, from their login shell: an app opened from the Dock or
-/// a launcher gets a short one. The service and the hook installer use it to
-/// find the agents' CLIs.
-fn user_path() -> String {
-    let current = std::env::var("PATH").unwrap_or_default();
-    let shell = login_shell_path().unwrap_or_default();
-    merge_paths(&shell, &current)
+/// The user's own PATH and agent folder variables, from their login shell: an
+/// app opened from the Dock or a launcher gets a short PATH and none of the
+/// variables. The service and the hook installer use them to find the agents'
+/// CLIs and settings.
+fn user_environment() -> Vec<(&'static str, String)> {
+    // Windows gives every program the user's own variables, and has no login shell to ask.
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    let shell = login_shell_values().unwrap_or_default();
+    let mut result = vec![("PATH", merge_paths(shell.first().map_or("", String::as_str),
+                                               &std::env::var("PATH").unwrap_or_default()))];
+    for (name, value) in SHELL_VARIABLES.iter().zip(shell.iter()).skip(1) {
+        if !value.is_empty() {
+            result.push((name, value.clone()));
+        }
+    }
+    result
 }
 
-fn login_shell_path() -> Option<String> {
+fn login_shell_values() -> Option<Vec<String>> {
     use std::io::Read;
-    const MARK: &str = "__AGENT_COMPANION_PATH__";
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    // printf repeats its format for each value. Plain "$NAME" works in sh, bash, zsh and fish.
+    let values: Vec<String> = SHELL_VARIABLES.iter().map(|name| format!("\"${name}\"")).collect();
     let mut child = Command::new(shell)
-        .args(["-ilc", &format!("printf '{MARK}%s{MARK}' \"$PATH\"")])
+        .args(["-ilc", &format!("printf '{SHELL_MARK}%s{SHELL_MARK}' {}", values.join(" "))])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -206,10 +287,19 @@ fn login_shell_path() -> Option<String> {
     let text = receiver.recv_timeout(SHELL_TIMEOUT);
     let _ = child.kill();
     let _ = child.wait();
-    let text = text.ok()?;
-    let start = text.find(MARK)? + MARK.len();
-    let end = start + text[start..].find(MARK)?;
-    Some(text[start..end].to_string())
+    parse_shell_values(&text.ok()?)
+}
+
+const SHELL_MARK: &str = "__AGENT_COMPANION_ENV__";
+
+/// The text a login shell printed: anything (such as a greeting), then
+/// MARK value MARK for each variable, in order.
+fn parse_shell_values(text: &str) -> Option<Vec<String>> {
+    let start = text.find(SHELL_MARK)?;
+    let parts: Vec<&str> = text[start..].split(SHELL_MARK).collect();
+    let values: Vec<String> = parts.iter().skip(1).step_by(2).take(SHELL_VARIABLES.len())
+        .map(|value| value.to_string()).collect();
+    (values.len() == SHELL_VARIABLES.len()).then_some(values)
 }
 
 /// Absolute entries only, the first of each, the shell's first.
@@ -231,12 +321,31 @@ mod tests {
     fn only_this_apps_copy_at_another_version_is_replaced() {
         let installed = Path::new("/data/runtime");
         let status = |root: &str, version: &str| json!({ "service": { "root": root, "version": version } });
-        assert_eq!(decide(None, installed, "0.8.0"), Action::Wait);
-        assert_eq!(decide(Some(&status("/data/runtime", "0.7.0")), installed, "0.8.0"), Action::Install);
-        assert_eq!(decide(Some(&status("/data/runtime", "0.8.0")), installed, "0.8.0"), Action::Leave);
+        assert_eq!(decide(None, installed, "0.8.0", false), Action::Wait);
+        assert_eq!(decide(Some(&status("/data/runtime", "0.7.0")), installed, "0.8.0", false), Action::Install);
+        assert_eq!(decide(Some(&status("/data/runtime", "0.8.0")), installed, "0.8.0", false), Action::Leave);
+        // Another build of the same version.
+        assert_eq!(decide(Some(&status("/data/runtime", "0.8.0")), installed, "0.8.0", true), Action::Install);
         // A clone of the repository, or a daemon too old to say where it runs.
-        assert_eq!(decide(Some(&status("/src/companion", "0.7.0")), installed, "0.8.0"), Action::Leave);
-        assert_eq!(decide(Some(&json!({ "state": "idle" })), installed, "0.8.0"), Action::Leave);
+        assert_eq!(decide(Some(&status("/src/companion", "0.7.0")), installed, "0.8.0", true), Action::Leave);
+        assert_eq!(decide(Some(&json!({ "state": "idle" })), installed, "0.8.0", true), Action::Leave);
+    }
+
+    #[test]
+    fn a_new_build_hash_replaces_the_copy() {
+        let root = std::env::temp_dir().join(format!("companion-build-{}", std::process::id()));
+        let (bundled, installed) = (root.join("bundled"), root.join("installed"));
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::create_dir_all(&installed).unwrap();
+        // A bundle without BUILD_HASH, as earlier versions made, changes nothing.
+        assert!(!rebuilt(&bundled, &installed));
+        std::fs::write(bundled.join("BUILD_HASH"), "abc\n").unwrap();
+        assert!(rebuilt(&bundled, &installed));
+        std::fs::write(installed.join("BUILD_HASH"), "abc").unwrap();
+        assert!(!rebuilt(&bundled, &installed));
+        std::fs::write(installed.join("BUILD_HASH"), "def").unwrap();
+        assert!(rebuilt(&bundled, &installed));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -245,6 +354,20 @@ mod tests {
             merge_paths("/opt/homebrew/bin:/usr/bin:bin", "/usr/bin:/bin:"),
             "/opt/homebrew/bin:/usr/bin:/bin"
         );
+    }
+
+    #[test]
+    fn the_shells_values_are_read_in_order_after_any_greeting() {
+        let mark = SHELL_MARK;
+        let mut text = format!("Welcome!\n{mark}/opt/homebrew/bin:/usr/bin{mark}");
+        for value in ["", "", "/work/codex", "", "", ""] {
+            text.push_str(&format!("{mark}{value}{mark}"));
+        }
+        let values = parse_shell_values(&text).unwrap();
+        assert_eq!(values[0], "/opt/homebrew/bin:/usr/bin");
+        assert_eq!(values[3], "/work/codex");
+        assert_eq!(parse_shell_values(&format!("{mark}/usr/bin{mark}")), None);
+        assert_eq!(parse_shell_values("no marks"), None);
     }
 
     #[test]

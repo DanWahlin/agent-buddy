@@ -45,7 +45,7 @@ npm run bundle -w @agent-companion/desktop   # the installable app, without the 
 
 ### The bundled companion service
 
-Release builds for macOS and Linux carry the daemon, so a user needs only the
+Release builds for macOS, Windows, and Linux carry the daemon, so a user needs only the
 app. To build one as a release does:
 
 ```bash
@@ -62,7 +62,7 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   In CI, the packs come from the release's `-characters.zip`.
 - [`tauri.daemon.conf.json`](apps/desktop/src-tauri/tauri.daemon.conf.json)
   adds that folder to the app's resources. A build without it (`npm start`,
-  `cargo run`, the Windows app) carries no service and never installs one.
+  `cargo run`) carries no service and never installs one.
 - [`service.rs`](apps/desktop/src-tauri/src/service.rs) runs at start. The
   daemon's `status` has `service: {root, version}`, the folder it runs from and
   its `VERSION`. If no daemon answers within 10 s, the app copies the resource to

@@ -6,6 +6,7 @@ dist-test/
 # Built artefacts
 engine/dist/
 apps/desktop/ui/webview.js
+apps/desktop/ui/logo.png
 # Cut from the character art by the desktop build.
 apps/desktop/src-tauri/icons/
 

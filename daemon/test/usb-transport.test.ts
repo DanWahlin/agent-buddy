@@ -11,6 +11,8 @@ test('recognizes macOS and Linux USB serial device paths', () => {
   assert.equal(isLikelyEsp32Port('/dev/ttyUSB12', 'linux'), true);
   assert.equal(isLikelyEsp32Port('/dev/ttyS0', 'linux'), false);
   assert.equal(isLikelyEsp32Port('COM5', 'linux'), false);
+  assert.equal(isLikelyEsp32Port('COM5', 'win32'), true);
+  assert.equal(isLikelyEsp32Port('/dev/ttyACM0', 'win32'), false);
 });
 
 test('parses USB upload limits and rejects unusable responses', () => {
@@ -48,7 +50,7 @@ test('a Wi-Fi press is a count that goes up in the same boot', () => {
 test('opens the settings page with each platform\'s browser command', () => {
   const url = 'http://127.0.0.1:4667/#token=abc';
   assert.deepEqual(browserCommands(url, 'darwin', false), [['/usr/bin/open', [url]]]);
-  assert.deepEqual(browserCommands(url, 'win32', false), [['cmd', ['/c', 'start', '""', url]]]);
+  assert.deepEqual(browserCommands(url, 'win32', false), [['rundll32.exe', ['url.dll,FileProtocolHandler', url]]]);
   assert.deepEqual(browserCommands(url, 'linux', false), [['xdg-open', [url]]]);
   assert.deepEqual(browserCommands(url, 'linux', true), [['wslview', [url]], ['explorer.exe', [url]]]);
 });
@@ -63,4 +65,9 @@ test('picks the Espressif port, with its USB product ID, for installs', () => {
   assert.deepEqual(pickPort(ports, '/dev/tty.usbmodem1', 'darwin'), {path: '/dev/cu.usbmodem1', pid: 0x43});
   assert.deepEqual(pickPort([{path: '/dev/ttyACM0'}] as never, undefined, 'linux'), {path: '/dev/ttyACM0', pid: null});
   assert.equal(pickPort([{path: '/dev/ttyS0'}] as never, undefined, 'linux'), null);
+  assert.equal(pickPort([{path: 'COM3'}] as never, undefined, 'win32'), null);
+  assert.deepEqual(pickPort([{path: 'COM3'}, {path: 'COM7', vendorId: '303A', productId: '1001'}] as never,
+                            undefined, 'win32'), {path: 'COM7', pid: 0x1001});
+  assert.deepEqual(pickPort([{path: 'COM4', vendorId: '10C4', productId: 'EA60'}] as never, undefined, 'win32'),
+                   {path: 'COM4', pid: 0xea60});
 });

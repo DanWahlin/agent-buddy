@@ -21,7 +21,10 @@ if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 11)) {
 
 function run(command, args, {cwd = root, quiet = false} = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {cwd, stdio: quiet ? ['ignore', 'pipe', 'pipe'] : 'inherit'});
+    // Node.js runs a Windows .cmd file (npm.cmd) only through a shell. These arguments need no quotes.
+    const shell = process.platform === 'win32' && /\.cmd$/i.test(command);
+    const child = spawn(command, args, {cwd, shell, windowsHide: true,
+                                        stdio: quiet ? ['ignore', 'pipe', 'pipe'] : 'inherit'});
     let output = '';
     child.stdout?.on('data', chunk => { output += chunk; });
     child.stderr?.on('data', chunk => { output += chunk; });
@@ -58,8 +61,18 @@ async function prepareDaemon() {
   }
 }
 
+// Windows has the "py" launcher or python.exe; "python3" there is often a Microsoft Store shortcut.
+const pythons = process.platform === 'win32' ? [['py', ['-3']], ['python', []], ['python3', []]] : [['python3', []]];
+
 async function buildCharacters() {
-  await run('python3', [join(root, 'tools', 'character_pack.py'), 'build'], {quiet: true});
+  for (const [index, [python, options]] of pythons.entries()) {
+    try {
+      await run(python, [...options, join(root, 'tools', 'character_pack.py'), 'build'], {quiet: true});
+      return;
+    } catch (error) {
+      if (index === pythons.length - 1 || !/not installed/.test(error.message)) throw error;
+    }
+  }
 }
 
 async function cli(args, {quiet = false} = {}) {
@@ -103,7 +116,7 @@ function isWsl() {
 // Opens a URL in the default browser; WSL hands it to the Windows browser.
 async function openBrowser(url) {
   const attempts = process.platform === 'darwin' ? [['open', [url]]]
-    : process.platform === 'win32' ? [['cmd', ['/c', 'start', '""', url]]]
+    : process.platform === 'win32' ? [['rundll32.exe', ['url.dll,FileProtocolHandler', url]]]
     : isWsl() ? [['wslview', [url]], ['explorer.exe', [url]]]
     : [['xdg-open', [url]]];
   for (const [command, args] of attempts) {
@@ -232,6 +245,7 @@ const commands = {
       ].filter(Boolean).join(', ');
       console.log(`  ${agent.id.padEnd(9)} ${agent.name} (${notes})`);
       if (agent.hint) console.log(`            ${agent.hint}`);
+      if (agent.warning) console.log(`            Warning: ${agent.warning}`);
     }
     console.log('\nExamples: npm run agents disable claude | npm run agents install codex');
   },

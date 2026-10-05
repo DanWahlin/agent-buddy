@@ -757,7 +757,7 @@ for (const done of ['pointercancel', 'pointerleave']) {
 }
 window.addEventListener('resize', resize);
 
-// A right-click opens the character's own menu (Hide, Open Settings, Close),
+// A right-click opens the character's own menu (Hide, Settings, Close),
 // never the WebView's (Reload, Inspect Element).
 window.addEventListener('contextmenu', event => {
   event.preventDefault();
