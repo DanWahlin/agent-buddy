@@ -60,5 +60,6 @@ class TouchGestureTracker {
 
 bool initializeTouchInput();
 bool pollTouchGesture(TouchGesture& gesture);
+void setTouchRotation(float radians);
 const char* touchInputError();
 }

@@ -1,4 +1,5 @@
 #include "../firmware/AgentCompanion/src/DeviceCommands.h"
+#include "../firmware/AgentCompanion/src/OrientationSettings.h"
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -12,7 +13,7 @@ static DeviceCommand send(DeviceCommands& parser, const std::string& text) {
 }
 
 int main() {
-  static_assert(kDeviceProtocol == 11);
+  static_assert(kDeviceProtocol == 12);
   DeviceCommands parser;
   for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
                                 DeviceCommand::Complete, DeviceCommand::Attention}) {
@@ -23,6 +24,17 @@ int main() {
   assert(send(parser, "i") == DeviceCommand::Info);
   assert(send(parser, "u") == DeviceCommand::UploadCharacter);
   assert(send(parser, "w") == DeviceCommand::ScanWifi);
+  assert(send(parser, "o") == DeviceCommand::GetOrientation);
+  assert(send(parser, "^-25\n") == DeviceCommand::ConfigureOrientation);
+  int16_t offset;
+  assert(parseOrientationOffset(parser.payload(), offset) && offset == -25);
+  for (const char* invalid : {"", "-", "--5", "151", "-155", "3", "9999", "1.5", " 5", "+5"})
+    assert(!parseOrientationOffset(invalid, offset));
+  for (const char* valid : {"0", "5", "-5", "150", "-150"})
+    assert(parseOrientationOffset(valid, offset));
+  assert(send(parser, "^1.5\n") == DeviceCommand::Invalid);
+  assert(send(parser, "^--5\n") == DeviceCommand::ConfigureOrientation);
+  assert(!parseOrientationOffset(parser.payload(), offset));
   assert(send(parser, "@TXkgV2ktRmk=:cGFzc3dvcmQ=\n") == DeviceCommand::ConfigureWifi);
   assert(std::strcmp(parser.wifiPayload(), "TXkgV2ktRmk=:cGFzc3dvcmQ=") == 0);
   assert(send(parser, "@b3Blbg==:\n") == DeviceCommand::ConfigureWifi);

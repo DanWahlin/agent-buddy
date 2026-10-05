@@ -25,12 +25,16 @@
 #include "src/ButtonInput.h"
 #include "src/SettingsMenu.h"
 #include "src/Motion.h"
+#include "src/OrientedDisplay.h"
+#include "src/OrientationSensor.h"
+#include "src/OrientationSettings.h"
 
 using namespace copilot;
 
 namespace {
-Arduino_ESP32QSPI displayBus(12, 38, 4, 5, 6, 7);
-Arduino_CO5300 display(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
+Arduino_ESP32QSPI displayBus(kDisplayCsPin, 38, 4, 5, 6, 7, true);
+Arduino_CO5300 panel(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
+OrientedDisplay display(&panel, &displayBus);
 QueueHandle_t freeFrames, readyFrames, commands;
 TaskHandle_t renderTask;
 SpriteRenderer* patchRenderer = nullptr;
@@ -41,7 +45,7 @@ tinfl_decompressor inflater;
 alignas(4) uint8_t inflateHistory[TINFL_LZ_DICT_SIZE];
 SpritePredictor spritePredictor;
 uint32_t inflateTimeUs = 0, predictTimeUs = 0;
-constexpr size_t kTransferBytes = 4096;
+constexpr size_t kTransferBytes = 16 * 1024;
 static_assert(kCharacterUploadChunkBytes <= kTransferBytes,
               "Character upload chunks are staged in the display transfer buffer.");
 uint8_t* transferBuffer;
@@ -62,11 +66,15 @@ size_t startupFreeInternal = 0;
 bool captureInterrupted = false;
 SettingsMenu settings(kBrightness);
 NetworkManager network;
+OrientationSensor orientationSensor;
 ButtonPressTracker bootButton;
 uint32_t buttonPresses = 0;
+int16_t orientationOffsetTenths = 0;
+bool orientationDirty = false;
 constexpr char kPreferencesNamespace[] = "agent-companion";
 constexpr char kSoundPreference[] = "sound";
 constexpr char kSoundVolumePreference[] = "volume";
+constexpr char kOrientationPreference[] = "orient-offset";
 
 void logMessage(const char* format, ...) {
   char message[384];
@@ -82,6 +90,15 @@ void logMessage(const char* format, ...) {
   if (Serial.write(reinterpret_cast<const uint8_t*>(message), length) != static_cast<size_t>(length)) ++droppedLogs;
 }
 
+bool updateOrientation() {
+  bool changed = orientationDirty;
+  orientationDirty = false;
+  if (orientationSensor.update()) changed = display.setAngle(orientationSensor.angle()) || changed;
+  if (!changed) return false;
+  setTouchRotation(display.angle());
+  return true;
+}
+
 struct Frame {
   uint16_t* pixels;
   uint32_t renderUs, motionUs, decodeUs, compositeUs, eyesUs, effectsUs, inflateUs, predictUs;
@@ -94,6 +111,11 @@ Frame frames[2];
     logMessage("FATAL: %s\n", message);
     delay(2000);
   }
+}
+
+void flushDisplay() {
+  display.flush();
+  if (display.error()) fatal(display.error());
 }
 
 void* allocate(size_t bytes, uint32_t capabilities, const char* error) {
@@ -299,6 +321,54 @@ void saveSoundVolume(uint8_t volume) {
   preferences.end();
 }
 
+int16_t loadOrientationOffset() {
+  Preferences preferences;
+  if (!preferences.begin(kPreferencesNamespace, false)) {
+    logMessage("ORIENTATION_ERROR preference open failed; using zero trim\n");
+    return 0;
+  }
+  if (preferences.isKey(kOrientationPreference)
+      && preferences.getType(kOrientationPreference) != PT_I16) {
+    preferences.end();
+    logMessage("ORIENTATION_ERROR invalid preference type; using zero trim\n");
+    return 0;
+  }
+  const int16_t tenths = preferences.getShort(kOrientationPreference, 0);
+  preferences.end();
+  if (!validOrientationOffset(tenths)) {
+    logMessage("ORIENTATION_ERROR invalid stored trim=%d; using zero trim\n", tenths);
+    return 0;
+  }
+  return tenths;
+}
+
+int16_t currentOrientationOffset() { return orientationOffsetTenths; }
+
+const char* configureOrientation(int16_t tenths) {
+  if (!validOrientationOffset(tenths)) return "Invalid orientation offset.";
+  if (installStarted || restartAt || network.firmwareRestarting()
+      || network.firmwareApproval() != NetworkManager::FirmwareApproval::None)
+    return "Wait for the current installation or firmware request to finish.";
+  if (tenths == orientationOffsetTenths) return nullptr;
+  Preferences preferences;
+  if (!preferences.begin(kPreferencesNamespace, false)) {
+    logMessage("ORIENTATION_ERROR preference open failed\n");
+    return "Could not open orientation preferences.";
+  }
+  const bool saved = preferences.putShort(kOrientationPreference, tenths) == sizeof(tenths);
+  preferences.end();
+  if (!saved) {
+    logMessage("ORIENTATION_ERROR preference write failed\n");
+    return "Could not save orientation preferences.";
+  }
+  orientationOffsetTenths = tenths;
+  orientationDirty = display.setTrim(tenths * kOrientationPi / 1800.0f) || orientationDirty;
+  return nullptr;
+}
+
+const NetworkManager::OrientationControl kOrientationControl{
+    currentOrientationOffset, configureOrientation};
+
 void queueModeCue(CharacterMode mode) {
   switch (mode) {
     case CharacterMode::Working: queueAudioCue(AudioCue::Working); break;
@@ -437,6 +507,7 @@ void drawSettingsMenu(CharacterMode selected) {
                      selected == CharacterMode::Attention, 1, 34);
   drawSettingsButton(58, 382, 165, "Surprise", selected == CharacterMode::Surprise, 2, 34);
   drawSettingsButton(243, 382, 165, "Close", false, 2, 34);
+  flushDisplay();
 }
 
 void drawNetworkSettings() {
@@ -492,6 +563,7 @@ void drawNetworkSettings() {
   drawSettingsButton(88, 336, 290, network.setupActive() ? "Restart setup" : "Setup Wi-Fi",
                      network.setupActive(), 2, 44);
   drawSettingsButton(150, 394, 166, "Back", false, 2, 38);
+  flushDisplay();
 }
 
 void clearCharacterMargins() {
@@ -617,11 +689,13 @@ bool pauseRendering() {
 }
 
 void drawInstallScreen(const char* source) {
+  updateOrientation();
   display.fillScreen(0);
   display.setBrightness(settings.brightness());
   drawCenteredText("Installing character", 140, 2, 0xE73F);
   drawCenteredText(source, 208, 2, 0x8C71);
   display.drawRoundRect(83, 238, 300, 24, 8, 0x5D19);
+  flushDisplay();
 }
 
 // The pack's display name arrives in its header, shortly after the transfer starts.
@@ -636,18 +710,21 @@ void drawInstallName() {
 
 void drawInstallProgress(uint32_t received, uint32_t total) {
   static int shown = -1;
+  const bool orientationChanged = updateOrientation();
   drawInstallName();
   const int percent = total ? static_cast<int>(uint64_t(received) * 100 / total) : 0;
-  if (percent == shown) return;
+  if (percent == shown && !orientationChanged) return;
   shown = percent;
   display.fillRoundRect(86, 241, std::max(1, 294 * percent / 100), 18, 6, 0x2372);
   char label[8];
   snprintf(label, sizeof(label), "%d%%", percent);
   display.fillRect(183, 276, 100, 16, 0);
   drawCenteredText(label, 276, 2, 0xE73F);
+  flushDisplay();
 }
 
 void drawInstallResult(const char* error) {
+  updateOrientation();
   display.fillRect(40, 300, 386, 60, 0);
   if (error) {
     drawCenteredText("Install failed", 306, 2, 0xF249);
@@ -657,6 +734,7 @@ void drawInstallResult(const char* error) {
   } else {
     drawCenteredText("Installed. Restarting...", 306, 2, 0x47E9);
   }
+  flushDisplay();
 }
 
 // Stops pack reads, then erases the old pack; every attempt ends in a restart.
@@ -801,6 +879,7 @@ void drawShellScreen() {
   drawCenteredText("Connect USB or Wi-Fi and run", 236, 1, 0x8C71);
   drawCenteredText("npm run character", 256, 2, 0x8C71);
   drawCenteredText(spriteStorageError() ? spriteStorageError() : "", 300, 1, 0x8C71);
+  flushDisplay();
 }
 
 bool queueNetworkMode(const char* state) {
@@ -890,6 +969,22 @@ void configureWifi(const char* payload) {
 
 void processCommand(DeviceCommand command, const DeviceCommands& parser, const Frame* frame) {
   switch (command) {
+    case DeviceCommand::ConfigureOrientation: {
+      int16_t tenths;
+      if (!parseOrientationOffset(parser.payload(), tenths)) {
+        logMessage("COMMAND_ERROR invalid orientation offset\n");
+        break;
+      }
+      if (const char* error = configureOrientation(tenths)) {
+        logMessage("COMMAND_ERROR %s\n", error);
+        break;
+      }
+      logMessage("ORIENTATION_SETTINGS offset_tenths=%d\n", orientationOffsetTenths);
+      break;
+    }
+    case DeviceCommand::GetOrientation:
+      logMessage("ORIENTATION_SETTINGS offset_tenths=%d\n", orientationOffsetTenths);
+      break;
     case DeviceCommand::None: break;
     case DeviceCommand::Invalid: logMessage("COMMAND_ERROR invalid or incomplete packet\n"); break;
     case DeviceCommand::Capture:
@@ -1014,7 +1109,8 @@ void startCharacter() {
             firstOpenPatch, secondOpenPatch, patch, patchPixels, frames[0].pixels,
             frames[1].pixels, inflatePose, kCharacterFrameWidth, kCharacterFrameHeight);
   }
-  void* effectMemory = allocate(sizeof(CharacterEffects), MALLOC_CAP_INTERNAL, "Effects allocation failed.");
+  // Leave internal RAM for Wi-Fi bursts; restoration records do not require DMA.
+  void* effectMemory = allocate(sizeof(CharacterEffects), MALLOC_CAP_SPIRAM, "Effects allocation failed.");
   auto* badgeOverlay = static_cast<uint16_t*>(allocate(
       CharacterEffects::kOverlayScratchPixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM,
       "Badge overlay allocation failed."));
@@ -1040,13 +1136,23 @@ void setup() {
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
   logMessage("\nAgent Companion character shell / Waveshare AMOLED 1.75-B\nPSRAM: %u bytes\n",
              ESP.getPsramSize());
-  if (!display.begin(kSpiFrequency)) fatal("CO5300 initialization failed.");
+  if (!display.begin(kSpiFrequency)) fatal(display.error());
   display.setBrightness(0);
   display.fillScreen(0);
   characterReady = initializeSpriteStorage();
   if (!characterReady) logMessage("CHARACTER id=none reason=%s\n", spriteStorageError());
   if (!initializeTouchInput()) fatal(touchInputError());
   pinMode(kBootButtonPin, INPUT_PULLUP);
+  orientationOffsetTenths = loadOrientationOffset();
+  orientationDirty = display.setTrim(orientationOffsetTenths * kOrientationPi / 1800.0f);
+  // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
+  // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
+  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket, &kOrientationControl);
+  if (!orientationSensor.begin()) {
+    logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
+  } else {
+    logMessage("ORIENTATION sensor=QMI8658 mode=continuous\n");
+  }
   const uint8_t storedSoundVolume = loadSoundVolume();
   settings.setSoundVolume(storedSoundVolume);
   setSoundVolume(storedSoundVolume);
@@ -1054,12 +1160,12 @@ void setup() {
   transferBuffer = static_cast<uint8_t*>(heap_caps_aligned_alloc(
       16, kTransferBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   if (!transferBuffer) fatal("DMA staging allocation failed.");
+  if (!display.setTransferBuffer(transferBuffer, kTransferBytes)) fatal(display.error());
   freeFrames = xQueueCreate(2, sizeof(Frame*));
   readyFrames = xQueueCreate(2, sizeof(Frame*));
   commands = xQueueCreate(8, sizeof(ModeRequest));
   if (!freeFrames || !readyFrames || !commands) fatal("Frame or command queue allocation failed.");
   if (characterReady) startCharacter();
-  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket);
   if (!characterReady) {
     drawShellScreen();
     display.setBrightness(settings.brightness());
@@ -1111,6 +1217,7 @@ bool showFirmwarePrompt(bool shell) {
   } else {
     drawCenteredText("Installed. Restarting...", 206, 2, 0x47E9);
   }
+  flushDisplay();
   return true;
 }
 
@@ -1119,12 +1226,14 @@ void shellLoop() {
   static DeviceCommands parser;
   static uint32_t networkRevision = UINT32_MAX;
   network.update();
+  const bool orientationChanged = updateOrientation();
   if (restartAt || installStarted) return;
   const bool prompt = showFirmwarePrompt(true);
   if (network.revision() != networkRevision) {
     if (!prompt) drawShellScreen();
     networkRevision = network.revision();
   }
+  if (orientationChanged) flushDisplay();
   pollBootButton();
   processCommand(parser.expire(esp_timer_get_time() / 1000), parser, nullptr);
   for (unsigned read = 0; read < 64 && Serial.available(); ++read)
@@ -1154,6 +1263,7 @@ void loop() {
     return;
   }
   network.update();
+  const bool orientationChanged = updateOrientation();
   if (installStarted) return;
   Frame* frame;
   if (xQueueReceive(readyFrames, &frame, pdMS_TO_TICKS(3000)) != pdTRUE) fatal("Renderer stalled.");
@@ -1176,18 +1286,13 @@ void loop() {
   previousPresentation = start;
   uint32_t transferUs = 0;
   if (!settings.isOpen() && !prompt) {
-    display.startWrite();
-    display.writeAddrWindow(kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight);
-    const auto* bytes = reinterpret_cast<const uint8_t*>(frame->pixels);
-    constexpr size_t frameBytes = kCharacterFrameWidth * kCharacterFrameHeight * 2;
-    for (size_t offset = 0; offset < frameBytes; offset += kTransferBytes) {
-      const size_t count = std::min(kTransferBytes, frameBytes - offset);
-      std::memcpy(transferBuffer, bytes + offset, count);
-      displayBus.writeBytes(transferBuffer, count);
-    }
-    display.endWrite();
-    transferUs = esp_timer_get_time() - start;
+    if (!display.flushFrame(
+            frame->pixels, kCharacterFrameX, 0, kCharacterFrameWidth, kCharacterFrameHeight))
+      fatal(display.error());
+  } else if (orientationChanged) {
+    flushDisplay();
   }
+  transferUs = esp_timer_get_time() - start;
   if (fadeFrame <= 40) {
     display.setBrightness(static_cast<uint8_t>(settings.brightness() * smoother(fadeFrame / 40.0f)));
     ++fadeFrame;
@@ -1226,6 +1331,12 @@ void loop() {
                     frameCount * 1000000.0 / (now - lastReport),
                     renderTotal / (1000.0 * frameCount), transferTotal / (1000.0 * frameCount),
                     maxRender / 1000.0, ESP.getFreePsram(), droppedLogs.load(std::memory_order_relaxed));
+      logMessage("ORIENTATION available=%u angle=%.1f display_angle=%.1f accel=%.3f,%.3f,%.3f\n",
+                    orientationSensor.available(), orientationSensor.angle() * 180.0f / kOrientationPi,
+                    display.angle() * 180.0f / kOrientationPi,
+                    orientationSensor.accelerometerX(), orientationSensor.accelerometerY(),
+                    orientationSensor.accelerometerZ());
+      logMessage("SCANOUT compose=%uus spi_wait=%uus\n", display.composeUs(), display.writeUs());
       logMessage("STAGES motion=%uus decode=%uus composite=%uus eyes=%uus effects=%uus inflate=%uus predict=%uus\n",
                     timing.motionUs, timing.decodeUs, timing.compositeUs, timing.eyesUs, timing.effectsUs,
                     timing.inflateUs, timing.predictUs);

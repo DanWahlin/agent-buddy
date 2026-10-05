@@ -6,9 +6,10 @@
 namespace copilot {
 enum class DeviceCommand {
   None, Invalid, Capture, Heap, Info, UploadCharacter, ConfigureWifi, ScanWifi,
-  DefineAgentIcon, SetAgentBadges, SetUsage, Idle, Surprise, Working, Complete, Attention
+  DefineAgentIcon, SetAgentBadges, SetUsage, GetOrientation, ConfigureOrientation,
+  Idle, Surprise, Working, Complete, Attention
 };
-constexpr unsigned kDeviceProtocol = 11;
+constexpr unsigned kDeviceProtocol = 12;
 
 inline const char* commandName(DeviceCommand command) {
   switch (command) {
@@ -65,6 +66,15 @@ class DeviceCommands {
         previous_ = milliseconds;
         return DeviceCommand::None;
       }
+      if (byte == '^') {
+        receiving_ = true;
+        packet_ = Packet::Orientation;
+        length_ = 0;
+        invalid_ = false;
+        previous_ = milliseconds;
+        return DeviceCommand::None;
+      }
+      if (byte == 'o') return DeviceCommand::GetOrientation;
       if (byte == 's') return DeviceCommand::Capture;
       if (byte == 'h') return DeviceCommand::Heap;
       if (byte == 'i') return DeviceCommand::Info;
@@ -81,6 +91,7 @@ class DeviceCommands {
       if (packet_ == Packet::Icon) return DeviceCommand::DefineAgentIcon;
       if (packet_ == Packet::Agents) return DeviceCommand::SetAgentBadges;
       if (packet_ == Packet::Usage) return DeviceCommand::SetUsage;
+      if (packet_ == Packet::Orientation) return DeviceCommand::ConfigureOrientation;
       for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
                                      DeviceCommand::Complete, DeviceCommand::Attention}) {
         if (std::strcmp(text_, commandName(command)) == 0) return command;
@@ -98,6 +109,8 @@ class DeviceCommands {
           || byte == '-' || byte == '=' || byte == ',';
     else if (packet_ == Packet::Usage)
       allowed = alphaNum || byte == ' ' || byte == ',' || byte == '.' || byte == ':' || byte == '|';
+    else if (packet_ == Packet::Orientation)
+      allowed = (byte >= '0' && byte <= '9') || byte == '-';
     if (invalid_ || length_ == sizeof(text_) - 1 || !allowed) invalid_ = true;
     else text_[length_++] = byte;
     return DeviceCommand::None;
@@ -113,7 +126,7 @@ class DeviceCommands {
   const char* wifiPayload() const { return text_; }
 
  private:
-  enum class Packet : uint8_t { Mode, Wifi, Icon, Agents, Usage };
+  enum class Packet : uint8_t { Mode, Wifi, Icon, Agents, Usage, Orientation };
   char text_[192] = {};
   unsigned length_ = 0;
   uint64_t previous_ = 0;

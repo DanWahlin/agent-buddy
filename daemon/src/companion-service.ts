@@ -52,6 +52,7 @@ import {createUninstallPlan, runUninstall, type UninstallPlan} from './uninstall
 import type {DaemonStatus, HookEvent, HookPayload, InstallProgress, WifiNetwork} from './protocol.js';
 import type {StateCoordinator} from './state-coordinator.js';
 import {builtFirmwareReader, type FirmwareImage} from './firmware-image.js';
+import {isOrientationOffset, type DeviceOrientation} from './orientation-settings.js';
 import {deviceUsageLines, UsageTracker, usageLines, type UsageTotals, type UsageWindow} from './usage-tracker.js';
 import {loadWifiConfig, saveWifiConfig, validateWifiCredentials} from './wifi-config.js';
 
@@ -302,6 +303,7 @@ export class CompanionService extends EventEmitter {
       port: this.#transport.address,
       character: this.#transport.character,
       network: this.#transport.network,
+      orientation: this.#transport.orientation,
       mode: this.#transport.mode,
       sessions: this.#coordinator.sessionCount,
       agents: this.agentStatuses(),
@@ -595,6 +597,16 @@ export class CompanionService extends EventEmitter {
       this.#installBusy = false;
       this.emit('change');
     }
+  }
+
+  async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
+    if (!isOrientationOffset(offsetDegrees))
+      throw new Error('Orientation offset must be from -15 to 15 degrees in half-degree steps.');
+    if (this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
+      throw new Error('Wait for the current installation to finish.');
+    const orientation = await this.#transport.setOrientationOffset(offsetDegrees);
+    this.emit('change');
+    return orientation;
   }
 
   #firmwareStatus(): FirmwareStatus {

@@ -69,6 +69,9 @@ desktop, with or without the device.
   connection mode, and the desktop app, with light and dark themes.
 - **Natural motion:** eight looking directions, blinks, touch reactions, and a
   sleep cycle after two idle minutes.
+- **Automatic orientation:** the onboard accelerometer keeps the character,
+  settings, installation screens, firmware prompts, and touch controls upright
+  when the device is rotated. Web Settings can save a per-device alignment trim.
 - **Wi-Fi or USB:** run it tethered to your computer or from any USB power source
   on the same network.
 - **Optional sound:** short local sound cues through the board's speaker connector,

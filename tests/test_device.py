@@ -3,7 +3,7 @@ import io
 from pathlib import Path
 import tempfile
 import unittest
-from tools.device import (NonResettingSerial, read_frame_end, parse_memory, validate_memory,
+from tools.device import (DEVICE_PROTOCOL, NonResettingSerial, read_frame_end, parse_memory, validate_memory,
                           request_mode, capture, parse_character_status,
                           request_character_status)
 
@@ -154,7 +154,7 @@ class ModeCommandTests(unittest.TestCase):
         self.assertEqual(port.written, [b"i", b"!working\n"])
 
     def test_accepts_backward_compatible_protocols(self):
-        for protocol in (1, 2, 3, 4, 5, 6):
+        for protocol in range(1, DEVICE_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 port = ControlPort([
                     f"INFO protocol={protocol}\n".encode(),
@@ -164,10 +164,12 @@ class ModeCommandTests(unittest.TestCase):
                 self.assertEqual(port.written, [b"i", b"!surprise\n"])
 
     def test_rejects_unsupported_protocol_before_mode(self):
-        port = ControlPort([b"INFO protocol=7\n"])
-        with self.assertRaises(RuntimeError):
-            request_mode(port, "surprise")
-        self.assertEqual(port.written, [b"i"])
+        for protocol in (0, DEVICE_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                port = ControlPort([f"INFO protocol={protocol}\n".encode()])
+                with self.assertRaises(RuntimeError):
+                    request_mode(port, "surprise")
+                self.assertEqual(port.written, [b"i"])
 
     def test_invalid_mode_sends_nothing(self):
         port = ControlPort([])

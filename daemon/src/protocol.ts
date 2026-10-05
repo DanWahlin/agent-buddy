@@ -1,5 +1,6 @@
 import type {ConnectionMode} from './connection-mode.js';
 import type {AgentId, AgentStatus} from './agents/types.js';
+import type {DeviceOrientation} from './orientation-settings.js';
 
 export const characterStates = ['idle', 'surprise', 'working', 'complete', 'attention'] as const;
 export type CharacterState = typeof characterStates[number];
@@ -70,6 +71,7 @@ export interface DaemonStatus {
   drivingAgents?: AgentId[];
   // The Wi-Fi network the device is set up for, as the device reports it. Never stored.
   network?: DeviceNetwork | null;
+  orientation?: DeviceOrientation | null;
 }
 
 export interface DeviceNetwork {

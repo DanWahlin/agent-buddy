@@ -4,6 +4,7 @@ import {WifiTransport} from './wifi-transport.js';
 import type {WifiConfig} from './wifi-config.js';
 import type {ConnectionMode} from './connection-mode.js';
 import type {AgentBadgeActive, AgentBadgeIconDefinition} from './agent-badges.js';
+import type {DeviceOrientation} from './orientation-settings.js';
 
 export interface CharacterInstallResult {
   character: string;
@@ -69,6 +70,17 @@ export class DeviceTransport {
   // Wi-Fi discovery keeps checking in the background, so it's the live answer when it can reach the device.
   get network(): DeviceNetwork | null {
     return this.#wifi.network ?? this.#usb.network;
+  }
+
+  get orientation(): DeviceOrientation | null {
+    return this.#usb.connected ? this.#usb.orientation : this.#wifi.orientation;
+  }
+
+  async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    if (!this.connected) throw new Error('Connect the Agent Companion first.');
+    return this.#usb.connected ? this.#usb.setOrientationOffset(offsetDegrees)
+      : this.#wifi.setOrientationOffset(offsetDegrees);
   }
 
   get installing(): boolean {

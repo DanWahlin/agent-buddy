@@ -24,6 +24,8 @@ let lastResult = null;
 let toastTimer;
 let wifiScanning = false;
 let wifiScanned = false;
+let orientationPending = false;
+let orientationDragging = false;
 // The status stream from the service.
 let events = null;
 
@@ -251,6 +253,7 @@ function renderStatus() {
     $('fact-connection').textContent = 'Service offline';
     $('summary').textContent = 'Waiting for the companion service…';
     renderDesktopApp();
+    renderOrientation();
     renderUsage();
     renderFirmware();
     return;
@@ -315,6 +318,7 @@ function renderStatus() {
     volume.disabled = desktop.visible === false || desktop.sounds !== true;
   }
   renderDesktopApp();
+  renderOrientation();
 
   for (const line of document.querySelectorAll('#mode-hint [data-mode]')) {
     line.classList.toggle('current', line.dataset.mode === status.mode);
@@ -406,6 +410,71 @@ function renderCharacters() {
     list.append(item);
   }
 }
+
+function showOrientationOffset() {
+  const value = Number($('orientation-offset').value);
+  $('orientation-offset-value').textContent = `${value > 0 ? '+' : ''}${value} deg`;
+}
+
+function renderOrientation() {
+  const orientation = status?.orientation;
+  const busy = Boolean(status?.installing || status?.firmware?.updating || status?.firmware?.usb?.installing);
+  const disabled = !status?.connected || !orientation || busy || orientationPending;
+  const input = $('orientation-offset');
+  if (!orientationPending && !orientationDragging) {
+    input.value = String(orientation?.offsetDegrees ?? 0);
+    showOrientationOffset();
+  }
+  input.disabled = disabled;
+  $('orientation-left').disabled = disabled || orientation.offsetDegrees <= -15;
+  $('orientation-right').disabled = disabled || orientation.offsetDegrees >= 15;
+  $('orientation-reset').disabled = disabled || orientation.offsetDegrees === 0;
+  $('orientation-hint').textContent = !status?.connected ? 'Connect the device to adjust its screen alignment.'
+    : !orientation ? 'Install updated device firmware to configure screen alignment.'
+    : busy ? 'Wait for the current installation to finish.'
+    : orientationPending ? 'Saving alignment on the device...'
+    : 'Left rotates counterclockwise; Right rotates clockwise. Reset returns to zero trim.';
+}
+
+async function updateOrientationOffset(offsetDegrees) {
+  if (orientationPending) return;
+  orientationPending = true;
+  renderOrientation();
+  try {
+    const result = await api('/api/orientation', {
+      method: 'POST', type: 'application/json', body: JSON.stringify({offsetDegrees})});
+    if (status) status.orientation = result.orientation;
+    toast('Screen alignment saved on the device.', 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    orientationPending = false;
+    orientationDragging = false;
+    renderOrientation();
+  }
+}
+
+$('orientation-offset').addEventListener('pointerdown', () => { orientationDragging = true; });
+$('orientation-offset').addEventListener('input', showOrientationOffset);
+$('orientation-offset').addEventListener('change', event => {
+  orientationDragging = false;
+  void updateOrientationOffset(Number(event.target.value));
+});
+$('orientation-offset').addEventListener('pointercancel', () => {
+  orientationDragging = false;
+  renderOrientation();
+});
+$('orientation-offset').addEventListener('blur', () => {
+  orientationDragging = false;
+  renderOrientation();
+});
+$('orientation-left').addEventListener('click', () => {
+  void updateOrientationOffset(status.orientation.offsetDegrees - 0.5);
+});
+$('orientation-right').addEventListener('click', () => {
+  void updateOrientationOffset(status.orientation.offsetDegrees + 0.5);
+});
+$('orientation-reset').addEventListener('click', () => { void updateOrientationOffset(0); });
 
 async function loadCharacters() {
   try {
@@ -717,7 +786,8 @@ function firmwareView(firmware) {
     + 'report its version, so it cannot update over Wi-Fi. A newer release installs over USB below.'};
   if (!firmware.built) return {pill: 'Installed', kind: 'usb', hint: `Firmware ${firmware.device}.`};
   if (firmware.built === firmware.device)
-    return {pill: 'Up to date', kind: 'usb', hint: `The device runs the latest built firmware (${firmware.device}).`};
+    return {pill: 'Current build installed', kind: 'usb',
+      hint: `The device runs the source build from this computer (${firmware.device}). No update is needed.`};
   return {pill: 'Update available', kind: 'warning', hint: firmware.canUpdate
     ? `The device runs ${firmware.device}. Update sends the built firmware (${firmware.built}) over Wi-Fi. `
       + 'You press the BOOT button on the device to allow it. '
@@ -735,7 +805,7 @@ function renderFirmware() {
   $('firmware-hint').textContent = view.hint;
   $('firmware-update').disabled = firmwarePending || !firmware?.canUpdate;
   // Wi-Fi updates send firmware you built yourself; the release firmware goes over USB.
-  $('firmware-update').hidden = !firmware?.built;
+  $('firmware-update').hidden = !firmware?.canUpdate && !firmwarePending;
   // Show "Went back" on time, even when no new status arrives.
   clearTimeout(firmwareTimer);
   if (view.pill === 'Restarting…')
@@ -768,7 +838,7 @@ function usbFirmwareView(usb) {
   if (!usb.flasher) return {pill: 'Needs the desktop app', kind: 'offline',
     hint: `The desktop app writes the ${release} firmware from GitHub to the device over USB. Open the desktop app, `
       + 'then come back here.'};
-  const about = `Install ${release} downloads release ${release} from GitHub and writes it to the device over USB. `
+  const about = `This downloads published release ${release} from GitHub and replaces the firmware over USB. `
     + 'Wi-Fi settings stay; the character goes back to Copilot.';
   if (last && !last.ok) return {pill: 'Failed', kind: 'warning', hint: `${last.error} ${about}`};
   if (usb.unanswered) return {pill: 'No companion firmware', kind: 'warning',
@@ -778,9 +848,9 @@ function usbFirmwareView(usb) {
     return {pill: `${release} installed`, kind: 'usb', hint: `The device runs release ${release}. Install it again to repair it.`};
   if (!usb.port) return {pill: 'No USB device', kind: 'offline',
     hint: `Connect the device with a USB data cable to install ${release}. ${about}`};
-  if (usb.releaseId && device && device === status.firmware?.built)
+  if (device && device === status.firmware?.built && device !== usb.releaseId)
     return {pill: 'Your own build', kind: 'warning',
-      hint: `The device runs firmware that you built on this computer (ID ${device}), not release ${release}. ${about}`};
+      hint: `The current source build is installed. This is a release replacement, not an update to that build. ${about}`};
   if (usb.releaseId && device) return {pill: `Not ${release}`, kind: 'warning',
     hint: `The device runs other firmware (ID ${device}), not release ${release}. ${about}`};
   return {pill: `Release ${release}`, kind: 'offline', hint: about};
@@ -800,15 +870,26 @@ function renderUsbFirmware() {
     bar.firstElementChild.style.width = `${view.percent}%`;
   }
   const button = $('usb-firmware-install');
-  button.textContent = usb?.release ? `Install v${usb.release}` : 'Install';
+  const action = !status?.connected || usb?.unanswered ? 'Install'
+    : usb?.releaseId && status.firmware?.device === usb.releaseId ? 'Reinstall' : 'Replace with';
+  button.textContent = usb?.release ? `${action} v${usb.release}` : 'Install';
   button.disabled = usbFirmwarePending || !usb?.flasher || !usb.release || Boolean(usb.installing)
     || Boolean(status?.installing) || Boolean(status?.firmware?.updating);
+  if (usb?.installing || usb?.unanswered || (status?.connected && !status.firmware?.device))
+    $('usb-firmware-recovery').open = true;
   clearTimeout(usbFirmwareTimer);
   if (view.pill === 'Restarting…')
     usbFirmwareTimer = setTimeout(renderUsbFirmware, usb.last.at + firmwareRestartMs - Date.now() + 500);
 }
 
 $('usb-firmware-install').addEventListener('click', async () => {
+  if (status?.connected && status.firmware?.device) {
+    const release = status.firmware.usb?.release;
+    if (!await confirmAction(
+        `Replace the current firmware with published release v${release}? `
+          + 'Features in your source build may not be in this release. '
+          + 'The character returns to Copilot; Wi-Fi settings stay.', 'Replace firmware')) return;
+  }
   usbFirmwarePending = true;
   renderUsbFirmware();
   try {
