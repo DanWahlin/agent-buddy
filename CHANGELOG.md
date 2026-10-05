@@ -2,6 +2,14 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.9.0]
+
+### Features and improvements
+
+- Add desktop sounds with a volume slider, uninstall from Settings, and a simpler tray menu
+
+- Add native Windows support: bundled service, WSL hooks, and Windows Arm64 installer
+
 ## [v0.8.1]
 
 ### Fixes
