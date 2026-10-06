@@ -31,6 +31,12 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(response));
     return;
   }
+  if (command === 'narrate') {
+    const text = [argument, file, ...options].filter((value): value is string => value !== undefined).join(' ');
+    const response = checked(await requestDaemon({type: 'narrate', text}, 60_000));
+    console.log(JSON.stringify(response));
+    return;
+  }
   if (command === 'hook') {
     try {
       const parsed = parseHookArguments(argument, file);
@@ -78,7 +84,7 @@ async function main(): Promise<void> {
   }
   if (command === 'voice') {
     if (!isVoiceNotificationMode(argument))
-      throw new Error('Usage: agent-companion voice off|milestones|chatty');
+      throw new Error('Usage: agent-companion voice off|milestones|chatty|contextual');
     console.log(JSON.stringify(checked(await requestDaemon({type: 'voice', mode: argument}, 2000))));
     return;
   }
@@ -142,7 +148,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|voice off|milestones|chatty|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
+    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|narrate TEXT|voice off|milestones|chatty|contextual|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
 }
 
 function parseHookArguments(first: string | undefined, second: string | undefined):

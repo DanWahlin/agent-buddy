@@ -146,6 +146,21 @@ export class UsbTransport {
       .catch(error => console.error(`[usb] ${this.#message(error)}`));
   }
 
+  async setStateConfirmed(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('USB device is not connected.');
+    this.#desired = state;
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => console.error(`[usb] ${this.#message(error)}`));
+    await command;
+  }
+
+  async sendTransientState(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('USB device is not connected.');
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => console.error(`[usb] ${this.#message(error)}`));
+    await command;
+  }
+
   setAgentBadges(icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[]): void {
     const iconSignature = icons.map(icon => `${icon.id}:${icon.color}:${icon.mask.toString('base64')}`).join('|');
     const activeSignature = active.map(item => `${item.id}=${item.role}`).join(',');

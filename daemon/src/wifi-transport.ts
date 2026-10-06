@@ -139,6 +139,27 @@ export class WifiTransport {
       });
   }
 
+  async setStateConfirmed(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('Wi-Fi device is not connected.');
+    this.#desired = state;
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => {
+      console.error(`[wifi] ${this.#message(error)}`);
+      this.#setConnection(false, null);
+    });
+    await command;
+  }
+
+  async sendTransientState(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('Wi-Fi device is not connected.');
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => {
+      console.error(`[wifi] ${this.#message(error)}`);
+      this.#setConnection(false, null);
+    });
+    await command;
+  }
+
   setAgentBadges(icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[]): void {
     const iconSignature = icons.map(icon => `${icon.id}:${icon.color}:${icon.mask.toString('base64')}`).join('|');
     const activeSignature = active.map(item => `${item.id}=${item.role}`).join(',');

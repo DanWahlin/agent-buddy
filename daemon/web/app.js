@@ -1148,7 +1148,8 @@ $('voice-mode')?.addEventListener('change', async event => {
     if (status?.voice) status.voice.mode = mode;
     toast(mode === 'off' ? 'Voice notifications are off.'
       : mode === 'milestones' ? 'Voice notifications announce milestones.'
-      : 'Voice notifications are chatty.', 'success');
+      : mode === 'chatty' ? 'Voice notifications are chatty.'
+      : 'Agents can add contextual narration.', 'success');
   } catch (error) {
     event.target.value = status?.voice?.mode ?? 'off';
     toast(error.message, 'error');

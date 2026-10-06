@@ -1,11 +1,22 @@
 import type {CharacterState} from './protocol.js';
-import {createSpeechSynthesizer, type SpeechSynthesizer} from './speech.js';
+import {createSpeechSynthesizer, validateSpeechText, type SpeechSynthesizer} from './speech.js';
 
-export const voiceNotificationModes = ['off', 'milestones', 'chatty'] as const;
+export const voiceNotificationModes = ['off', 'milestones', 'chatty', 'contextual'] as const;
 export type VoiceNotificationMode = typeof voiceNotificationModes[number];
+export const maxNarrationCharacters = 180;
 
 export function isVoiceNotificationMode(value: unknown): value is VoiceNotificationMode {
   return typeof value === 'string' && (voiceNotificationModes as readonly string[]).includes(value);
+}
+
+export function validateNarrationText(value: unknown): string {
+  const text = validateSpeechText(value);
+  if ([...text].length > maxNarrationCharacters)
+    throw new Error(`Contextual narration cannot exceed ${maxNarrationCharacters} characters.`);
+  if (/[\r\n\t]/.test(text)) throw new Error('Contextual narration must be a single spoken line.');
+  if (/\b(?:https?:\/\/|www\.)\S+/i.test(text) || /\b\S+@\S+\.\S+\b/.test(text))
+    throw new Error('Contextual narration cannot contain URLs or email addresses.');
+  return text;
 }
 
 const phrases: Record<Exclude<CharacterState, 'surprise'>, readonly string[]> = {
@@ -80,6 +91,25 @@ export class VoiceNotifier {
     this.#mode = mode;
   }
 
+  narrate(value: unknown): Promise<void> {
+    const text = validateNarrationText(value);
+    if (this.#mode !== 'contextual')
+      return Promise.reject(new Error('Contextual narration is not enabled.'));
+    if (!this.#available())
+      return Promise.reject(new Error('Contextual narration needs the device connected over Wi-Fi.'));
+    const work = this.#pending.then(async () => {
+      if (this.#mode !== 'contextual') throw new Error('Contextual narration was disabled.');
+      if (!this.#available()) throw new Error('The device is no longer connected over Wi-Fi.');
+      const packet = await this.#synthesizer.synthesize(text);
+      await this.#output.speak(packet);
+      this.#log('[voice] contextual narration sent');
+    });
+    this.#pending = work.catch(error => {
+      this.#error(`[voice] ${error instanceof Error ? error.message : String(error)}`);
+    });
+    return work;
+  }
+
   stateChanged(state: CharacterState): void {
     if (state === this.#lastState) return;
     const previous = this.#lastState;
@@ -103,7 +133,7 @@ export class VoiceNotifier {
   #shouldAnnounce(state: CharacterState, previous: CharacterState): state is Exclude<CharacterState, 'surprise'> {
     if (this.#mode === 'off' || state === 'surprise') return false;
     if (state === 'attention' || state === 'complete') return true;
-    if (this.#mode !== 'chatty') return false;
+    if (this.#mode !== 'chatty' && this.#mode !== 'contextual') return false;
     // Complete already says the task ended; do not follow it four seconds later with an idle line.
     return state === 'working' || (state === 'idle' && previous !== 'complete');
   }

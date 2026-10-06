@@ -272,7 +272,8 @@ test('validates and performs actions', async () => {
     assert.deepEqual(service.badges, [false]);
     assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"loud"}'})).status, 400);
     assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"milestones"}'})).status, 200);
-    assert.deepEqual(service.voice, ['milestones']);
+    assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"contextual"}'})).status, 200);
+    assert.deepEqual(service.voice, ['milestones', 'contextual']);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":"no"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);

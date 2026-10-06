@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {VoiceNotifier} from '../src/voice-notifications.js';
 
-function notifier(mode: 'off' | 'milestones' | 'chatty', available = true) {
+function notifier(mode: 'off' | 'milestones' | 'chatty' | 'contextual', available = true) {
   const spoken: string[] = [];
   const errors: string[] = [];
   const voice = new VoiceNotifier({
@@ -86,4 +86,19 @@ test('speech failures are reported without rejecting future announcements', asyn
   await voice.settled();
   assert.equal(attempts, 2);
   assert.deepEqual(errors, ['[voice] device unavailable']);
+});
+
+test('contextual narration validates, serializes, and requires opt-in plus Wi-Fi', async () => {
+  const {voice, spoken} = notifier('contextual');
+  voice.stateChanged('working');
+  await voice.narrate('Let me send that message to Paul for you.');
+  await voice.settled();
+  assert.equal(spoken.length, 2);
+  assert.equal(spoken[1], 'Let me send that message to Paul for you.');
+
+  await assert.rejects(notifier('chatty').voice.narrate('Let me check.'), /not enabled/);
+  await assert.rejects(notifier('contextual', false).voice.narrate('Let me check.'), /Wi-Fi/);
+  assert.throws(() => voice.narrate('https://example.com'), /URLs/);
+  assert.throws(() => voice.narrate('first line\nsecond line'), /single spoken line/);
+  assert.throws(() => voice.narrate('a'.repeat(181)), /180 characters/);
 });

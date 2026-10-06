@@ -710,12 +710,25 @@ The setting is also available on the **Agents** tab in Settings:
 | **Off** (default) | Never speaks automatically |
 | **Milestones** | Questions that need attention and completed work |
 | **Chatty** | Milestones plus working and idle transitions |
+| **Contextual** | Chatty plus short purpose-written lines from the active agent |
 
 Announcements use a rotating set of fixed, lightly whimsical phrases, including
 occasional thinking sounds in Chatty mode. They do not repeat the same line
 every time and never read prompts, tool arguments, responses, file names, or
 other session content aloud. Use `npm run voice off` at any time to disable
 them.
+
+Contextual mode lets an integrated agent explicitly submit a short narration
+such as “Let me send that message to Paul for you.” The daemon does not derive
+these lines from prompts, and rejects multiline text, URLs, email addresses, and
+lines longer than 180 characters. Agents are instructed to omit secrets,
+identifiers, code, file names, and message contents. You can exercise the same
+path manually with:
+
+```bash
+npm run voice contextual
+npm run narrate "Let me check the calendar for you"
+```
 
 The text is passed only to the operating system's local speech synthesizer. The
 generated audio is held in a temporary file on the computer, deleted after
@@ -775,7 +788,8 @@ Run these from the repository folder.
 | `npm run settings` | Opens the settings page |
 | `npm run status` | Shows the connection, character, state, and any pending agent steps |
 | `npm run speak "<text>"` | Speaks up to 15 seconds of locally synthesized audio over Wi-Fi (macOS) |
-| `npm run voice off\|milestones\|chatty` | Controls automatic spoken state notifications |
+| `npm run narrate "<text>"` | Sends a validated contextual line when Contextual mode is enabled |
+| `npm run voice off\|milestones\|chatty\|contextual` | Controls automatic and contextual spoken notifications |
 | `npm run agents` | Lists agents with their versions and hook status |
 | `npm run agents enable\|disable <agent>` | Lets an agent drive the device, or stops it |
 | `npm run agents install\|uninstall <agent>` | Installs or removes one agent's hook |

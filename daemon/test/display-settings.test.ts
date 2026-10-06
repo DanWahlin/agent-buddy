@@ -45,7 +45,7 @@ test('desktop settings round-trip', async () => {
   try {
     const settings = {showAgentBadges: true, showDesktopCompanion: false, desktopBackdrop: 'none',
                       desktopSounds: true, desktopVolume: 20, showUsage: true, usageWindow: 'month',
-                      voiceNotifications: 'chatty'} as const;
+                      voiceNotifications: 'contextual'} as const;
     await saveDisplaySettings(settings, path);
     assert.deepEqual(loadDisplaySettingsSync(path), settings);
     assert.equal(isDesktopBackdrop('none'), true);

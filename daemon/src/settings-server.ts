@@ -210,7 +210,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
     if (method === 'POST' && segments.length === 1 && segments[0] === 'voice') {
       const body = await readJson(request) as {mode?: unknown};
       if (!isVoiceNotificationMode(body.mode))
-        throw new HttpError(400, 'Voice notifications must be off, milestones, or chatty.');
+        throw new HttpError(400, 'Voice notifications must be off, milestones, chatty, or contextual.');
       await service.setVoiceNotifications(body.mode);
       return json(response, 200, {ok: true, mode: body.mode});
     }

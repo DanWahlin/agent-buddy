@@ -144,9 +144,25 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
       } else if (request.type === 'send' && characterStates.includes(request.state)) {
         transport.setState(request.state);
         respond(socket, {ok: true, state: request.state});
+      } else if (request.type === 'lease' && characterStates.includes(request.state)) {
+        validateLeaseId(request.leaseId);
+        if (!transport.connected) throw new Error('Connect the Agent Companion first.');
+        if (request.state === 'surprise') {
+          reply(transport.sendTransientState('surprise')
+            .then(() => ({ok: true, state: 'surprise', persistentState: coordinator.state})));
+        } else {
+          coordinator.setLeaseState(request.leaseId, request.state);
+          reply(transport.setStateConfirmed(coordinator.state).then(() => ({ok: true, state: coordinator.state})));
+        }
+      } else if (request.type === 'test') {
+        if (!transport.connected) throw new Error('Connect the Agent Companion first.');
+        reply(transport.setStateConfirmed(coordinator.state).then(() => service.status()));
       } else if (request.type === 'speak') {
         socket.setTimeout(60_000, () => socket.destroy());
         reply(speakText(request.text, transport));
+      } else if (request.type === 'narrate') {
+        socket.setTimeout(60_000, () => socket.destroy());
+        reply(service.narrate(request.text).then(() => ({ok: true})));
       } else if (request.type === 'status') {
         const command = request.client === 'desktop'
           ? service.desktopSeen({
@@ -223,6 +239,13 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
       respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)});
     }
   };
+}
+
+function validateLeaseId(value: string): void {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 128
+      || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error('Invalid lease ID.');
+  }
 }
 
 export async function speakText(

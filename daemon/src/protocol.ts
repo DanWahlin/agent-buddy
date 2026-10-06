@@ -43,7 +43,10 @@ export interface HookPayload {
 export type DaemonRequest =
   | {type: 'hook'; agent?: AgentId; event?: HookEvent | string; nativeEvent?: string; payload: HookPayload}
   | {type: 'send'; state: CharacterState}
+  | {type: 'lease'; leaseId: string; state: CharacterState}
+  | {type: 'test'}
   | {type: 'speak'; text: string}
+  | {type: 'narrate'; text: string}
   // The desktop app names itself, so the service knows it runs and where to start it from.
   | {type: 'status'; client?: 'desktop'; executable?: string; environment?: Record<string, string>; flasher?: number;
       version?: string}
@@ -56,7 +59,7 @@ export type DaemonRequest =
   | {type: 'installCharacter'; character: string}
   | {type: 'setConnection'; mode: ConnectionMode}
   | {type: 'badges'; enabled: boolean}
-  | {type: 'voice'; mode: 'off' | 'milestones' | 'chatty'}
+  | {type: 'voice'; mode: 'off' | 'milestones' | 'chatty' | 'contextual'}
   | {type: 'desktop'; visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}
   | {type: 'usage'; enabled?: boolean; window?: string}
   | {type: 'listCharacters'}

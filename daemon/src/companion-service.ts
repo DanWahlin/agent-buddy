@@ -496,6 +496,10 @@ export class CompanionService extends EventEmitter {
     this.#voice.stateChanged(state);
   }
 
+  narrate(text: unknown): Promise<void> {
+    return this.#voice.narrate(text);
+  }
+
   async setVoiceNotifications(mode: VoiceNotificationMode): Promise<void> {
     this.#display = {...this.#display, voiceNotifications: mode};
     this.#voice.setMode(mode);
