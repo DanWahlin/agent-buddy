@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.12.0]
+
+### Features and improvements
+
+- Add companion service Stop and Restart, and stop the service with the app when no device was used
+
 ## [v0.11.0]
 
 ### Features and improvements
