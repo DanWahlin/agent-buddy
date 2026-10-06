@@ -43,6 +43,7 @@ export interface HookPayload {
 export type DaemonRequest =
   | {type: 'hook'; agent?: AgentId; event?: HookEvent | string; nativeEvent?: string; payload: HookPayload}
   | {type: 'send'; state: CharacterState}
+  | {type: 'speak'; text: string}
   // The desktop app names itself, so the service knows it runs and where to start it from.
   | {type: 'status'; client?: 'desktop'; executable?: string; environment?: Record<string, string>; flasher?: number;
       version?: string}

@@ -24,6 +24,12 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(await requestDaemon({type: 'send', state: argument as typeof characterStates[number]})));
     return;
   }
+  if (command === 'speak') {
+    const text = [argument, file, ...options].filter((value): value is string => value !== undefined).join(' ');
+    const response = checked(await requestDaemon({type: 'speak', text}, 60_000));
+    console.log(JSON.stringify(response));
+    return;
+  }
   if (command === 'hook') {
     try {
       const parsed = parseHookArguments(argument, file);
@@ -129,7 +135,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage: agent-companion {daemon|status|send STATE|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
+    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
 }
 
 function parseHookArguments(first: string | undefined, second: string | undefined):

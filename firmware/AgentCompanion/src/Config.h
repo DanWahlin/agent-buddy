@@ -25,6 +25,7 @@ constexpr unsigned kAudioSampleRate = 24000;
 constexpr uint8_t kDefaultSoundVolume = 50;
 constexpr int kAudioMinimumCodecVolume = 68;
 constexpr int kAudioMaximumCodecVolume = 82;
+constexpr size_t kSpeechStreamBufferBytes = 16 * 1024;
 constexpr int kSpiFrequency = 80000000;
 constexpr int kTouchSda = 15;
 constexpr int kTouchScl = 14;

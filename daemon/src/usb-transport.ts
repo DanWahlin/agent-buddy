@@ -27,7 +27,7 @@ import {
 
 const networkRefreshMs = 5000;
 // The newest firmware protocol this daemon knows; see kDeviceProtocol in DeviceCommands.h.
-const maxProtocol = 12;
+const maxProtocol = 13;
 
 interface LineWaiter {
   match: (line: string) => boolean;

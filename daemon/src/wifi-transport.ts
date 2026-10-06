@@ -19,6 +19,7 @@ const uploadIdleTimeoutMs = 30000;
 // The device waits this long for the BOOT press; the daemon waits a little longer.
 const firmwareApprovalMs = 62000;
 const firmwareApprovalPollMs = 500;
+const speechProtocol = 13;
 
 export type FirmwareApproval = 'none' | 'waiting' | 'allowed';
 
@@ -228,6 +229,45 @@ export class WifiTransport {
 
   async installCharacter(pack: Buffer, progress: InstallProgress = () => undefined): Promise<string> {
     return parseUploadResponse(await this.#upload('/character', pack, {}, progress));
+  }
+
+  async speak(packet: Buffer): Promise<void> {
+    if (!this.#config || !this.#endpoint || !this.#connected)
+      throw new Error('Speech needs the Agent Companion to be reachable over Wi-Fi.');
+    if (this.#protocol < speechProtocol)
+      throw new Error('Update the device firmware before using speech.');
+    const endpoint = new URL(`${this.#endpoint}/speech`);
+    const token = this.#config.token;
+    const response = await new Promise<{status: number; body: string}>((resolve, reject) => {
+      const request = httpRequest(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/vnd.agent-companion.pcm',
+          'Content-Length': packet.length,
+        },
+      }, result => {
+        let body = '';
+        result.setEncoding('utf8');
+        result.on('data', chunk => {
+          if (body.length < 4096) body += chunk.slice(0, 4096 - body.length);
+        });
+        result.on('end', () => resolve({status: result.statusCode ?? 0, body}));
+        result.on('error', reject);
+      });
+      request.setTimeout(uploadIdleTimeoutMs, () =>
+        request.destroy(new Error('Wi-Fi speech upload timed out.')));
+      request.on('error', reject);
+      void (async () => {
+        for (let sent = 0; sent < packet.length; sent += uploadChunkBytes) {
+          const chunk = packet.subarray(sent, sent + uploadChunkBytes);
+          if (!request.write(chunk))
+            await new Promise(drained => request.once('drain', drained));
+        }
+        request.end();
+      })().catch(reject);
+    });
+    parseSpeechResponse(response.status, response.body);
   }
 
   async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
@@ -442,7 +482,20 @@ export function parseUploadResponse(body: string): string {
   } catch {
     throw new Error(`Device returned an invalid upload response: ${body.slice(0, 120)}`);
   }
+
   if (!result.ok)
     throw new Error(`Device rejected the character: ${String(result.error ?? 'unknown error')}`);
   return typeof result.character === 'string' ? result.character : 'unknown';
+}
+
+export function parseSpeechResponse(status: number, body: string): void {
+  let result: {ok?: unknown; error?: unknown};
+  try {
+    result = JSON.parse(body) as typeof result;
+  } catch {
+    throw new Error(`The device returned an invalid speech response (${status}).`);
+  }
+  if (status !== 202 || result.ok !== true)
+    throw new Error(typeof result.error === 'string'
+      ? result.error : `The device rejected speech (${status}).`);
 }

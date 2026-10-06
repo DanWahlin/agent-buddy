@@ -20,6 +20,7 @@ export class DeviceTransport {
   #activeBadges: readonly AgentBadgeActive[] = [];
   #usage: readonly string[] = [];
   #installing = false;
+  #speaking = false;
   #mode: ConnectionMode = 'auto';
   #lastPress: {presses: number; at: number} | null = null;
   readonly #missing: () => void;
@@ -172,6 +173,17 @@ export class DeviceTransport {
       if (usb) await this.#usb.setEnabled(true);
       this.#installing = false;
       this.#route();
+    }
+  }
+
+  async speak(packet: Buffer): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    if (this.#speaking) throw new Error('Speech playback is already in progress.');
+    this.#speaking = true;
+    try {
+      await this.#wifi.speak(packet);
+    } finally {
+      this.#speaking = false;
     }
   }
 

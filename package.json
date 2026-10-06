@@ -10,6 +10,7 @@
     "setup": "node tools/companion.mjs setup",
     "settings": "node tools/companion.mjs settings",
     "status": "node tools/companion.mjs status",
+    "speak": "node tools/companion.mjs speak",
     "wifi": "node tools/companion.mjs wifi",
     "pair": "node tools/companion.mjs pair",
     "character": "node tools/companion.mjs character",

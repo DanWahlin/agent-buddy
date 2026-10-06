@@ -14,6 +14,7 @@ import {defaultAgentContext, normalizeAgentHook, otherAgentLocations} from './ag
 import {loadAgentBadgeIcons} from './agent-badges.js';
 import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
+import {createSpeechSynthesizer, type SpeechSynthesizer, validateSpeechText} from './speech.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
@@ -138,6 +139,9 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
       } else if (request.type === 'send' && characterStates.includes(request.state)) {
         transport.setState(request.state);
         respond(socket, {ok: true, state: request.state});
+      } else if (request.type === 'speak') {
+        socket.setTimeout(60_000, () => socket.destroy());
+        reply(speakText(request.text, transport));
       } else if (request.type === 'status') {
         const command = request.client === 'desktop'
           ? service.desktopSeen({
@@ -212,6 +216,14 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
       respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)});
     }
   };
+}
+
+export async function speakText(
+    text: unknown, transport: Pick<DeviceTransport, 'speak'>,
+    synthesizer: SpeechSynthesizer = createSpeechSynthesizer()): Promise<{ok: true}> {
+  const packet = await synthesizer.synthesize(validateSpeechText(text));
+  await transport.speak(packet);
+  return {ok: true};
 }
 
 function respond(socket: Socket, response: unknown): void {

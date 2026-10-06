@@ -872,6 +872,9 @@ const NetworkManager::CharacterUpload kWifiUpload{
     beginWifiInstall, writeWifiInstall, finishWifiInstall, abortWifiInstall,
     installedCharacterId};
 
+const NetworkManager::SpeechUpload kSpeechUpload{
+    beginSpeech, writeSpeech, finishSpeech, abortSpeech};
+
 void drawShellScreen() {
   display.fillScreen(0);
   drawWifiStatusButton();
@@ -1147,7 +1150,8 @@ void setup() {
   orientationDirty = display.setTrim(orientationOffsetTenths * kOrientationPi / 1800.0f);
   // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
   // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
-  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket, &kOrientationControl);
+  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket, &kOrientationControl,
+                &kSpeechUpload);
   if (!orientationSensor.begin()) {
     logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
   } else {
