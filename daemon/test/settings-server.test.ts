@@ -29,6 +29,7 @@ class FakeService extends EventEmitter {
   badges: boolean[] = [];
   desktop: Array<{visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}> = [];
   usage: Array<{enabled?: boolean; window?: string}> = [];
+  voice: string[] = [];
   usbFirmware = {release: '0.7.0', releaseId: null, flasher: true, port: '/dev/test', unanswered: false,
                  installing: null, last: null};
   firmware = {device: 'aaaaaaaaaaaaaaaa', built: 'bbbbbbbbbbbbbbbb', canUpdate: true, updating: null, last: null,
@@ -42,6 +43,7 @@ class FakeService extends EventEmitter {
             drivingAgents: [], agents: this.agentStatuses(),
             badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
             desktop: {visible: true, backdrop: 'device', sounds: false, volume: 30, character: 'copilot', pack: null},
+            voice: {mode: 'off', supported: true},
             usage: {enabled: true, window: 'today', aic: 902, tokens: null, lines: ['AIC: 902'], summary: ['AIC: 902']}} as never;
   }
   agentStatuses() {
@@ -108,6 +110,9 @@ class FakeService extends EventEmitter {
   }
   async setUsage(change: {enabled?: boolean; window?: string}) {
     this.usage.push(change);
+  }
+  async setVoiceNotifications(mode: string) {
+    this.voice.push(mode);
   }
   async updateFirmware() {
     this.firmwareUpdates += 1;
@@ -265,6 +270,9 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/badges', {method: 'POST', headers: json, body: '{"enabled":"yes"}'})).status, 400);
     assert.equal((await call('/api/badges', {method: 'POST', headers: json, body: '{"enabled":false}'})).status, 200);
     assert.deepEqual(service.badges, [false]);
+    assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"loud"}'})).status, 400);
+    assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"milestones"}'})).status, 200);
+    assert.deepEqual(service.voice, ['milestones']);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":"no"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);

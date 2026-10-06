@@ -696,6 +696,27 @@ playing are serialized behind it, and a second speech request is rejected until
 the first finishes. The configured device volume applies to both cues and
 speech.
 
+**Voice notifications.** The companion can announce state changes with short,
+varied phrases:
+
+```bash
+npm run voice milestones
+```
+
+The setting is also available on the **Agents** tab in Settings:
+
+| Mode | Announcements |
+| --- | --- |
+| **Off** (default) | Never speaks automatically |
+| **Milestones** | Questions that need attention and completed work |
+| **Chatty** | Milestones plus working and idle transitions |
+
+Announcements use a rotating set of fixed, lightly whimsical phrases, including
+occasional thinking sounds in Chatty mode. They do not repeat the same line
+every time and never read prompts, tool arguments, responses, file names, or
+other session content aloud. Use `npm run voice off` at any time to disable
+them.
+
 The text is passed only to the operating system's local speech synthesizer. The
 generated audio is held in a temporary file on the computer, deleted after
 conversion, and streamed through a bounded device buffer rather than retained
@@ -754,6 +775,7 @@ Run these from the repository folder.
 | `npm run settings` | Opens the settings page |
 | `npm run status` | Shows the connection, character, state, and any pending agent steps |
 | `npm run speak "<text>"` | Speaks up to 15 seconds of locally synthesized audio over Wi-Fi (macOS) |
+| `npm run voice off\|milestones\|chatty` | Controls automatic spoken state notifications |
 | `npm run agents` | Lists agents with their versions and hook status |
 | `npm run agents enable\|disable <agent>` | Lets an agent drive the device, or stops it |
 | `npm run agents install\|uninstall <agent>` | Installs or removes one agent's hook |

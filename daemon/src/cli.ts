@@ -8,6 +8,7 @@ import {pairWifi} from './wifi-config.js';
 import {defaultAgentContext, normalizeAgentHook, shouldIgnoreGrokClaudeHook, type AgentId} from './agents/index.js';
 import {agentRunsHeadless} from './agents/headless.js';
 import {isAgentId} from './agents/types.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
 
 async function main(): Promise<void> {
   const [command, argument, file, ...options] = process.argv.slice(2);
@@ -75,6 +76,12 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(checked(await requestDaemon({type: 'badges', enabled}, 2000))));
     return;
   }
+  if (command === 'voice') {
+    if (!isVoiceNotificationMode(argument))
+      throw new Error('Usage: agent-companion voice off|milestones|chatty');
+    console.log(JSON.stringify(checked(await requestDaemon({type: 'voice', mode: argument}, 2000))));
+    return;
+  }
   if (command === 'list-characters') {
     // Listing can wait on a character pack rebuild after an update.
     console.log(JSON.stringify(await requestDaemon({type: 'listCharacters'}, 30_000)));
@@ -135,7 +142,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
+    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|voice off|milestones|chatty|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
 }
 
 function parseHookArguments(first: string | undefined, second: string | undefined):

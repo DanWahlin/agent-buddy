@@ -13,7 +13,7 @@ test('display settings default to badges on, desktop shown and muted, device loo
     assert.deepEqual(loadDisplaySettingsSync(join(directory, 'missing.json')), defaultDisplaySettings);
     assert.deepEqual(defaultDisplaySettings, {showAgentBadges: true, showDesktopCompanion: true, desktopBackdrop: 'device',
                                               desktopSounds: false, desktopVolume: 30, showUsage: true,
-                                              usageWindow: 'today'});
+                                              usageWindow: 'today', voiceNotifications: 'off'});
   } finally {
     await rm(directory, {recursive: true, force: true});
   }
@@ -26,12 +26,12 @@ test('older settings files gain the desktop defaults, and bad values fall back',
     await writeFile(path, JSON.stringify({showAgentBadges: false}));
     assert.deepEqual(loadDisplaySettingsSync(path),
       {showAgentBadges: false, showDesktopCompanion: true, desktopBackdrop: 'device', desktopSounds: false,
-       desktopVolume: 30, showUsage: true, usageWindow: 'today'});
+       desktopVolume: 30, showUsage: true, usageWindow: 'today', voiceNotifications: 'off'});
     await writeFile(path, JSON.stringify({showDesktopCompanion: false, desktopBackdrop: 'orb', desktopSounds: 'yes',
                                           desktopVolume: 150, showUsage: false, usageWindow: 'year'}));
     assert.deepEqual(loadDisplaySettingsSync(path),
       {showAgentBadges: true, showDesktopCompanion: false, desktopBackdrop: 'device', desktopSounds: false,
-       desktopVolume: 30, showUsage: false, usageWindow: 'today'});
+       desktopVolume: 30, showUsage: false, usageWindow: 'today', voiceNotifications: 'off'});
     await writeFile(path, 'not json');
     assert.deepEqual(loadDisplaySettingsSync(path), defaultDisplaySettings);
   } finally {
@@ -44,7 +44,8 @@ test('desktop settings round-trip', async () => {
   const path = join(directory, 'nested', 'display.json');
   try {
     const settings = {showAgentBadges: true, showDesktopCompanion: false, desktopBackdrop: 'none',
-                      desktopSounds: true, desktopVolume: 20, showUsage: true, usageWindow: 'month'} as const;
+                      desktopSounds: true, desktopVolume: 20, showUsage: true, usageWindow: 'month',
+                      voiceNotifications: 'chatty'} as const;
     await saveDisplaySettings(settings, path);
     assert.deepEqual(loadDisplaySettingsSync(path), settings);
     assert.equal(isDesktopBackdrop('none'), true);

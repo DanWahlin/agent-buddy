@@ -13,6 +13,7 @@ import {isAgentId} from './agents/types.js';
 import {defaultAgentContext, normalizeAgentHook, otherAgentLocations} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
 import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 import {createSpeechSynthesizer, type SpeechSynthesizer, validateSpeechText} from './speech.js';
 
@@ -37,7 +38,11 @@ export async function runDaemon(): Promise<void> {
   agentContext.locations = otherAgentLocations(agentContext);
   const badgeIcons = await loadAgentBadgeIcons(agentContext.dataDir);
   // While the service stops on request, the device stays idle.
-  const coordinator = new StateCoordinator(state => { if (!service?.stopping) transport.setState(state); }, {
+  const coordinator = new StateCoordinator(state => {
+    if (service?.stopping) return;
+    transport.setState(state);
+    service?.announceState(state);
+  }, {
     restored,
     onMutation: state => {
       store.schedule(state);
@@ -170,6 +175,8 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         reply(service.setConnection(mode).then(() => ({ok: true, mode})));
       } else if (request.type === 'badges' && typeof request.enabled === 'boolean') {
         reply(service.setAgentBadgesEnabled(request.enabled).then(() => ({ok: true, enabled: request.enabled})));
+      } else if (request.type === 'voice' && isVoiceNotificationMode(request.mode)) {
+        reply(service.setVoiceNotifications(request.mode).then(() => ({ok: true, mode: request.mode})));
       } else if (request.type === 'desktop') {
         if (request.visible !== undefined && typeof request.visible !== 'boolean')
           throw new Error('Desktop visibility must be true or false.');

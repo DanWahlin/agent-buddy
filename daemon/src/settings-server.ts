@@ -11,6 +11,7 @@ import {settingsInfoPath} from './paths.js';
 import {isAgentId} from './agents/types.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 import {isOrientationOffset} from './orientation-settings.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
 
 export const defaultSettingsPort = 4667;
 const maxJsonBytes = 64 * 1024;
@@ -36,7 +37,7 @@ export interface SettingsServerOptions {
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
-    | 'uninstall' | 'stopService' | 'restartService' | 'on' | 'off'>;
+    | 'setVoiceNotifications' | 'uninstall' | 'stopService' | 'restartService' | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
@@ -205,6 +206,13 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Badge setting must be true or false.');
       await service.setAgentBadgesEnabled(body.enabled);
       return json(response, 200, {ok: true, enabled: body.enabled});
+    }
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'voice') {
+      const body = await readJson(request) as {mode?: unknown};
+      if (!isVoiceNotificationMode(body.mode))
+        throw new HttpError(400, 'Voice notifications must be off, milestones, or chatty.');
+      await service.setVoiceNotifications(body.mode);
+      return json(response, 200, {ok: true, mode: body.mode});
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'desktop') {
       const body = await readJson(request) as {visible?: unknown; backdrop?: unknown; sounds?: unknown; volume?: unknown;
