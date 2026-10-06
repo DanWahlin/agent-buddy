@@ -70,6 +70,13 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   `PATH`, and opens Settings. If the daemon from `runtime` runs at another
   version, it copies and installs again. It leaves a daemon from any other folder,
   such as a clone, alone.
+- Quit stops the service too when the daemon's status has `deviceUsed: false`
+  (no USB device has connected and there is no Wi-Fi pairing) and the app carries
+  the service. **Quit and Stop Companion Service** in the tray, and **Stop** in
+  Settings, send `stopService`: the device goes idle, the app closes, and the
+  daemon stops through its service manager. The daemon leaves a `service-stopped`
+  file in its data folder until it runs again, so the next start of the app
+  installs the service at once and does not wait 10 s for a service manager.
 - The hook installers replace the hooks of any companion install (a path that
   ends in `daemon/dist/src/cli.js`), so a change between a clone and the app's
   copy never leaves two sets of hooks.

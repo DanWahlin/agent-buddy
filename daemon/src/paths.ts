@@ -102,6 +102,19 @@ export function desktopAppPath(): string {
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'desktop-app.json');
 }
 
+// Records that this computer has used a device, so quitting the desktop app leaves the service running.
+export function deviceHistoryPath(): string {
+  if (process.env.AGENT_COMPANION_DEVICE_HISTORY) return process.env.AGENT_COMPANION_DEVICE_HISTORY;
+  return join(defaultDataDirectory(process.platform, homedir(), process.env), 'device.json');
+}
+
+// Present while the service is stopped on request; the desktop app then starts it without waiting.
+// The name is also in desktop/apps/desktop/src-tauri/src/service.rs.
+export function serviceStoppedPath(): string {
+  if (process.env.AGENT_COMPANION_SERVICE_STOPPED) return process.env.AGENT_COMPANION_SERVICE_STOPPED;
+  return join(defaultDataDirectory(process.platform, homedir(), process.env), 'service-stopped');
+}
+
 export function usageCachePath(): string {
   if (process.env.AGENT_COMPANION_USAGE_CACHE) return process.env.AGENT_COMPANION_USAGE_CACHE;
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'usage-cache.json');

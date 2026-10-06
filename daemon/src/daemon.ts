@@ -1,8 +1,8 @@
-import {chmod, mkdir, unlink} from 'node:fs/promises';
+import {chmod, mkdir, rm, unlink} from 'node:fs/promises';
 import {createConnection, createServer, type Socket} from 'node:net';
 import {dirname} from 'node:path';
 import {characterStates, hookEvents, type DaemonRequest} from './protocol.js';
-import {isNamedPipe, socketPath, statePath} from './paths.js';
+import {isNamedPipe, serviceStoppedPath, socketPath, statePath} from './paths.js';
 import {StateCoordinator} from './state-coordinator.js';
 import {StateStore} from './state-store.js';
 import {DeviceTransport} from './device-transport.js';
@@ -22,6 +22,8 @@ export async function runDaemon(): Promise<void> {
   let service: CompanionService | undefined;
   // A device that lost its pack (for example, an interrupted install) gets the preferred one back.
   let settingsUrl: string | null = null;
+  // A stop on request has ended: this service runs again.
+  await rm(serviceStoppedPath(), {force: true}).catch(() => undefined);
   const transport = new DeviceTransport(() => {
     if (!service || transport.installing || Date.now() - lastAutoInstall < autoInstallRetryMs) return;
     lastAutoInstall = Date.now();
@@ -33,7 +35,8 @@ export async function runDaemon(): Promise<void> {
   const agentContext = defaultAgentContext();
   agentContext.locations = otherAgentLocations(agentContext);
   const badgeIcons = await loadAgentBadgeIcons(agentContext.dataDir);
-  const coordinator = new StateCoordinator(state => transport.setState(state), {
+  // While the service stops on request, the device stays idle.
+  const coordinator = new StateCoordinator(state => { if (!service?.stopping) transport.setState(state); }, {
     restored,
     onMutation: state => {
       store.schedule(state);
@@ -82,11 +85,14 @@ export async function runDaemon(): Promise<void> {
     await new Promise<void>(resolve => server.close(() => resolve()));
     if (!pipe) await unlink(path).catch(() => undefined);
   };
-  process.once('SIGINT', () => void shutdown().then(() => process.exit(0)));
-  process.once('SIGTERM', () => void shutdown().then(() => process.exit(0)));
+  // A stop on request ends with the service manager's signal, or with 'stop' when no manager runs it.
+  let exiting: Promise<void> | undefined;
+  const exit = () => void (exiting ??= shutdown().then(() => process.exit(0)));
+  companion.once('stop', exit);
+  process.once('SIGINT', exit);
+  process.once('SIGTERM', exit);
   // Windows sends SIGBREAK for Ctrl+Break and when a console closes.
-  if (process.platform === 'win32')
-    process.once('SIGBREAK', () => void shutdown().then(() => process.exit(0)));
+  if (process.platform === 'win32') process.once('SIGBREAK', exit);
 }
 
 export const agentHookTimeoutMs = 45_000;
@@ -185,6 +191,10 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         reply(service.characters());
       } else if (request.type === 'settings') {
         respond(socket, {url: settingsUrl()});
+      } else if (request.type === 'stopService') {
+        reply(service.stopService().then(() => ({ok: true})));
+      } else if (request.type === 'restartService') {
+        reply(Promise.resolve().then(() => service.restartService()).then(() => ({ok: true})));
       } else if (request.type === 'installCharacter' && typeof request.character === 'string') {
         // Installs take about a minute, so progress streams as JSON lines until the result.
         socket.setTimeout(0);

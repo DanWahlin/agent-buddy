@@ -58,7 +58,9 @@ export type DaemonRequest =
   | {type: 'desktop'; visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}
   | {type: 'usage'; enabled?: boolean; window?: string}
   | {type: 'listCharacters'}
-  | {type: 'settings'};
+  | {type: 'settings'}
+  | {type: 'stopService'}
+  | {type: 'restartService'};
 
 export interface DaemonStatus {
   state: CharacterState;

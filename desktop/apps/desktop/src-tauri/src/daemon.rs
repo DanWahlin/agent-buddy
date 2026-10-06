@@ -95,7 +95,7 @@ pub fn socket_path() -> Option<PathBuf> {
 }
 
 /// The user id without libc: the owner of the home directory is the user.
-fn home_owner_uid() -> Option<u32> {
+pub fn home_owner_uid() -> Option<u32> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -374,6 +374,20 @@ pub fn set_sounds(on: bool) -> bool {
 pub fn settings_url() -> Option<String> {
     let reply = request(&socket_path()?, &json!({ "type": "settings" }))?;
     reply.get("url")?.as_str().map(str::to_string)
+}
+
+/// Whether this computer has used a device. None when no daemon answers, or
+/// an older one does not say.
+pub fn device_used() -> Option<bool> {
+    let reply = request(&socket_path()?, &json!({ "type": "status" }))?;
+    reply.get("deviceUsed")?.as_bool()
+}
+
+/// Ask the daemon to stop its service. True when it took the request.
+pub fn stop_service() -> bool {
+    let Some(path) = socket_path() else { return false };
+    let reply = request(&path, &json!({ "type": "stopService" }));
+    reply.and_then(|it| it.get("ok")?.as_bool()) == Some(true)
 }
 
 #[cfg(test)]

@@ -482,9 +482,10 @@ fn main() {
                     set_user_hidden(&again, &window, !hidden);
                 }
                 Command::Settings => open_settings(handle.clone()),
-                Command::Quit => handle.exit(0),
+                Command::Quit => quit(handle.clone(), Quit::Quiet),
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         .manage(app.clone())
         .invoke_handler(tauri::generate_handler![
             set_region, from_view, start_drag, set_tray_icon, show_context_menu, open_settings, set_sounds
@@ -680,12 +681,91 @@ fn settle_on_hyprland(window: &WebviewWindow) {
     });
 }
 
+/// How the user quit: from a menu, from `--quit`, or with the tray's item
+/// that also stops the companion service.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Quit {
+    Ask,
+    Quiet,
+    AndStopService,
+}
+
+#[derive(Debug, PartialEq)]
+enum QuitPlan {
+    App,
+    AppAndService,
+    /// Say one time that the service keeps the device going, and let the user choose.
+    Ask,
+}
+
+/// Without a device the service has nothing to do, so it stops with the app,
+/// when the app can start it again. With a device it keeps running.
+fn quit_plan(how: Quit, device_used: Option<bool>, can_restart: bool, notice_due: bool) -> QuitPlan {
+    match (how, device_used) {
+        (Quit::AndStopService, _) => QuitPlan::AppAndService,
+        (_, Some(false)) if can_restart => QuitPlan::AppAndService,
+        (Quit::Ask, Some(true)) if notice_due => QuitPlan::Ask,
+        _ => QuitPlan::App,
+    }
+}
+
+/// Off the main thread: it asks the daemon, and the notice waits for the user.
+fn quit(handle: tauri::AppHandle, how: Quit) {
+    std::thread::spawn(move || {
+        let can_restart = handle.state::<Arc<App>>().bundled.load(Ordering::Relaxed);
+        let notice_due = how == Quit::Ask && service::quit_notice_due();
+        let stop = match quit_plan(how, daemon::device_used(), can_restart, notice_due) {
+            QuitPlan::App => false,
+            QuitPlan::AppAndService => true,
+            QuitPlan::Ask => match ask_on_quit(&handle) {
+                Some(stop) => {
+                    service::remember_quit_notice();
+                    stop
+                }
+                None => return,
+            },
+        };
+        if stop && !daemon::stop_service() {
+            eprintln!("[service] the companion service did not take the stop request");
+        }
+        handle.exit(0);
+    });
+}
+
+/// Some(true) to stop the service too, Some(false) to close only the app, None to cancel.
+fn ask_on_quit(handle: &tauri::AppHandle) -> Option<bool> {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
+    const CLOSE: &str = "Close App";
+    const STOP: &str = "Close App and Stop Service";
+    const CANCEL: &str = "Cancel";
+    let result = handle
+        .dialog()
+        .message(
+            "Your device continues to show agent activity after the app closes, because the companion \
+             service runs in the background.\n\nTo stop the service too, choose Close App and Stop Service. \
+             The tray menu also has Quit and Stop Companion Service. This message shows one time only.",
+        )
+        .title("Close Agent Companion?")
+        .kind(MessageDialogKind::Info)
+        .buttons(MessageDialogButtons::YesNoCancelCustom(CLOSE.into(), STOP.into(), CANCEL.into()))
+        .blocking_show_with_result();
+    match result {
+        MessageDialogResult::Yes => Some(false),
+        MessageDialogResult::No => Some(true),
+        MessageDialogResult::Custom(label) if label == CLOSE => Some(false),
+        MessageDialogResult::Custom(label) if label == STOP => Some(true),
+        _ => None,
+    }
+}
+
 /// With no title bar and no taskbar button, the tray is the only way in.
 fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>) -> tauri::Result<()> {
     let visibility = MenuItem::with_id(handle, "visibility", "Hide Agent Companion", true, None::<&str>)?;
     let settings = MenuItem::with_id(handle, "settings", "Settings", true, None::<&str>)?;
-    let quit = MenuItem::with_id(handle, "quit", "Quit Agent Companion", true, None::<&str>)?;
-    let menu = Menu::with_items(handle, &[&visibility, &settings, &quit])?;
+    let quit_app = MenuItem::with_id(handle, "quit", "Quit Agent Companion", true, None::<&str>)?;
+    let quit_all = MenuItem::with_id(handle, "quit-and-stop", "Quit and Stop Companion Service", true, None::<&str>)?;
+    let separator = tauri::menu::PredefinedMenuItem::separator(handle)?;
+    let menu = Menu::with_items(handle, &[&visibility, &settings, &separator, &quit_app, &quit_all])?;
 
     let tray_window = window.clone();
     let tray_app = app.clone();
@@ -695,7 +775,8 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |handle, event| match event.id.as_ref() {
-            "quit" => handle.exit(0),
+            "quit" => quit(handle.clone(), Quit::Ask),
+            "quit-and-stop" => quit(handle.clone(), Quit::AndStopService),
             "visibility" => {
                 let hidden = tray_app.user_hidden.load(Ordering::Relaxed);
                 set_user_hidden(&tray_app, &tray_window, !hidden);
@@ -716,7 +797,7 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
     handle.on_menu_event(move |handle, event| match event.id.as_ref() {
         "context:hide" => set_user_hidden(&menu_app, &menu_window, true),
         "context:settings" => open_settings(handle.clone()),
-        "context:close" => handle.exit(0),
+        "context:close" => quit(handle.clone(), Quit::Ask),
         _ => {}
     });
     Ok(())
@@ -724,7 +805,21 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
 
 #[cfg(test)]
 mod tests {
-    use super::Command;
+    use super::{quit_plan, Command, Quit, QuitPlan};
+
+    #[test]
+    fn quit_stops_the_service_only_without_a_device_or_when_asked() {
+        assert_eq!(quit_plan(Quit::AndStopService, Some(true), false, false), QuitPlan::AppAndService);
+        assert_eq!(quit_plan(Quit::AndStopService, None, true, true), QuitPlan::AppAndService);
+        assert_eq!(quit_plan(Quit::Ask, Some(false), true, true), QuitPlan::AppAndService);
+        assert_eq!(quit_plan(Quit::Quiet, Some(false), true, false), QuitPlan::AppAndService);
+        // A build without the service cannot start it again, so it leaves it running.
+        assert_eq!(quit_plan(Quit::Ask, Some(false), false, true), QuitPlan::App);
+        assert_eq!(quit_plan(Quit::Ask, Some(true), true, true), QuitPlan::Ask);
+        assert_eq!(quit_plan(Quit::Ask, Some(true), true, false), QuitPlan::App);
+        assert_eq!(quit_plan(Quit::Quiet, Some(true), true, true), QuitPlan::App);
+        assert_eq!(quit_plan(Quit::Ask, None, true, true), QuitPlan::App);
+    }
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|it| it.to_string()).collect()

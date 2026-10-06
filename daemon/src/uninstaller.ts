@@ -97,6 +97,21 @@ export function createUninstallPlan(context: UninstallContext): UninstallPlan {
           manual};
 }
 
+// Stops this service the way an uninstall does, but changes nothing else. The service manager
+// starts it again when the user signs in, or when the desktop app installs it.
+export function createServiceStopPlan(platform: UninstallContext['platform'], uid: number): UninstallPlan {
+  const after = platform === 'darwin' ? [['launchctl', 'bootout', `gui/${uid}/${launchAgentLabel}`]]
+    : platform === 'linux' ? [['systemctl', '--user', 'stop', systemdUnit]] : [];
+  return {platform, before: [], remove: [], after, manual: []};
+}
+
+// Starts this service again through its service manager, which stops the running one first.
+export function createServiceRestartPlan(platform: 'darwin' | 'linux', uid: number): UninstallPlan {
+  const after = platform === 'darwin' ? [['launchctl', 'kickstart', '-k', `gui/${uid}/${launchAgentLabel}`]]
+    : [['systemctl', '--user', 'restart', systemdUnit]];
+  return {platform, before: [], remove: [], after, manual: []};
+}
+
 // A shell script that does the plan. It runs apart from this service, because it stops it.
 export function uninstallScript(plan: UninstallPlan): string {
   if (plan.platform === 'win32') return windowsUninstallScript(plan);

@@ -987,12 +987,24 @@ The window has no frame and is always on top.
   or your app launcher), or use its tray icon (the menu bar on macOS). If your
   menu bar is too full, macOS hides the icon, so opening the app again always works.
 - **The tray icon** has **Show Agent Companion** or **Hide Agent Companion**,
-  **Settings** and **Quit Agent Companion**. Choose the character in Settings.
+  **Settings**, **Quit Agent Companion** and **Quit and Stop Companion Service**.
+  Choose the character in Settings.
 - **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
   `--show`, `--hide`, `--settings` or `--quit` to control the running one.
 
 Hide is for now; to keep it off the desktop for good, turn off **Show the
 character on the desktop** in Settings.
+
+**Quitting.** If this computer has never used a device, **Quit** and **Close**
+also stop the companion service, because it has nothing to do without the app.
+After a device has connected one time (over USB, or paired over Wi-Fi), the
+service keeps running when the app quits, so the device continues to show your
+agents. The first time, the app tells you this and lets you stop the service
+too. To stop the service later, use **Quit and Stop Companion Service** in the
+tray menu, or **Stop** in the **Companion service** row on the Settings
+**Desktop** tab. The device then goes idle. The service starts again when you
+open the app or sign in to your computer again. If the service does not work
+correctly, click **Restart** in the same row. The app stays open and reconnects.
 
 **Sounds.** The desktop app plays the device's sound cues when the character
 starts work, needs attention, finishes, or is poked. The cues are the same WAV

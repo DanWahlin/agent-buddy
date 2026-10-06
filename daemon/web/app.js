@@ -254,6 +254,7 @@ function renderStatus() {
     $('fact-versions').textContent = '—';
     $('summary').textContent = 'Waiting for the companion service…';
     renderDesktopApp();
+    renderService();
     renderOrientation();
     renderUsage();
     renderFirmware();
@@ -320,6 +321,7 @@ function renderStatus() {
     volume.disabled = desktop.visible === false || desktop.sounds !== true;
   }
   renderDesktopApp();
+  renderService();
   renderOrientation();
 
   for (const line of document.querySelectorAll('#mode-hint [data-mode]')) {
@@ -750,6 +752,62 @@ async function desktopAppAction(action) {
 
 $('desktop-app-start').addEventListener('click', () => desktopAppAction('start'));
 $('desktop-app-stop').addEventListener('click', () => desktopAppAction('stop'));
+
+let serviceStopPending = false;
+let serviceRestartPending = false;
+
+function renderService() {
+  const pill = $('service-state');
+  pill.textContent = serviceRestartPending ? 'Restarting…' : status ? 'Running' : 'Not answering';
+  pill.className = `pill ${serviceRestartPending ? 'warning' : status ? 'usb' : 'offline'}`;
+  const busy = !status || serviceStopPending || serviceRestartPending || Boolean(status.installing);
+  $('service-restart').disabled = busy;
+  $('service-stop').disabled = busy;
+}
+
+// This page reconnects on its own when the service is back, with the same link.
+const serviceRestartMs = 8000;
+
+$('service-restart').addEventListener('click', async () => {
+  serviceRestartPending = true;
+  renderService();
+  try {
+    await api('/api/service/restart', {method: 'POST'});
+    toast('Restarting the companion service. This page reconnects in a few seconds.', 'success');
+    setTimeout(() => {
+      serviceRestartPending = false;
+      renderService();
+    }, serviceRestartMs);
+  } catch (error) {
+    toast(error.message, 'error');
+    serviceRestartPending = false;
+    renderService();
+  }
+});
+
+$('service-stop').addEventListener('click', async () => {
+  const message = 'Stop the companion service? The device and the desktop app stop showing agent activity, '
+    + 'and the desktop app closes. Open the desktop app, or sign in to this computer again, to start it again.';
+  if (!await confirmAction(message, 'Stop')) return;
+  serviceStopPending = true;
+  renderService();
+  try {
+    await api('/api/service/stop', {method: 'POST'});
+    showServiceStopped();
+  } catch (error) {
+    toast(error.message, 'error');
+    serviceStopPending = false;
+    renderService();
+  }
+});
+
+// The service stops in a moment, so stop listening and say how to start it again.
+function showServiceStopped() {
+  events?.close();
+  for (const section of document.querySelectorAll('main > section, main > .tabs, main > .notice')) section.hidden = true;
+  $('summary').textContent = 'The companion service is stopped.';
+  $('service-stopped').hidden = false;
+}
 
 $('uninstall').addEventListener('click', async () => {
   const keepData = $('uninstall-keep-data').checked;

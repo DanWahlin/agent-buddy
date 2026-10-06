@@ -204,6 +204,16 @@
           <button type="button" id="desktop-app-stop" class="secondary" disabled>Stop</button>
         </span>
       </div>
+      <div class="setting-row static">
+        <span>
+          <strong>Companion service <span id="service-state" class="pill offline">Checking…</span></strong>
+          <span class="hint" id="service-hint">It runs in the background. It sends agent activity to the device and the desktop app, and it runs this page. If something does not work, Restart starts it again. Stop also closes the desktop app.</span>
+        </span>
+        <span class="row-actions">
+          <button type="button" id="service-restart" class="secondary" disabled>Restart</button>
+          <button type="button" id="service-stop" class="secondary" disabled>Stop</button>
+        </span>
+      </div>
       <label class="setting-row" for="desktop-toggle">
         <span>
           <strong>Show the character on the desktop</strong>
@@ -262,6 +272,16 @@
       <h2 id="uninstalled-title">Agent Companion is uninstalled</h2>
       <p id="uninstalled-summary" class="hint"></p>
       <ul id="uninstalled-steps" class="uninstalled-steps"></ul>
+    </section>
+
+    <section id="service-stopped" class="card" aria-labelledby="service-stopped-title" hidden>
+      <h2 id="service-stopped-title">The companion service is stopped</h2>
+      <p class="hint">The device and the desktop app no longer show agent activity, and this page no longer works.</p>
+      <ul class="uninstalled-steps">
+        <li>To start it again, open the desktop app, or sign in to this computer again.</li>
+        <li>If you set it up from the repository, run <code>npm run setup</code> in the repository folder.</li>
+        <li>You can close this window.</li>
+      </ul>
     </section>
   </main>
 

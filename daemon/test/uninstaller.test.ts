@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {promisify} from 'node:util';
-import {createUninstallPlan, uninstallScript, type UninstallContext} from '../src/uninstaller.js';
+import {createServiceRestartPlan, createServiceStopPlan, createUninstallPlan, uninstallScript, type UninstallContext} from '../src/uninstaller.js';
 
 const mac: UninstallContext = {
   platform: 'darwin',
@@ -153,4 +153,24 @@ test('the Windows plan keeps paths outside this project and quotes PowerShell qu
   const home = createUninstallPlan({...windows, home: 'C:\\Users\\agent-companion',
                                     dataDir: 'C:\\Users\\agent-companion\\x', app: null});
   assert.ok(!home.remove.includes('C:\\Users\\agent-companion\\x'));
+});
+
+test('a stop plan only stops the service, with each platform\'s service manager', () => {
+  const mac = createServiceStopPlan('darwin', 501);
+  assert.deepEqual(mac, {platform: 'darwin', before: [], remove: [], after: [
+    ['launchctl', 'bootout', 'gui/501/com.danwahlin.esp32-agent-companion']], manual: []});
+  assert.doesNotMatch(uninstallScript(mac), /rm -rf/);
+  assert.match(uninstallScript(mac), /'launchctl' 'bootout'/);
+  assert.deepEqual(createServiceStopPlan('linux', 1000).after, [['systemctl', '--user', 'stop', 'esp32-agent-companion.service']]);
+  const windows = uninstallScript(createServiceStopPlan('win32', 0));
+  assert.match(windows, /ESP32AgentCompanionServiceStop/);
+  assert.doesNotMatch(windows, /Remove-Item|reg\.exe/);
+});
+
+test('a restart plan asks the service manager to start the service again', () => {
+  assert.deepEqual(createServiceRestartPlan('darwin', 501).after,
+                   [['launchctl', 'kickstart', '-k', 'gui/501/com.danwahlin.esp32-agent-companion']]);
+  assert.deepEqual(createServiceRestartPlan('linux', 1000).after,
+                   [['systemctl', '--user', 'restart', 'esp32-agent-companion.service']]);
+  assert.doesNotMatch(uninstallScript(createServiceRestartPlan('linux', 1000)), /rm -rf/);
 });

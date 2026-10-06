@@ -18,6 +18,16 @@ use serde_json::{json, Value};
 use crate::daemon;
 
 const RUNTIME: &str = "daemon-runtime";
+/// In the data folder while the service is stopped on request (`serviceStoppedPath` in
+/// `daemon/src/paths.ts`). No service manager starts it again then, so the app does not wait for one.
+const STOPPED: &str = "service-stopped";
+/// The service's names, as in `daemon/src/service-names.ts`.
+#[cfg(not(windows))]
+const LAUNCH_AGENT: &str = "com.danwahlin.esp32-agent-companion";
+#[cfg(not(windows))]
+const SYSTEMD_UNIT: &str = "esp32-agent-companion.service";
+/// In the data folder after the app said, one time, that the service keeps running when it quits.
+const QUIT_NOTICE: &str = "quit-notice-shown";
 /// The Node.js program at the top of the runtime folder.
 const NODE: &str = if cfg!(windows) { "node.exe" } else { "node" };
 /// How long a daemon has to answer before the app installs its own. The
@@ -80,6 +90,49 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// Start the installed service that a stop request ended, through its service
+/// manager. Faster than an install, which also installs every agent's hooks again.
+#[cfg(windows)]
+fn start_stopped() -> bool {
+    // This program is the launcher that runs the service on Windows.
+    let Ok(program) = std::env::current_exe() else { return false };
+    let mut command = Command::new(program);
+    command.arg("--companion-service").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    crate::launcher::service_command(&mut command);
+    command.spawn().is_ok()
+}
+
+#[cfg(not(windows))]
+fn start_stopped() -> bool {
+    let mut command = if cfg!(target_os = "macos") {
+        let (Some(home), Some(uid)) = (std::env::var_os("HOME"), daemon::home_owner_uid()) else { return false };
+        let plist = Path::new(&home).join("Library/LaunchAgents").join(format!("{LAUNCH_AGENT}.plist"));
+        if !plist.is_file() {
+            return false;
+        }
+        let mut command = Command::new("launchctl");
+        command.arg("bootstrap").arg(format!("gui/{uid}")).arg(plist);
+        command
+    } else {
+        let mut command = Command::new("systemctl");
+        command.args(["--user", "start", SYSTEMD_UNIT]);
+        command
+    };
+    command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    command.status().is_ok_and(|it| it.success())
+}
+
+/// True when the app has not yet said that the service keeps running after it quits.
+pub fn quit_notice_due() -> bool {
+    data_directory().is_some_and(|data| !data.join(QUIT_NOTICE).exists())
+}
+
+pub fn remember_quit_notice() {
+    if let Some(data) = data_directory() {
+        let _ = create_private_dir(&data).and_then(|()| std::fs::write(data.join(QUIT_NOTICE), b""));
+    }
+}
+
 /// Where the daemon keeps its files. Mirrors `defaultDataDirectory` in
 /// `daemon/src/paths.ts`.
 pub fn data_directory() -> Option<PathBuf> {
@@ -122,14 +175,21 @@ fn ensure_once(resources: Option<PathBuf>) -> bool {
     let version = version.trim().to_string();
     let (Some(socket), Some(data)) = (daemon::socket_path(), data_directory()) else { return false };
     let installed = data.join("runtime");
+    let stopped = data.join(STOPPED).is_file();
+    // After a stop on request, no service manager starts the service again, so start it now. If
+    // that fails, install it at once rather than wait for a service that does not come.
+    let restarted = stopped && start_stopped();
+    let retry = if stopped { Duration::from_millis(250) } else { RETRY };
     let started = Instant::now();
+    // `upgrade` is true when the user already has the service, so Settings does not open for them.
     let upgrade = loop {
         let status = daemon::request(&socket, &json!({ "type": "status" }));
         match decide(status.as_ref(), &installed, &version, rebuilt(&bundled, &installed)) {
             Action::Leave => return false,
             Action::Install => break true,
-            Action::Wait if started.elapsed() >= WAIT_FOR_DAEMON => break false,
-            Action::Wait => std::thread::sleep(RETRY),
+            Action::Wait if stopped && !restarted => break true,
+            Action::Wait if started.elapsed() >= WAIT_FOR_DAEMON => break stopped,
+            Action::Wait => std::thread::sleep(retry),
         }
     };
     println!("[service] installing the companion service {version}");

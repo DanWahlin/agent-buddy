@@ -36,7 +36,7 @@ export interface SettingsServerOptions {
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
-    | 'uninstall' | 'on' | 'off'>;
+    | 'uninstall' | 'stopService' | 'restartService' | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
@@ -249,6 +249,16 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         throw new HttpError(409, error instanceof Error ? error.message : String(error));
       }
       return json(response, 200, {ok: true, desktop: service.status().desktop});
+    }
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'service'
+        && (segments[1] === 'stop' || segments[1] === 'restart')) {
+      try {
+        if (segments[1] === 'stop') await service.stopService();
+        else service.restartService();
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
+      return json(response, 200, {ok: true});
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'uninstall') {
       const body = await readJson(request) as {keepData?: unknown};

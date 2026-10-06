@@ -115,6 +115,16 @@ class FakeService extends EventEmitter {
   async installFirmwareOverUsb() {
     this.usbInstalls += 1;
   }
+  serviceStops = 0;
+  serviceRestarts = 0;
+  restartService() {
+    if (this.serviceStops > 0) throw new Error('The companion service is already stopping or restarting.');
+    this.serviceRestarts += 1;
+  }
+  async stopService() {
+    if (this.serviceStops > 0) throw new Error('The companion service is already stopping.');
+    this.serviceStops += 1;
+  }
   uninstalls: boolean[] = [];
   async uninstall(keepData: boolean) {
     if (this.uninstalls.length > 0) throw new Error('The uninstall is already in progress.');
@@ -301,6 +311,15 @@ test('validates and performs actions', async () => {
     assert.deepEqual(JSON.parse(uninstalled.body), {ok: true, keptData: true, manual: ['Delete the desktop app: /opt/app']});
     assert.equal((await call('/api/uninstall', {method: 'POST', headers: json, body: '{"keepData":false}'})).status, 409);
     assert.deepEqual(service.uninstalls, [true]);
+    assert.equal((await call('/api/service/restart', {method: 'POST', token: false})).status, 401);
+    assert.equal((await call('/api/service/restart', {method: 'POST'})).status, 200);
+    assert.equal(service.serviceRestarts, 1);
+    assert.equal((await call('/api/service/stop', {method: 'GET'})).status, 404);
+    assert.equal((await call('/api/service/stop', {method: 'POST', token: false})).status, 401);
+    assert.equal((await call('/api/service/stop', {method: 'POST'})).status, 200);
+    assert.equal((await call('/api/service/stop', {method: 'POST'})).status, 409);
+    assert.equal(service.serviceStops, 1);
+    assert.equal((await call('/api/service/restart', {method: 'POST'})).status, 409);
     assert.equal((await call('/api/firmware/update', {method: 'GET'})).status, 404);
     assert.equal((await call('/api/firmware/update', {method: 'POST', token: false})).status, 401);
     assert.equal((await call('/api/firmware/update', {method: 'POST'})).status, 202);

@@ -1,6 +1,8 @@
-import {existsSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
+import {mkdir, rename, writeFile} from 'node:fs/promises';
 import {EventEmitter} from 'node:events';
 import {homedir, userInfo} from 'node:os';
+import {dirname} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {
   agentStatuses,
@@ -47,8 +49,12 @@ import {
 import {
   loadDisplaySettingsSync, saveDisplaySettings, type DesktopBackdrop, type DisplaySettings,
 } from './display-settings.js';
-import {defaultDataDirectory, serviceInfo, socketPath, type ServiceInfo} from './paths.js';
-import {createUninstallPlan, runUninstall, type UninstallPlan} from './uninstaller.js';
+import {
+  defaultDataDirectory, deviceHistoryPath, serviceInfo, serviceStoppedPath, socketPath, type ServiceInfo,
+} from './paths.js';
+import {
+  createServiceRestartPlan, createServiceStopPlan, createUninstallPlan, runUninstall, type UninstallPlan,
+} from './uninstaller.js';
 import type {DaemonStatus, HookEvent, HookPayload, InstallProgress, WifiNetwork} from './protocol.js';
 import type {StateCoordinator} from './state-coordinator.js';
 import {builtFirmwareReader, type FirmwareImage} from './firmware-image.js';
@@ -107,6 +113,8 @@ export interface UsbFirmwareInstaller {
 export interface CompanionStatus extends DaemonStatus {
   service: ServiceInfo;
   wifiPaired: boolean;
+  // Whether this computer has used a device. Without one, quitting the desktop app stops the service.
+  deviceUsed: boolean;
   firmware: FirmwareStatus;
   installing: InstallState | null;
   lastInstall: InstallResult | null;
@@ -152,6 +160,23 @@ const settingsRepeatMs = 3_000;
 // desktop app closes, and the app has this long to close before its files go.
 const uninstallDelayMs = 3_000;
 const uninstallAppWaitMs = 6_000;
+// Time for the reply, and for the device to get the idle state, before the service stops.
+const stopDelayMs = 500;
+
+function loadDeviceUsed(path = deviceHistoryPath()): boolean {
+  try {
+    return (JSON.parse(readFileSync(path, 'utf8')) as {used?: unknown}).used === true;
+  } catch {
+    return false;
+  }
+}
+
+async function saveDeviceUsed(path = deviceHistoryPath()): Promise<void> {
+  await mkdir(dirname(path), {recursive: true, mode: 0o700});
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, `${JSON.stringify({used: true})}\n`, {mode: 0o600});
+  await rename(tmp, path);
+}
 
 export interface DesktopChange {
   visible?: boolean;
@@ -199,6 +224,9 @@ export class CompanionService extends EventEmitter {
   #usbInstalling: UsbFirmwareStatus['installing'] = null;
   #lastUsbFirmware: UsbFirmwareStatus['last'] = null;
   #uninstalling = false;
+  #stopping = false;
+  #restarting = false;
+  #deviceUsed = loadDeviceUsed();
 
   constructor(transport: DeviceTransport, coordinator: StateCoordinator, agentContext = defaultAgentContext(),
               badgeIcons: AgentBadgeIconDefinition[] = [],
@@ -296,6 +324,7 @@ export class CompanionService extends EventEmitter {
   }
 
   status(): CompanionStatus {
+    this.#noteDevice();
     return {
       state: this.#transport.state,
       transport: this.#transport.transport,
@@ -331,6 +360,7 @@ export class CompanionService extends EventEmitter {
       },
       service: this.#service,
       wifiPaired: this.#wifiPaired,
+      deviceUsed: this.deviceUsed,
       firmware: this.#firmwareStatus(),
       installing: this.#installing,
       lastInstall: this.#lastInstall,
@@ -545,6 +575,73 @@ export class CompanionService extends EventEmitter {
     const until = Date.now() + uninstallAppWaitMs;
     while (this.#desktopApp.running && Date.now() < until) await sleep(200);
     run(plan);
+  }
+
+  // Whether this computer has used a device: a Wi-Fi pairing, or a device that connected one time.
+  get deviceUsed(): boolean {
+    return this.#deviceUsed || this.#wifiPaired;
+  }
+
+  // True from a stop request until the service exits, so agent events no longer move the device.
+  get stopping(): boolean {
+    return this.#stopping;
+  }
+
+  // Status is asked for a few times a second, so it sees a connected device soon enough.
+  #noteDevice(): void {
+    if (this.#deviceUsed || !this.#transport.connected) return;
+    this.#deviceUsed = true;
+    saveDeviceUsed().catch(error => console.error(`[device] could not save that a device was used: ${
+      error instanceof Error ? error.message : String(error)}`));
+  }
+
+  // Stops this service, for the desktop app's Quit or the Stop button in Settings. The device goes
+  // idle and the desktop app closes first. The service starts again when the user signs in, or
+  // when the desktop app opens. It emits 'stop' when the service should exit.
+  async stopService(run: (plan: UninstallPlan, exit: () => void) => void = runUninstall): Promise<void> {
+    this.#checkCanStop();
+    this.#stopping = true;
+    await writeFile(serviceStoppedPath(), '', {mode: 0o600}).catch(() => undefined);
+    this.#transport.setState('idle');
+    console.log(`[service] stopping on request in ${stopDelayMs} ms`);
+    setTimeout(() => void this.#finishStop(run), stopDelayMs);
+    this.emit('change');
+  }
+
+  // Restarts this service, for Restart in Settings. The desktop app stays open and reconnects.
+  restartService(run: (plan: UninstallPlan, exit: () => void) => void = runUninstall): void {
+    const platform = process.platform;
+    if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32')
+      throw new Error('Restart from Settings works on macOS, Linux and Windows only.');
+    this.#checkCanStop();
+    this.#restarting = true;
+    console.log(`[service] restarting on request in ${stopDelayMs} ms`);
+    setTimeout(() => {
+      // The Windows launcher starts the service again when it exits.
+      if (platform === 'win32') this.emit('stop');
+      // The service manager stops this process. If no manager runs it, nothing happens.
+      else run(createServiceRestartPlan(platform, process.getuid?.() ?? userInfo().uid), () => {
+        this.#restarting = false;
+      });
+    }, stopDelayMs);
+  }
+
+  #checkCanStop(): void {
+    if (this.#uninstalling || this.#stopping || this.#restarting)
+      throw new Error('The companion service is already stopping or restarting.');
+    if (this.#installBusy || this.#installing || this.#usbInstalling)
+      throw new Error('Wait for the install to finish, then stop or restart the companion service.');
+  }
+
+  async #finishStop(run: (plan: UninstallPlan, exit: () => void) => void): Promise<void> {
+    this.#desktopApp.stop();
+    const until = Date.now() + uninstallAppWaitMs;
+    while (this.#desktopApp.running && Date.now() < until) await sleep(200);
+    const platform = process.platform;
+    const exit = () => this.emit('stop');
+    if (platform === 'darwin' || platform === 'linux' || platform === 'win32')
+      run(createServiceStopPlan(platform, process.getuid?.() ?? userInfo().uid), exit);
+    else exit();
   }
 
   get installBusy(): boolean {
