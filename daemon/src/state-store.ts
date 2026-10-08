@@ -75,6 +75,8 @@ function isPersistedState(value: unknown): value is PersistedCoordinatorState {
       && finite(candidate.activeUntil)
       && finite(candidate.attentionUntil)
       && [undefined, 'input', 'error'].includes(candidate.attentionReason as string | undefined)
+      && (candidate.waitingOn === undefined
+        || (Array.isArray(candidate.waitingOn) && candidate.waitingOn.every(name => typeof name === 'string')))
       && finite(candidate.lastMainEventAt)
       && finite(candidate.lastSeenAt)
       && typeof candidate.hadWork === 'boolean'

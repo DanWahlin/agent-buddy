@@ -1,7 +1,7 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isRecord, writeTextAtomically, removeFile} from './file-utils.js';
-import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
+import {attentionPayload, canonicalEvent, namespacePayload, normalized} from './normalize.js';
 import {versionOf} from './commands.js';
 import {copilotHome} from './homes.js';
 import {hookHealth, type FoundHook} from './hook-config.js';
@@ -30,10 +30,12 @@ export const copilotAdapter: AgentAdapter = {
     // Copilot retries recoverable model-call errors itself, so they don't need the user.
     if (event === 'errorOccurred' && payload.recoverable === true) return [];
     // Questions and plan approvals wait for the user but fire no notification hook. The
-    // postToolUse after the user answers sets Working again.
-    if (event === 'preToolUse' && callsTool(payload, userInputTools)) {
-      return [{event: 'notification',
-        payload: namespacePayload('copilot', attentionPayload(payload, receiptTime, 'elicitation_dialog'))}];
+    // postToolUse of that question sets Working again. Copilot can run other tools in
+    // the same batch; their events must not end the wait, so it names the tools it waits on.
+    const waiting = event === 'preToolUse' ? calledTools(payload).filter(name => userInputTools.includes(name)) : [];
+    if (waiting.length) {
+      return [{event: 'notification', payload: namespacePayload('copilot',
+        {...attentionPayload(payload, receiptTime, 'elicitation_dialog'), waitingOn: [...new Set(waiting)]})}];
     }
     return normalized('copilot', event, payload, receiptTime);
   },
@@ -42,10 +44,11 @@ export const copilotAdapter: AgentAdapter = {
 const userInputTools = ['ask_user', 'exit_plan_mode'];
 
 // Copilot's preToolUse lists the calls in toolCalls[].name instead of toolName.
-function callsTool(payload: HookPayload, names: string[]): boolean {
-  if (isTool(payload, ...names)) return true;
+function calledTools(payload: HookPayload): string[] {
   const calls = Array.isArray(payload.toolCalls) ? payload.toolCalls : [];
-  return calls.some(call => isRecord(call) && typeof call.name === 'string' && names.includes(call.name));
+  const names = calls.flatMap(call => (isRecord(call) && typeof call.name === 'string' ? [call.name] : []));
+  const single = payload.toolName ?? payload.tool_name;
+  return typeof single === 'string' ? [single, ...names] : names;
 }
 
 export function copilotHookPath(home: string, env: NodeJS.ProcessEnv = {}): string {

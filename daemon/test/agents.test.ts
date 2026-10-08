@@ -304,6 +304,9 @@ test('normalizers map attention, work, completion, and idle events per agent', (
     .map(hook => hook.event), ['notification']);
   assert.deepEqual(copilotAdapter.normalize('preToolUse', {sessionId: 's', toolCalls: [{id: 't', name: 'bash'}]}, 100)
     .map(hook => hook.event), ['preToolUse']);
+  assert.deepEqual(copilotAdapter.normalize('preToolUse',
+    {sessionId: 's', toolCalls: [{id: 'a', name: 'bash'}, {id: 'b', name: 'ask_user'}]}, 100)
+    .map(hook => [hook.event, hook.payload.waitingOn]), [['notification', ['ask_user']]]);
   assert.deepEqual(copilotAdapter.normalize('postToolUse', {sessionId: 's', toolName: 'ask_user', timestamp: 200}, 100)
     .map(hook => hook.event), ['postToolUse']);
 });
@@ -321,6 +324,35 @@ test('a Copilot question shows Needs attention over other working sessions until
   handle(copilotAdapter.normalize('postToolUse', {sessionId: 'asker', toolName: 'ask_user', timestamp: time}, time));
   assert.equal(coordinator.state, 'working');
   coordinator.close();
+});
+
+test('a Copilot question stays Needs attention while other tools in its batch finish', () => {
+  let time = 1000;
+  const coordinator = new StateCoordinator(() => {}, {now: () => time, sweepMs: 0});
+  const handle = (event: string, payload: Record<string, unknown>) => {
+    for (const hook of copilotAdapter.normalize(event, {sessionId: 'asker', timestamp: time, ...payload}, time)) {
+      coordinator.handle(hook.event, hook.payload);
+    }
+  };
+  // The model asks and runs a command in one batch; the command finishes first.
+  handle('preToolUse', {toolCalls: [{id: 'a', name: 'bash'}, {id: 'b', name: 'ask_user'}]});
+  assert.equal(coordinator.state, 'attention');
+  time += 300;
+  handle('postToolUse', {toolName: 'bash'});
+  assert.equal(coordinator.state, 'attention');
+  time += 300;
+  handle('postToolUseFailure', {toolName: 'view'});
+  assert.equal(coordinator.state, 'attention');
+  // The answer ends the wait, and a restart in between keeps it.
+  const restored = new StateCoordinator(() => {}, {now: () => time, sweepMs: 0, restored: coordinator.snapshot()});
+  assert.equal(restored.state, 'attention');
+  time += 5000;
+  for (const hook of copilotAdapter.normalize('postToolUse', {sessionId: 'asker', toolName: 'ask_user', timestamp: time}, time)) {
+    restored.handle(hook.event, hook.payload);
+  }
+  assert.equal(restored.state, 'working');
+  coordinator.close();
+  restored.close();
 });
 
 test('coordinator keeps multi-agent sessions isolated and reports display drivers', () => {
