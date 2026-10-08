@@ -4,8 +4,7 @@
 namespace copilot {
 bool applyModeRequest(CharacterMotion& motion, const ModeRequest& request) {
   if (request.mode == CharacterMode::Surprise) {
-    if (request.returnToIdle) motion.surpriseToIdle();
-    else motion.surprise();
+    motion.surprise();
   } else if (!motion.setMode(request.mode)) {
     return false;
   }

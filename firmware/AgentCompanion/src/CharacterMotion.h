@@ -23,7 +23,6 @@ class CharacterMotion {
   void update(double dt);
   bool setMode(CharacterMode mode);
   void surprise();
-  void surpriseToIdle();
   bool requestIdleDirection(int direction);
   CharacterState state() const;
   const char* error() const { return error_; }

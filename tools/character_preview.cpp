@@ -150,7 +150,7 @@ int main() {
       continue;
     }
     const int mode = static_cast<int>(requestedMode), playing = static_cast<int>(requestedPlaying);
-    if (mode >= 0 && !applyModeRequest(motion, {static_cast<CharacterMode>(mode), false})) {
+    if (mode >= 0 && !applyModeRequest(motion, {static_cast<CharacterMode>(mode)})) {
       std::cout << "ERR " << motion.error() << '\n' << std::flush;
       continue;
     }

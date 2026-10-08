@@ -9,10 +9,11 @@ namespace copilot {
 // desktop engine (desktop/engine) and the host preview (tools/character_preview.cpp),
 // so all three apply requests, keep time and pick a renderer the same way.
 
-// A mode change as it is queued: a surprise from a tap settles back to idle.
+// A mode change as it is queued. A tap (or a click on the desktop character) is a
+// Surprise like any other: after the spring it resumes the agent's Working or
+// Needs attention state, or Idle when there is none.
 struct ModeRequest {
   CharacterMode mode = CharacterMode::Idle;
-  bool returnToIdle = false;
 };
 
 // Applies a request to the motion. False when the motion reports an error.
