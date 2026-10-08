@@ -161,6 +161,11 @@ What keeps it there:
   path. A 2D canvas fed by `putImageData` cost a new GPU surface per frame
   (about 400 MB of GPU memory, and more CPU); a per-frame `ImageBitmap` was
   worse still. WebGL 1 and a 2D canvas remain only as fallbacks.
+- **A lost WebGL context comes back.** The system can take the context away, for
+  example after sleep or when WebKit's GPU process restarts, and every draw then
+  does nothing. The presenter asks for the context back, rebuilds its texture
+  when it returns, and the page sends a whole frame. Before this, the character
+  vanished inside the case until the app restarted.
 - **The frame is shown at its own size**, scaled by CSS, and **the case is
   drawn once per size** on its own canvas.
 - **The "character only" cut-out is cached** while only the effects move; a
