@@ -14,6 +14,8 @@ export interface PersistedSession {
   activeUntil: number;
   attentionUntil: number;
   attentionReason?: 'input' | 'error';
+  /** The tools whose answer ends the wait, when the agent named them. Other tools' events do not. */
+  waitingOn?: string[];
   lastMainEventAt: number;
   lastSeenAt: number;
   hadWork: boolean;
@@ -196,7 +198,7 @@ export class StateCoordinator {
         break;
       case 'userPromptSubmitted':
         session.activeUntil = occurredAt + this.#activeLeaseMs;
-        session.attentionUntil = 0;
+        endWait(session);
         session.hadWork = false;
         session.completionPending = false;
         this.#cancelComplete();
@@ -205,21 +207,29 @@ export class StateCoordinator {
       case 'postToolUse':
       case 'postToolUseFailure':
         session.activeUntil = occurredAt + this.#activeLeaseMs;
-        session.attentionUntil = 0;
         session.hadWork = true;
+        // A tool that runs beside a question, in the same batch, does not answer it.
+        if (!session.waitingOn || (event !== 'preToolUse' && session.waitingOn.includes(toolName(payload)))) {
+          endWait(session);
+        }
         break;
       case 'notification':
-      case 'errorOccurred':
+      case 'errorOccurred': {
         session.activeUntil = 0;
         session.attentionUntil = occurredAt + this.#attentionLeaseMs;
         session.attentionReason = event === 'errorOccurred' ? 'error' : 'input';
+        const waitingOn = Array.isArray(payload.waitingOn)
+          ? payload.waitingOn.filter((name): name is string => typeof name === 'string') : [];
+        if (waitingOn.length) session.waitingOn = waitingOn;
+        else delete session.waitingOn;
         this.#cancelComplete();
         break;
+      }
       case 'agentStop':
         session.activeUntil = 0;
         // A normal turn end after an error means the agent recovered. Agents report
         // turn-ending failures with their own error event instead of agentStop.
-        if (payload.clearAttention === true || session.attentionReason === 'error') session.attentionUntil = 0;
+        if (payload.clearAttention === true || session.attentionReason === 'error') endWait(session);
         session.completionPending = session.hadWork && session.attentionUntil <= now;
         break;
       default:
@@ -238,7 +248,7 @@ export class StateCoordinator {
         mutated = true;
       }
       if (session.attentionUntil > 0 && session.attentionUntil <= now) {
-        session.attentionUntil = 0;
+        endWait(session);
         mutated = true;
       }
       for (const [agentId, agent] of session.subagents) {
@@ -265,6 +275,7 @@ export class StateCoordinator {
         activeUntil: session.activeUntil,
         attentionUntil: session.attentionUntil,
         ...(session.attentionReason ? {attentionReason: session.attentionReason} : {}),
+        ...(session.waitingOn ? {waitingOn: [...session.waitingOn]} : {}),
         lastMainEventAt: session.lastMainEventAt,
         lastSeenAt: session.lastSeenAt,
         hadWork: session.hadWork,
@@ -449,4 +460,14 @@ export class StateCoordinator {
     return ['copilot', 'claude', 'codex', 'grok', 'hermes', 'openclaw'].includes(prefix)
       ? prefix as AgentId : undefined;
   }
+}
+
+function endWait(session: SessionState): void {
+  session.attentionUntil = 0;
+  delete session.waitingOn;
+}
+
+function toolName(payload: HookPayload): string {
+  const name = payload.toolName ?? payload.tool_name;
+  return typeof name === 'string' ? name : '';
 }

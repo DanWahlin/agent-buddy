@@ -12,3 +12,6 @@ __pycache__/
 !.env.example
 characters/copilot/legacy-atlas/generated/atlas_bytes.h
 firmware/AgentCompanion/generated/sprite_bytes.h
+
+# Website build output
+website/dist/

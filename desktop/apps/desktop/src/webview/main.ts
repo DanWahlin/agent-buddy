@@ -12,6 +12,7 @@
 
 // Emscripten's loader, CommonJS, bundled by esbuild.
 import createEngine from '../../../../engine/prebuilt/engine.js';
+import { cutOut } from './cutout.js';
 import { createPresenter, type Presenter } from './present.js';
 import { cueForMode, play, setVolume, unlock } from './sounds.js';
 
@@ -693,7 +694,7 @@ function sendTrayIcon(tries = 30): void {
     const frame = document.createElement('canvas');
     frame.width = width;
     frame.height = height;
-    frame.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(lastFrame), width, height), 0, 0);
+    frame.getContext('2d')!.putImageData(new ImageData(cutOut(lastFrame, width, height), width, height), 0, 0);
     const size = 32;
     const icon = document.createElement('canvas');
     icon.width = size;

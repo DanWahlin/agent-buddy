@@ -1088,6 +1088,15 @@ local and are ignored by git.
 - [Creating a new character's art](docs/character-art-notes.md)
 - [Tagging and publishing releases](docs/releases.md)
 
+## License
+
+The code is under the [MIT License](LICENSE).
+
+The "Agent Buddy" name and logo are trademarks of Dan Wahlin, and the MIT
+License does not cover them. You can fork the project and change it. If you
+share or sell your version, give it a different name and logo. The character
+artwork and agent names belong to their owners. See [TRADEMARKS.md](TRADEMARKS.md).
+
 ---
 
 This is an independent project, not an official GitHub or Waveshare product.
