@@ -304,11 +304,13 @@ AC_EXPORT int ac_load_reserved(uint32_t seed) {
   return bind(std::move(staged), size, seed);
 }
 
-// A mode change, as the device's command queue applies one. `touch` is a poke:
-// a surprise that settles back to idle, as a tap on the device's screen does.
+// A mode change, as the device's command queue applies one. `touch` marks a poke
+// (a click on the character); like a tap on the device's screen it is an ordinary
+// Surprise that resumes the agent's state, so it needs no handling of its own.
 AC_EXPORT int ac_mode(int mode, int touch) {
+  (void)touch;
   if (!engine || mode < 0 || mode > static_cast<int>(CharacterMode::Attention)) return 0;
-  if (applyModeRequest(*engine->motion, {static_cast<CharacterMode>(mode), touch != 0})) return 1;
+  if (applyModeRequest(*engine->motion, {static_cast<CharacterMode>(mode)})) return 1;
   lastError = engine->motion->error();
   return 0;
 }

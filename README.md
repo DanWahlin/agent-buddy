@@ -601,7 +601,9 @@ npm run character copilot      # Switch back to Copilot
 ```
 
 You can also pass the path to any `.acpk` pack, such as one from a release's
-`esp32-agent-companion-v<version>-characters.zip` asset. The daemon remembers
+`esp32-agent-companion-v<version>-characters.zip` asset. The daemon keeps a copy
+with the characters you added, as **Add character…** does, so the desktop app can
+show it and the settings page lists it with a **Remove** button. The daemon remembers
 your choice. If an install is interrupted, the device shows **No character installed** until the daemon
 reinstalls your character, which it does as soon as the device reconnects.
 

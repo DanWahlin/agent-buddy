@@ -23,6 +23,7 @@ import {copilotHome} from './agents/homes.js';
 import {
   addCharacterPack,
   isCharacterName,
+  keepInstalledPack,
   listCharacters,
   loadCharacterPreference,
   packNeedsFirmwareUpdate,
@@ -653,6 +654,7 @@ export class CompanionService extends EventEmitter {
     this.#installBusy = true;
     let pack: Awaited<ReturnType<typeof readCharacterPack>>;
     let name = character;
+    let remembered = character;
     try {
       await this.#characterBuilder.refresh();
       pack = await readCharacterPack(character);
@@ -660,6 +662,8 @@ export class CompanionService extends EventEmitter {
       if (this.#transport.connected && packNeedsFirmwareUpdate(pack, this.#transport.adaptivePatchRam))
         throw new Error(`${pack.name} needs newer device firmware. Update the firmware (see "Update" in `
           + `the README), then install ${pack.name} again.`);
+      // Before the transfer: the desktop app switches to the pack as soon as the install starts.
+      remembered = await keepInstalledPack(character, pack);
     } catch (error) {
       this.#installBusy = false;
       // The settings page learns about failures from lastInstall, so report ones that happen before the transfer too.
@@ -680,8 +684,8 @@ export class CompanionService extends EventEmitter {
           this.emit('change');
         }
       });
-      await saveCharacterPreference(character);
-      this.#characterPreference = character;
+      await saveCharacterPreference(remembered);
+      this.#characterPreference = remembered;
       console.log(`[character] installed ${result.character} via ${result.transport}`);
       this.#lastInstall = {ok: true, character: pack.id, name: pack.name, transport: result.transport};
       return this.#lastInstall;

@@ -279,12 +279,12 @@ void queueMode(DeviceCommand command) {
 
 void queueTouchSurprise() {
   if (!characterReady) return;
-  const ModeRequest request{CharacterMode::Surprise, true};
+  const ModeRequest request{CharacterMode::Surprise};
   if (xQueueSend(commands, &request, 0) != pdTRUE) {
     logMessage("COMMAND_ERROR mode queue full\n");
     return;
   }
-  logMessage("COMMAND accepted=surprise source=touch return=idle\n");
+  logMessage("COMMAND accepted=surprise source=touch\n");
 }
 
 uint8_t loadSoundVolume() {

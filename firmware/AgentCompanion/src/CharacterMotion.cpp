@@ -79,11 +79,6 @@ bool CharacterMotion::setMode(CharacterMode mode) {
 
 void CharacterMotion::surprise() { setMode(CharacterMode::Surprise); }
 
-void CharacterMotion::surpriseToIdle() {
-  persistent_ = CharacterMode::Idle;
-  setMode(CharacterMode::Surprise);
-}
-
 bool CharacterMotion::requestIdleDirection(int direction) {
   if (next_ != CharacterMode::Idle) {
     error_ = "Idle direction preview requires Idle mode.";

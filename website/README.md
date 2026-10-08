@@ -1,6 +1,6 @@
 # Agent Buddy website
 
-The product page at <https://danwahlin.github.io/agent-buddy/>. It is static
+The product page at <https://getagentbuddy.com/>. It is static
 HTML, CSS, and JavaScript with no build tools. [GSAP](https://gsap.com/) loads
 from a CDN and adds motion. The page works without it.
 
@@ -35,6 +35,17 @@ If the packs are missing, the live demo shows a recording.
 deploys the site when `website/` changes on `main`, when a release is published
 (so the demo gets the new packs), and on demand. In the repository's
 **Settings > Pages**, set **Source** to **GitHub Actions**.
+
+The site uses the custom domain `getagentbuddy.com`, set in **Settings > Pages**
+with **Enforce HTTPS** on. A workflow-deployed site needs no `CNAME` file. The
+domain's DNS is at Cloudflare, with records set to **DNS only** so that GitHub can
+issue the certificate:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| A | `getagentbuddy.com` | `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` |
+| AAAA | `getagentbuddy.com` | `2606:50c0:8000::153`, `2606:50c0:8001::153`, `2606:50c0:8002::153`, `2606:50c0:8003::153` |
+| CNAME | `www` | `danwahlin.github.io` |
 
 ## Edit it
 

@@ -537,9 +537,9 @@ Click/tap the character, or focus it and press Enter/Space, to trigger surprise.
 Keys 1-6 select the six modes including Idle and Sleeping. Pause freezes both expression and
 effects; the speed selector includes half and quarter speed for inspection.
 On the physical device, a tap is recognized only after release so a swipe cannot
-trigger Surprise first. A tapped Surprise returns to Idle after the spring,
-regardless of the previous persistent state. Explicit Surprise signals retain
-their existing resume behavior. Swipe up opens the settings menu for brightness,
+trigger Surprise first. A tapped Surprise, like an explicit one, resumes the
+agent's Working or Needs attention state after the spring, or Idle when there is
+none. Swipe up opens the settings menu for brightness,
 0-100% sound volume, and character-state selection; swipe down or tap Close to
 dismiss it. Sound defaults to 50% and is persisted in internal NVS.
 All five non-Idle mode links are also available on `/sprite-preview.html`.
