@@ -197,7 +197,7 @@ button { font: inherit; color: inherit; }
 [data-state="sleep"] { --state: #2c2a66; }
 
 /* ---------- Hero ---------- */
-.hero { position: relative; overflow: hidden; padding: calc(60px + clamp(40px, 7vh, 80px)) 0 clamp(24px, 4vw, 48px); }
+.hero { --hero-gap: clamp(40px, 7vh, 72px); position: relative; overflow: hidden; padding: calc(60px + clamp(40px, 7vh, 80px)) 0 var(--hero-gap); }
 .hero-inner { position: relative; display: grid; justify-items: center; }
 .hero-bg { position: absolute; inset: 0; pointer-events: none; -webkit-mask-image: linear-gradient(#000 65%, transparent); mask-image: linear-gradient(#000 65%, transparent); }
 .hex {
@@ -223,9 +223,11 @@ button { font: inherit; color: inherit; }
 .hero-title .mask > span { display: inline-block; }
 .hero-sub { font-size: clamp(21px, 2.2vw, 28px); color: var(--soft); margin: 14px 0 24px; font-weight: 500; letter-spacing: -0.02em; }
 .hero-cta { display: flex; gap: 28px; justify-content: center; align-items: center; flex-wrap: wrap; }
-.hero-stage { position: relative; z-index: 1; margin-top: clamp(32px, 5vh, 56px); perspective: 1400px; }
+/* The same space above and below the device, so it sits centered under the buttons. */
+.hero-stage { position: relative; z-index: 1; margin-top: var(--hero-gap); perspective: 1400px; }
 .hero-stage .device { animation: float 7s ease-in-out infinite; }
-.device-shadow { width: 60%; height: 40px; margin: 0 auto; background: radial-gradient(ellipse, rgba(0, 0, 0, 0.8), transparent 70%); }
+.hero-rise { position: relative; }
+.device-shadow { position: absolute; left: 20%; top: 100%; width: 60%; height: 40px; background: radial-gradient(ellipse, rgba(0, 0, 0, 0.8), transparent 70%); pointer-events: none; }
 @keyframes float { 50% { translate: 0 -14px; } }
 
 /* ---------- Notice tiles ---------- */
