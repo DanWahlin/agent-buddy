@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Serve website/dist on http://127.0.0.1:4173 (or PORT) for a local preview.
+// Serve website/dist on http://127.0.0.1:4790 (or PORT) for a local preview.
 // Run build.mjs first.
 import http from "node:http";
 import { pipeline } from "node:stream";
@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist");
-const port = Number(process.env.PORT) || 4173;
+const port = Number(process.env.PORT) || 4790;
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8", ".json": "application/json",
@@ -30,6 +30,10 @@ http.createServer((req, res) => {
     if (!res.headersSent) res.writeHead(500);
     res.end();
   }
+}).on("error", (error) => {
+  if (error.code !== "EADDRINUSE") throw error;
+  console.error(`error: Port ${port} is in use. Run with another port, for example: PORT=4791 npm run website`);
+  process.exit(1);
 }).listen(port, "127.0.0.1", () => console.log(`Agent Buddy website: http://127.0.0.1:${port}/`));
 
 function handle(req, res) {

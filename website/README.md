@@ -7,7 +7,7 @@ from a CDN and adds motion. The page works without it.
 ## Preview it
 
 ```bash
-npm run website        # builds website/dist and serves it on http://127.0.0.1:4173
+npm run website        # builds website/dist and serves it on http://127.0.0.1:4790
 ```
 
 Or run the two steps yourself:
