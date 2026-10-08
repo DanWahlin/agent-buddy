@@ -45,8 +45,8 @@ deploys the site when `website/` changes on `main`, when a release is published
 | `main.js` | Scroll scenes, video playback, the character picker, and the live demo controls |
 | `live.js` | Runs the engine on a canvas: packs, modes, badges, usage, and taps |
 
-**The film.** When the overview video is on YouTube, set `FILM_YOUTUBE_ID` at
-the top of `main.js` to its video ID. Until then, the film section shows
+**The video.** When the overview video is on YouTube, set `VIDEO_YOUTUBE_ID` at
+the top of `main.js` to its video ID. Until then, the video section shows
 "Coming soon".
 
 ## Media

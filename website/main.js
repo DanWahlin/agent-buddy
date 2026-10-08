@@ -1,8 +1,8 @@
 'use strict';
 /* Agent Buddy website: scroll scenes, media, and the live demo controls. */
 
-// Set this to the film's YouTube video ID (the part after "v=") when it is published.
-const FILM_YOUTUBE_ID = 'YOUTUBE_VIDEO_ID';
+// Set this to the video's YouTube video ID (the part after "v=") when it is published.
+const VIDEO_YOUTUBE_ID = 'YOUTUBE_VIDEO_ID';
 const REPO = 'DanWahlin/agent-buddy';
 
 const AGENTS = [
@@ -78,14 +78,6 @@ const sections = navLinks.map((a) => $(a.getAttribute('href')));
 
 /* ---------- Scroll-driven scenes (no library needed) ---------- */
 
-const hero = $('.hero');
-const heroCopy = $('.hero-copy');
-const heroStage = $('.hero-stage');
-const states = $('#states');
-const statesDevice = $('#states-device');
-const steps = $$('.step');
-const bars = $$('.step-bars span');
-const events = $('#events');
 const valuesWords = $$('#values-words span');
 const desktopWindow = $('#desktop-window');
 
@@ -94,22 +86,15 @@ const STATE_EVENTS = {
   attention: [['copilot', 'Running tests…', 'working'], ['claude', 'Needs your approval', 'attention']],
   complete: [['copilot', 'Done', 'complete'], ['claude', 'Done', 'complete']],
 };
-let currentState = '';
-function setState(state) {
-  if (state === currentState) return;
-  currentState = state;
-  steps.forEach((s) => s.classList.toggle('is-active', s.dataset.state === state));
-  statesDevice.dataset.state = state;
-  showLayer(statesDevice, 'state', state);
-  events.innerHTML = STATE_EVENTS[state].map(([id, text, kind]) =>
+for (const box of $$('[data-events]')) {
+  box.innerHTML = STATE_EVENTS[box.dataset.events].map(([id, text, kind]) =>
     `<div class="event" data-kind="${kind}">${badge(id)}<div><b>${agent(id).name}</b><span>${text}</span></div></div>`).join('');
 }
+const rowObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) if (entry.isIntersecting) entry.target.classList.add('in-view');
+}, { threshold: 0.45 });
+$$('.state-row').forEach((row) => rowObserver.observe(row));
 
-// 0 when the element's top reaches the top of the viewport, 1 when its bottom reaches the bottom.
-function pinProgress(el) {
-  const r = el.getBoundingClientRect();
-  return clamp(-r.top / Math.max(1, r.height - innerHeight), 0, 1);
-}
 // 0 when the element enters at the bottom, 1 when it leaves at the top.
 function passProgress(el) {
   const r = el.getBoundingClientRect();
@@ -124,17 +109,6 @@ function onScroll() {
   let active = -1;
   sections.forEach((s, i) => { if (s && s.getBoundingClientRect().top < innerHeight * 0.45) active = i; });
   navLinks.forEach((a, i) => a.classList.toggle('is-active', i === active));
-
-  if (!reduceMotion) {
-    const h = pinProgress(hero);
-    heroCopy.style.transform = `translateY(${-h * 140}px) scale(${1 - h * 0.08})`;
-    heroCopy.style.opacity = String(clamp(1 - h * 1.8, 0, 1));
-    heroStage.style.transform = `translateX(-50%) translateY(${-h * 30}vh) scale(${1 + h * 0.45})`;
-  }
-
-  const p = pinProgress(states);
-  setState(['working', 'attention', 'complete'][Math.min(2, Math.floor(p * 3))]);
-  bars.forEach((b, i) => b.style.setProperty('--fill', clamp(p * 3 - i, 0, 1)));
 
   const v = passProgress($('#values'));
   valuesWords.forEach((w, i) => w.classList.toggle('lit', v > 0.3 + i * 0.08));
@@ -343,30 +317,30 @@ $('#live-usage').addEventListener('click', (e) => {
 });
 $('#live-tap').addEventListener('click', () => live.tap());
 
-/* ---------- Film ---------- */
+/* ---------- Video ---------- */
 
-const filmButton = $('#film-play');
-const modal = $('#film-modal');
-const hasFilm = FILM_YOUTUBE_ID && FILM_YOUTUBE_ID !== 'YOUTUBE_VIDEO_ID';
-if (!hasFilm) {
-  filmButton.classList.add('is-soon');
-  filmButton.setAttribute('aria-label', 'The Agent Buddy film is coming soon');
-  $('#film-soon').hidden = false;
+const videoButton = $('#video-play');
+const modal = $('#video-modal');
+const hasVideo = VIDEO_YOUTUBE_ID && VIDEO_YOUTUBE_ID !== 'YOUTUBE_VIDEO_ID';
+if (!hasVideo) {
+  videoButton.classList.add('is-soon');
+  videoButton.setAttribute('aria-label', 'The Agent Buddy video is coming soon');
+  $('#video-soon').hidden = false;
 }
-function closeFilm() {
+function closeVideo() {
   modal.hidden = true;
-  $('#film-body').innerHTML = '';
-  filmButton.focus();
+  $('#video-body').innerHTML = '';
+  videoButton.focus();
 }
-filmButton.addEventListener('click', () => {
-  if (!hasFilm) return;
-  $('#film-body').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(FILM_YOUTUBE_ID)}?autoplay=1&rel=0" title="Agent Buddy film" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+videoButton.addEventListener('click', () => {
+  if (!hasVideo) return;
+  $('#video-body').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(VIDEO_YOUTUBE_ID)}?autoplay=1&rel=0" title="Agent Buddy video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
   modal.hidden = false;
-  $('#film-close').focus();
+  $('#video-close').focus();
 });
-$('#film-close').addEventListener('click', closeFilm);
-modal.addEventListener('click', (e) => { if (e.target === modal) closeFilm(); });
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeFilm(); });
+$('#video-close').addEventListener('click', closeVideo);
+modal.addEventListener('click', (e) => { if (e.target === modal) closeVideo(); });
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeVideo(); });
 
 /* ---------- Downloads ---------- */
 
@@ -453,7 +427,7 @@ function flourish() {
   });
 
   // Devices settle into place as they arrive.
-  for (const device of $$('.agents .device, .picker-stage .device, .finale .device, .try-stage')) {
+  for (const device of $$('.state-stage .device, .agents .device, .picker-stage .device, .finale .device, .try-stage')) {
     gsap.from(device, {
       scale: 0.8, opacity: 0, y: 60, duration: 1.6, ease,
       scrollTrigger: { trigger: device, start: 'top 90%' },
@@ -461,7 +435,7 @@ function flourish() {
   }
   gsap.from('.orbit', { scale: 0.6, opacity: 0, duration: 1.8, ease, scrollTrigger: { trigger: '.orbit-stage', start: 'top 80%' } });
   gsap.from('.shots', { y: 80, opacity: 0, duration: 1.4, ease, scrollTrigger: { trigger: '.shots', start: 'top 92%' } });
-  gsap.from('.film-frame', { y: 80, opacity: 0, scale: 0.95, duration: 1.4, ease, scrollTrigger: { trigger: '.film-frame', start: 'top 92%' } });
+  gsap.from('.video-frame', { y: 80, opacity: 0, scale: 0.95, duration: 1.4, ease, scrollTrigger: { trigger: '.video-frame', start: 'top 92%' } });
   gsap.from('.finale-title, .finale .btn', { y: 30, opacity: 0, duration: 1.2, ease, stagger: 0.1, scrollTrigger: { trigger: '.finale-title', start: 'top 90%' } });
 
   // Events travel along the flow line, from the hooks to your buddy.

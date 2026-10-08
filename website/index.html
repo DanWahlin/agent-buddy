@@ -28,9 +28,9 @@
       </a>
       <nav class="nav-links" aria-label="Sections">
         <a href="#states">Overview</a>
+        <a href="#try">Try it</a>
         <a href="#agents">Agents</a>
         <a href="#characters">Characters</a>
-        <a href="#try">Try it</a>
         <a href="#desktop">Desktop</a>
         <a href="#how">How it works</a>
       </nav>
@@ -41,7 +41,7 @@
   <main id="main">
     <!-- Hero -->
     <section class="hero" id="top">
-      <div class="hero-pin">
+      <div class="hero-inner">
         <div class="hero-bg" aria-hidden="true">
           <div class="hex"></div>
           <div class="aurora a1"></div>
@@ -53,7 +53,7 @@
           <p class="hero-sub reveal-up">A desk buddy for your AI coding agents.</p>
           <div class="hero-cta reveal-up">
             <a class="btn" href="#start">Get started</a>
-            <a class="link-arrow" href="#film">Watch the film <span aria-hidden="true">›</span></a>
+            <a class="link-arrow" href="#video">Watch the video <span aria-hidden="true">›</span></a>
           </div>
         </div>
         <div class="hero-stage">
@@ -69,7 +69,6 @@
           <div class="device-shadow" aria-hidden="true"></div>
           </div>
         </div>
-        <div class="scroll-cue" aria-hidden="true"><span></span></div>
       </div>
     </section>
 
@@ -88,40 +87,123 @@
       </div>
     </section>
 
-    <!-- States: pinned scroll story -->
-    <section class="states" id="states" aria-labelledby="states-title">
-      <div class="states-pin">
-        <div class="states-copy">
-          <p class="eyebrow" id="states-title">It reacts to your agents</p>
-          <ol class="steps">
-            <li class="step is-active" data-state="working">
-              <h3>Working</h3>
-              <p>An agent is busy. Your buddy is busy too: focused eyes, orbiting dots, and drifting binary digits.</p>
-            </li>
-            <li class="step" data-state="attention">
-              <h3>Needs attention</h3>
-              <p>An agent is waiting for your approval. A curious head tilt and an amber question mark tell you now, not ten minutes later.</p>
-            </li>
-            <li class="step" data-state="complete">
-              <h3>Complete</h3>
-              <p>The work is done. A short celebration, then back to idle. Come take a look.</p>
-            </li>
-          </ol>
-          <div class="step-bars" aria-hidden="true"><span></span><span></span><span></span></div>
-        </div>
-        <div class="states-stage">
-          <div class="device device-lg" id="states-device" data-state="working">
+    <!-- States -->
+    <section class="section states" id="states">
+      <div class="container center">
+        <p class="eyebrow">It reacts to your agents</p>
+        <h2 class="display lines">
+          <span class="line"><span>Three states.</span></span>
+          <span class="line"><span class="grad">One glance.</span></span>
+        </h2>
+        <p class="lede fade-up">Hooks tell Agent Buddy what each agent is doing. The character shows it, and a small badge shows which agent.</p>
+      </div>
+      <div class="state-rows">
+        <article class="state-row" data-state="working">
+          <div class="state-stage">
+            <div class="device device-lg" data-state="working">
+              <div class="device-glow" aria-hidden="true"></div>
+              <div class="device-screen"><video class="autoplay" src="assets/media/working.mp4" poster="assets/media/working.webp" muted loop playsinline preload="none" aria-label="Working state: focused eyes, orbiting dots, and drifting binary digits"></video></div>
+              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+              <div class="device-shine" aria-hidden="true"></div>
+            </div>
+            <div class="events" data-events="working"></div>
+          </div>
+          <div class="state-copy">
+            <h3 class="fade-up">Working</h3>
+            <p class="fade-up">An agent is busy. Your buddy is busy too: focused eyes, orbiting dots, and drifting binary digits.</p>
+          </div>
+        </article>
+        <article class="state-row" data-state="attention">
+          <div class="state-stage">
+            <div class="device device-lg" data-state="attention">
+              <div class="device-glow" aria-hidden="true"></div>
+              <div class="device-screen"><video class="autoplay" src="assets/media/attention.mp4" poster="assets/media/attention.webp" muted loop playsinline preload="none" aria-label="Needs attention state: a head tilt and an amber question mark"></video></div>
+              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+              <div class="device-shine" aria-hidden="true"></div>
+            </div>
+            <div class="events" data-events="attention"></div>
+          </div>
+          <div class="state-copy">
+            <h3 class="fade-up">Needs attention</h3>
+            <p class="fade-up">An agent is waiting for your approval. A curious head tilt and an amber question mark tell you now, not ten minutes later.</p>
+          </div>
+        </article>
+        <article class="state-row" data-state="complete">
+          <div class="state-stage">
+            <div class="device device-lg" data-state="complete">
+              <div class="device-glow" aria-hidden="true"></div>
+              <div class="device-screen"><video class="autoplay" src="assets/media/complete.mp4" poster="assets/media/complete.webp" muted loop playsinline preload="none" aria-label="Complete state: a short celebration"></video></div>
+              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+              <div class="device-shine" aria-hidden="true"></div>
+            </div>
+            <div class="events" data-events="complete"></div>
+          </div>
+          <div class="state-copy">
+            <h3 class="fade-up">Complete</h3>
+            <p class="fade-up">The work is done. A short celebration, then back to idle. Come take a look.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Live demo -->
+    <section class="section try" id="try">
+      <div class="container center">
+        <p class="eyebrow">Live demo</p>
+        <h2 class="display lines">
+          <span class="line"><span>Try it.</span></span>
+          <span class="line"><span class="grad">Right here.</span></span>
+        </h2>
+        <p class="lede fade-up">This is not a video. It is the device's own animation engine, the firmware's code compiled to WebAssembly, running in your browser with the same character packs the device installs.</p>
+      </div>
+      <div class="try-grid">
+        <div class="try-stage">
+          <div class="device device-lg tilt" id="live-device" data-state="idle">
             <div class="device-glow" aria-hidden="true"></div>
             <div class="device-screen">
-              <video class="layer is-on" data-state="working" src="assets/media/working.mp4" poster="assets/media/working.webp" muted loop playsinline preload="metadata" aria-label="Working state"></video>
-              <video class="layer" data-state="attention" src="assets/media/attention.mp4" poster="assets/media/attention.webp" muted loop playsinline preload="metadata" aria-label="Needs attention state"></video>
-              <video class="layer" data-state="complete" src="assets/media/complete.mp4" poster="assets/media/complete.webp" muted loop playsinline preload="metadata" aria-label="Complete state"></video>
+              <video class="live-fallback" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="none" aria-label="A recording of the character"></video>
+              <canvas id="live-canvas" width="412" height="466" aria-label="The live character. Select it to tap it."></canvas>
+              <div class="live-loading" id="live-loading" aria-hidden="true">
+                <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle><circle class="arc" cx="50" cy="50" r="44"></circle></svg>
+              </div>
             </div>
             <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
             <div class="device-shine" aria-hidden="true"></div>
+            <button class="device-hit" id="live-tap" aria-label="Tap the character"></button>
           </div>
-          <div class="events" id="events" aria-live="polite"></div>
-          <p class="badge-note">The badge shows which agent.</p>
+          <p class="live-status" id="live-status" role="status">Scroll here to wake the engine.</p>
+        </div>
+        <div class="console" id="console">
+          <fieldset>
+            <legend>State</legend>
+            <div class="chips" id="live-states">
+              <button class="chip is-on" data-mode="idle">Idle</button>
+              <button class="chip" data-mode="working"><i style="--c:var(--work)"></i>Working</button>
+              <button class="chip" data-mode="attention"><i style="--c:var(--attn)"></i>Needs attention</button>
+              <button class="chip" data-mode="complete"><i style="--c:var(--done)"></i>Complete</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Agents <span class="hint">up to four badges</span></legend>
+            <div class="chips" id="live-agents"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Character</legend>
+            <div class="chips" id="live-chars">
+              <button class="chip is-on" data-char="copilot">Copilot</button>
+              <button class="chip" data-char="claude">Claude</button>
+              <button class="chip" data-char="openclaw">OpenClaw</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Usage</legend>
+            <div class="chips" id="live-usage">
+              <button class="chip is-on" data-usage="">Off</button>
+              <button class="chip" data-usage="AIC: 1,248">AIC</button>
+              <button class="chip" data-usage="Tokens: 2.4M">Tokens</button>
+            </div>
+          </fieldset>
+          <p class="console-tip">Tip: tap the screen.</p>
         </div>
       </div>
     </section>
@@ -222,68 +304,6 @@
       </div>
     </section>
 
-    <!-- Live demo -->
-    <section class="section try" id="try">
-      <div class="container center">
-        <p class="eyebrow">Live demo</p>
-        <h2 class="display lines">
-          <span class="line"><span>Try it.</span></span>
-          <span class="line"><span class="grad">Right here.</span></span>
-        </h2>
-        <p class="lede fade-up">This is not a video. It is the device's own animation engine, the firmware's code compiled to WebAssembly, running in your browser with the same character packs the device installs.</p>
-      </div>
-      <div class="try-grid">
-        <div class="try-stage">
-          <div class="device device-lg tilt" id="live-device" data-state="idle">
-            <div class="device-glow" aria-hidden="true"></div>
-            <div class="device-screen">
-              <video class="live-fallback" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="none" aria-label="A recording of the character"></video>
-              <canvas id="live-canvas" width="412" height="466" aria-label="The live character. Select it to tap it."></canvas>
-              <div class="live-loading" id="live-loading" aria-hidden="true">
-                <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle><circle class="arc" cx="50" cy="50" r="44"></circle></svg>
-              </div>
-            </div>
-            <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-            <div class="device-shine" aria-hidden="true"></div>
-            <button class="device-hit" id="live-tap" aria-label="Tap the character"></button>
-          </div>
-          <p class="live-status" id="live-status" role="status">Scroll here to wake the engine.</p>
-        </div>
-        <div class="console" id="console">
-          <fieldset>
-            <legend>State</legend>
-            <div class="chips" id="live-states">
-              <button class="chip is-on" data-mode="idle">Idle</button>
-              <button class="chip" data-mode="working"><i style="--c:var(--work)"></i>Working</button>
-              <button class="chip" data-mode="attention"><i style="--c:var(--attn)"></i>Needs attention</button>
-              <button class="chip" data-mode="complete"><i style="--c:var(--done)"></i>Complete</button>
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>Agents <span class="hint">up to four badges</span></legend>
-            <div class="chips" id="live-agents"></div>
-          </fieldset>
-          <fieldset>
-            <legend>Character</legend>
-            <div class="chips" id="live-chars">
-              <button class="chip is-on" data-char="copilot">Copilot</button>
-              <button class="chip" data-char="claude">Claude</button>
-              <button class="chip" data-char="openclaw">OpenClaw</button>
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>Usage</legend>
-            <div class="chips" id="live-usage">
-              <button class="chip is-on" data-usage="">Off</button>
-              <button class="chip" data-usage="AIC: 1,248">AIC</button>
-              <button class="chip" data-usage="Tokens: 2.4M">Tokens</button>
-            </div>
-          </fieldset>
-          <p class="console-tip">Tip: tap the screen.</p>
-        </div>
-      </div>
-    </section>
-
     <!-- Desktop app -->
     <section class="section desktop" id="desktop">
       <div class="container center">
@@ -381,16 +401,16 @@
       </div>
     </section>
 
-    <!-- Film -->
-    <section class="section film" id="film">
+    <!-- Video -->
+    <section class="section video" id="video">
       <div class="container center">
-        <h2 class="display lines"><span class="line"><span>Watch the film.</span></span></h2>
+        <h2 class="display lines"><span class="line"><span>Watch the video.</span></span></h2>
       </div>
       <div class="container">
-        <button class="film-frame" id="film-play" aria-label="Play the Agent Buddy film">
-          <img src="assets/img/film-poster.webp" alt="" width="1600" height="900" loading="lazy">
+        <button class="video-frame" id="video-play" aria-label="Play the Agent Buddy video">
+          <img src="assets/img/video-poster.webp" alt="" width="1600" height="900" loading="lazy">
           <span class="play" aria-hidden="true"><img src="assets/icons/play-24.svg" alt=""></span>
-          <span class="soon" id="film-soon" hidden>Coming soon</span>
+          <span class="soon" id="video-soon" hidden>Coming soon</span>
         </button>
       </div>
     </section>
@@ -496,9 +516,9 @@ npm run setup</code></pre>
     </div>
   </footer>
 
-  <div class="modal" id="film-modal" role="dialog" aria-modal="true" aria-label="Agent Buddy film" hidden>
-    <button class="modal-close" id="film-close" aria-label="Close">×</button>
-    <div class="modal-body" id="film-body"></div>
+  <div class="modal" id="video-modal" role="dialog" aria-modal="true" aria-label="Agent Buddy video" hidden>
+    <button class="modal-close" id="video-close" aria-label="Close">×</button>
+    <div class="modal-body" id="video-body"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" defer></script>
