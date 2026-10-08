@@ -246,13 +246,13 @@ async function loadLiveCharacter(id) {
   const ok = await live.loadCharacter(id, (p) => liveLoading.style.setProperty('--p', p));
   if (!ok) return;
   liveDevice.classList.add('live-ready');
-  liveStatus.textContent = 'Live · the firmware engine in WebAssembly';
+  liveStatus.textContent = 'Live in your browser';
   if (liveVisible) live.start();
 }
 async function startLive() {
   if (liveStarted) return;
   liveStarted = true;
-  liveStatus.textContent = 'Waking the engine…';
+  liveStatus.textContent = 'Waking up your buddy…';
   try {
     const available = await live.init($('#live-canvas'));
     liveEngine = true;
