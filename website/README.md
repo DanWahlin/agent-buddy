@@ -45,9 +45,14 @@ deploys the site when `website/` changes on `main`, when a release is published
 | `main.js` | Scroll scenes, video playback, the character picker, and the live demo controls |
 | `live.js` | Runs the engine on a canvas: packs, modes, badges, usage, and taps |
 
-**The video.** When the overview video is on YouTube, set `VIDEO_YOUTUBE_ID` at
-the top of `main.js` to its video ID. Until then, the video section shows
-"Coming soon".
+**The video.** `assets/media/overview.mp4` is the overview video's final render
+with music (`renders/video-with-music.mp4`), made smaller for the web. To update
+it after a new render:
+
+```bash
+ffmpeg -i video-with-music.mp4 -c:v libx264 -preset slow -crf 26 -pix_fmt yuv420p \
+  -c:a aac -b:a 128k -movflags +faststart website/assets/media/overview.mp4
+```
 
 ## Media
 

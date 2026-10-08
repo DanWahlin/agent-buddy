@@ -484,20 +484,13 @@ button { font: inherit; color: inherit; }
 .pills img { width: 18px; height: 18px; filter: invert(1); opacity: 0.8; }
 
 /* ---------- Video ---------- */
-.video-frame { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--line-2); border-radius: 24px; overflow: hidden; cursor: pointer; background: #000; margin-top: 50px; box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6); }
-.video-frame img { width: 100%; transition: transform 1.2s var(--ease), filter 0.6s; }
-.video-frame:hover img { transform: scale(1.03); filter: brightness(0.85); }
-.video-frame .play { position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.16); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.3); transition: transform 0.4s var(--ease), background 0.3s; }
+.video-frame { position: relative; width: 100%; border: 1px solid var(--line-2); border-radius: 24px; overflow: hidden; background: #000; margin-top: 50px; box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6); }
+.video-frame video { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; transition: filter 0.6s; }
+.video-frame:not(.is-started):hover video { filter: brightness(0.85); }
+.video-frame.is-started .play { opacity: 0; pointer-events: none; }
+.video-frame .play { cursor: pointer; color: #fff; padding: 0; position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.16); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.3); transition: transform 0.4s var(--ease), background 0.3s; }
 .video-frame .play img { width: 34px; height: 34px; filter: invert(1); margin-left: 4px; }
 .video-frame:hover .play { transform: scale(1.08); background: rgba(255, 255, 255, 0.24); }
-.video-frame .soon { position: absolute; left: 50%; bottom: 8%; translate: -50% 0; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; padding: 8px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); border: 1px solid var(--line-2); color: var(--soft); }
-.video-frame.is-soon { cursor: default; }
-.video-frame.is-soon .play { opacity: 0.5; }
-.modal { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: grid; place-items: center; padding: 24px; }
-.modal[hidden] { display: none; }
-.modal-body { width: min(1200px, 100%); aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #000; }
-.modal-body iframe { width: 100%; height: 100%; border: 0; }
-.modal-close { position: absolute; right: 22px; top: 18px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, 0.12); color: #fff; font-size: 26px; cursor: pointer; }
 
 /* ---------- Get started ---------- */
 .paths { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 48px; }

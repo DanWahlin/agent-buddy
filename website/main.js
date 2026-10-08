@@ -1,8 +1,6 @@
 'use strict';
 /* Agent Buddy website: scroll scenes, media, and the live demo controls. */
 
-// Set this to the video's YouTube video ID (the part after "v=") when it is published.
-const VIDEO_YOUTUBE_ID = 'YOUTUBE_VIDEO_ID';
 const REPO = 'DanWahlin/agent-buddy';
 
 const AGENTS = [
@@ -319,28 +317,23 @@ $('#live-tap').addEventListener('click', () => live.tap());
 
 /* ---------- Video ---------- */
 
-const videoButton = $('#video-play');
-const modal = $('#video-modal');
-const hasVideo = VIDEO_YOUTUBE_ID && VIDEO_YOUTUBE_ID !== 'YOUTUBE_VIDEO_ID';
-if (!hasVideo) {
-  videoButton.classList.add('is-soon');
-  videoButton.setAttribute('aria-label', 'The Agent Buddy video is coming soon');
-  $('#video-soon').hidden = false;
+const videoFrame = $('#video-frame');
+const overview = $('#overview-video');
+// Called from a click, so the browser lets it play with sound.
+function playOverview() {
+  overview.controls = true;
+  videoFrame.classList.add('is-started');
+  overview.play().catch(() => {});
 }
-function closeVideo() {
-  modal.hidden = true;
-  $('#video-body').innerHTML = '';
-  videoButton.focus();
-}
-videoButton.addEventListener('click', () => {
-  if (!hasVideo) return;
-  $('#video-body').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(VIDEO_YOUTUBE_ID)}?autoplay=1&rel=0" title="Agent Buddy video" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
-  modal.hidden = false;
-  $('#video-close').focus();
+$('#video-play').addEventListener('click', () => { playOverview(); overview.focus(); });
+$('.hero-cta a[href="#video"]').addEventListener('click', (e) => {
+  e.preventDefault();
+  $('#video').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+  playOverview();
 });
-$('#video-close').addEventListener('click', closeVideo);
-modal.addEventListener('click', (e) => { if (e.target === modal) closeVideo(); });
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeVideo(); });
+new IntersectionObserver(([entry]) => {
+  if (!entry.isIntersecting && !overview.paused) overview.pause();
+}, { threshold: 0.25 }).observe(overview);
 
 /* ---------- Downloads ---------- */
 
