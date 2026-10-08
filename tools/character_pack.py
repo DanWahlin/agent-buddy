@@ -173,7 +173,7 @@ def decode(pack, max_bytes=None):
         raise PackError("Character pack motion speed is out of range.")
     if walk_direction != NO_WALK and (
             walk_direction >= DIRECTIONS or not 1 <= walk_frames <= STEPS
-            or walk_first + walk_frames > STEPS or not 1 <= walk_fps <= 6000):
+            or walk_first + walk_frames > used[walk_direction] or not 1 <= walk_fps <= 6000):
         raise PackError("Character pack walk cycle is invalid.")
     if (table_offset != HEADER_BYTES or table_offset + table_bytes > data_offset
             or data_offset % 4 or data_offset + data_bytes != total or not data_bytes):

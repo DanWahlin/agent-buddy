@@ -68,6 +68,10 @@ int main() {
   rejects(begin, end, [](Pack& p) { p.put16(72, 50); }, "motion speed");
   rejects(begin, end, [](Pack& p) { p.bytes()[74] = 13; p.bytes()[75] = 1; p.put16(76, 100); },
           "walk cycle");
+  // A base-patch walk cycle must fit its track: idle up (2) holds only 12 poses.
+  rejects(begin, end, [](Pack& p) {
+    p.bytes()[74] = 2; p.bytes()[75] = 12; p.bytes()[78] = 1; p.put16(76, 1150);
+  }, "walk cycle");
   rejects(begin, end, [](Pack& p) { p.bytes()[82] = 24; }, "track layout");
   rejects(begin, end, [](Pack& p) { p.size -= 1; }, "truncated");
   rejects(begin, end, [](Pack& p) { p.put32(140, 250); }, "sections");
@@ -80,6 +84,21 @@ int main() {
   rejects(kOpenClawPack, kOpenClawPackEnd, [](Pack& p) { p.put32(256 + 8 * 7 + 4, 0); },
           "frame data");
   assert(bind(copilot, copilot.size - 1).find("exceeds") != std::string::npos);
+
+  // Base-patch packs may loop Working (track 9) the way full-frame packs do.
+  Pack looping(kCopilotPack, kCopilotPackEnd);
+  looping.bytes()[74] = 9;
+  looping.bytes()[75] = 23;
+  looping.bytes()[78] = 1;
+  looping.put16(76, 1150);
+  CharacterPack walking;
+  assert(!bindCharacterPack(looping.bytes(), looping.size, kPartitionBytes, walking));
+  const PackHeader& walk = walking.header;
+  assert(walkIndex(walk, 9, 23, 0.0f) == 1 && walkIndex(walk, 9, 5, 1.0f) == 12);
+  assert(walkIndex(walk, 9, 0, 2.0f) == 1 && walkIndex(walk, 0, 7, 1.0f) == 7);
+  // 12 s of effect time is a whole number of 23-pose loops at 11.5 FPS, so the wrap is seamless.
+  assert(walkIndex(walk, 9, 0, 11.99f) == 23);
+  assert(walkIndex(bound.header, 9, 7, 1.0f) == 7);
 
   CharacterPack misaligned;
   std::vector<uint8_t> shifted(copilot.size + 1);

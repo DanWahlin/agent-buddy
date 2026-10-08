@@ -51,4 +51,8 @@ const char* parsePackHeader(const uint8_t* bytes, size_t available, size_t maxBy
 // Validates a complete in-memory pack's tables; the caller verifies SHA-256.
 const char* bindCharacterPack(const uint8_t* bytes, size_t size, size_t maxBytes,
                               CharacterPack& pack);
+// The pose to draw on a track: the pack's walk cycle (the Working loop) replaces the
+// motion's index on its track with a looping one, in both layouts. Older firmware
+// loops only full-frame packs and plays a base-patch pack's walk track as posed.
+uint8_t walkIndex(const PackHeader& header, uint8_t direction, uint8_t index, float effectSeconds);
 }

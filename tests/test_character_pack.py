@@ -66,6 +66,16 @@ class CharacterPackTests(unittest.TestCase):
             with self.subTest(offset=offset), self.assertRaisesRegex(packs.PackError, message):
                 packs.decode(bytes(changed))
 
+    def test_base_patch_walk_cycles_must_fit_their_track(self):
+        def walk(direction, frames, first):
+            changed = bytearray(self.copilot)
+            struct.pack_into("<BBHB", changed, 74, direction, frames, 1150, first)
+            changed[160:192] = packs.digest(bytes(changed))
+            return bytes(changed)
+        self.assertEqual(packs.decode(walk(9, 23, 1))["id"], "copilot")
+        with self.assertRaisesRegex(packs.PackError, "walk cycle"):
+            packs.decode(walk(2, 12, 1))
+
     def test_packs_embed_an_idle_thumbnail_the_firmware_ignores(self):
         for pack in (self.copilot, self.openclaw):
             offset, size = struct.unpack_from("<II", pack, 148)

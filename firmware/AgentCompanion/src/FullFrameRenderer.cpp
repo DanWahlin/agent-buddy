@@ -50,10 +50,7 @@ bool FullFrameRenderer::render(const SpritePose& pose, float effectSeconds, uint
   }
   const PackHeader& header = pack->header;
   constexpr int top = (kCharacterFrameHeight - kFrameHeight) / 2;
-  unsigned index = pose.index;
-  if (pose.direction == header.walkDirection)
-    index = header.walkFirst
-        + static_cast<unsigned>(std::fmod(effectSeconds * header.walkFps, header.walkFrames));
+  const unsigned index = walkIndex(header, pose.direction, pose.index, effectSeconds);
   const unsigned frameIndex = pose.direction * kSpriteSteps + index;
   const unsigned blockIndex = frameIndex * kSpriteBlinkLevels + pose.blinkLevel;
   const uint32_t key = blockIndex * 256 + pose.blinkBlend;

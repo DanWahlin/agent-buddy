@@ -203,6 +203,10 @@ and the daemon keeps using the packs that are already built. Two layouts are sup
 - **Full frame** (OpenClaw, 10,000,700 bytes): one complete image per pose and
   blink level, with a 12 FPS walk cycle on the Working track.
 
+Either layout can loop the Working track with the header's walk cycle
+(`walkIndex` in `CharacterPack.cpp`); the motion engine's own Working holds then
+never show.
+
 At boot the firmware reads the header, memory-maps only that pack from flash,
 validates every table entry, and checks the SHA-256. Frames are decoded straight
 from the mapped flash, so PSRAM holds only the framebuffers and the active

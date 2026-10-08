@@ -1,4 +1,5 @@
 #include "CharacterPack.h"
+#include <cmath>
 #include <cstring>
 
 namespace copilot {
@@ -83,6 +84,9 @@ const char* parsePackHeader(const uint8_t* bytes, size_t available, size_t maxBy
           || walkFps < 1 || walkFps > 6000))
     return "Character pack walk cycle is invalid.";
   const bool basePatch = header.layout == PackLayout::BasePatch;
+  if (basePatch && header.walkDirection != kNoWalkDirection
+      && header.walkFirst + header.walkFrames > kSpriteTrackSteps[header.walkDirection])
+    return "Character pack walk cycle is invalid.";
   uint16_t expectedOffset = 0;
   for (int direction = 0; direction < 16; ++direction) {
     const uint8_t steps = bytes[80 + direction];
@@ -118,6 +122,12 @@ const char* parsePackHeader(const uint8_t* bytes, size_t available, size_t maxBy
   }
   std::memcpy(header.sha256, bytes + kPackShaOffset, sizeof(header.sha256));
   return nullptr;
+}
+
+uint8_t walkIndex(const PackHeader& header, uint8_t direction, uint8_t index, float effectSeconds) {
+  if (direction != header.walkDirection) return index;
+  return static_cast<uint8_t>(header.walkFirst
+      + static_cast<unsigned>(std::fmod(effectSeconds * header.walkFps, header.walkFrames)));
 }
 
 const char* bindCharacterPack(const uint8_t* bytes, size_t size, size_t maxBytes,
