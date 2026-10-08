@@ -185,6 +185,17 @@ export async function addCharacterPack(data: Buffer, directory = builtInCharacte
           thumbnail: header.thumbnail !== null};
 }
 
+// A pack installed from a file path is kept like an uploaded one, so the desktop app (which
+// renders packs by id) and a later restore can find it. Returns the value to remember: the id,
+// or the path itself when the pack shares a built-in's id and so cannot be added.
+export async function keepInstalledPack(value: string, pack: CharacterPackHeader & {data: Buffer},
+                                        directory = builtInCharacterDirectory(),
+                                        userDirectory = userCharacterDirectory()): Promise<string> {
+  if (!looksLikePackPath(value) || existsSync(join(directory, `${pack.id}.acpk`))) return value;
+  await addCharacterPack(pack.data, directory, userDirectory);
+  return pack.id;
+}
+
 export async function removeCharacterPack(id: string, userDirectory = userCharacterDirectory()): Promise<void> {
   if (!isCharacterName(id)) throw new Error('Invalid character id.');
   const path = join(userDirectory, `${id}.acpk`);

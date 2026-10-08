@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
 import {
   addCharacterPack,
   characterRequestValue,
+  keepInstalledPack,
   listCharacters,
   readCharacterThumbnail,
   removeCharacterPack,
@@ -125,6 +126,31 @@ test('adds, lists, and removes packs uploaded from the settings page', async () 
     if (user === undefined) delete process.env.AGENT_COMPANION_USER_CHARACTERS;
     else process.env.AGENT_COMPANION_USER_CHARACTERS = user;
   }
+});
+
+test('keeps packs installed from a path so they can be shown and restored by id', async () => {
+  const builtIn = await mkdtemp(join(tmpdir(), 'agent-companion-builtin-'));
+  const added = join(builtIn, 'added');
+  await writeFile(join(builtIn, 'copilot.acpk'), pack('copilot', 'Copilot'));
+  const outside = join(await mkdtemp(join(tmpdir(), 'agent-companion-download-')), 'robot.acpk');
+  const robot = pack('robot', 'Robot');
+  await writeFile(outside, robot);
+  const keep = (value: string, data: Buffer) =>
+    keepInstalledPack(value, {...parseCharacterPackHeader(data), data}, builtIn, added);
+
+  assert.equal(await keep(outside, robot), 'robot');
+  assert.deepEqual(await readFile(join(added, 'robot.acpk')), robot);
+  assert.deepEqual((await listCharacters(builtIn, added)).map(item => [item.id, item.builtIn]),
+    [['copilot', true], ['robot', false]]);
+  // Installing a newer copy from a path replaces the kept one.
+  const newer = pack('robot', 'Robot 2');
+  assert.equal(await keep(outside, newer), 'robot');
+  assert.equal((await listCharacters(builtIn, added)).find(item => item.id === 'robot')?.name, 'Robot 2');
+  // Names stay names, and a path pack that reuses a built-in id is remembered by its path.
+  assert.equal(await keep('robot', robot), 'robot');
+  const impostor = join(builtIn, 'elsewhere-copilot.acpk');
+  assert.equal(await keep(impostor, pack('copilot', 'Impostor')), impostor);
+  assert.deepEqual((await listCharacters(builtIn, added)).map(item => item.name), ['Copilot', 'Robot 2']);
 });
 
 test('remembers the chosen character privately', async () => {
