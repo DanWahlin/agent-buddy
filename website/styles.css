@@ -187,14 +187,13 @@ button { font: inherit; color: inherit; }
   border-radius: 50%;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.04));
   pointer-events: none;
-  mix-blend-mode: screen;
   z-index: 2;
 }
 .device-glow {
   position: absolute; inset: -22%;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--state) 55%, transparent) 0%, color-mix(in srgb, var(--state) 18%, transparent) 40%, transparent 68%);
-  filter: blur(30px);
+  /* Soft by itself: a blur filter on top cost GPU time on every frame. */
+  background: radial-gradient(circle, color-mix(in srgb, var(--state) 42%, transparent) 0%, color-mix(in srgb, var(--state) 20%, transparent) 30%, color-mix(in srgb, var(--state) 6%, transparent) 52%, transparent 70%);
   opacity: 0.75;
   transition: background 0.8s ease;
   z-index: -1;
@@ -212,7 +211,7 @@ button { font: inherit; color: inherit; }
   mask-image: radial-gradient(ellipse 60% 55% at 50% 60%, #000 10%, transparent 75%);
   -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 60%, #000 10%, transparent 75%);
 }
-.aurora { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.5; }
+.aurora { position: absolute; border-radius: 50%; opacity: 0.5; }
 .a1 { width: 60vw; height: 60vw; left: -18vw; top: 10vh; background: radial-gradient(circle, rgba(79, 166, 255, 0.35), transparent 65%); animation: drift 18s ease-in-out infinite alternate; }
 .a2 { width: 50vw; height: 50vw; right: -14vw; top: 30vh; background: radial-gradient(circle, rgba(143, 134, 255, 0.3), transparent 65%); animation: drift 22s ease-in-out infinite alternate-reverse; }
 @keyframes drift { to { transform: translate(6vw, -4vh) scale(1.1); } }
@@ -263,18 +262,18 @@ button { font: inherit; color: inherit; }
 .tile b { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
 .tile small { font-size: 12.5px; color: var(--muted); line-height: 1.2; }
 .tile .bar { height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin-top: 6px; }
-.tile .bar i { display: block; height: 100%; width: var(--p, 40%); border-radius: inherit; background: linear-gradient(90deg, var(--g2), var(--g1)); animation: progress 6s ease-in-out infinite alternate; }
-@keyframes progress { from { width: calc(var(--p, 40%) - 18%); } to { width: calc(var(--p, 40%) + 14%); } }
+.tile .bar i { display: block; height: 100%; width: 100%; transform-origin: 0 50%; transform: scaleX(var(--p, 0.4)); border-radius: inherit; background: linear-gradient(90deg, var(--g2), var(--g1)); animation: progress 6s ease-in-out infinite alternate; }
+@keyframes progress { from { transform: scaleX(calc(var(--p, 0.4) - 0.18)); } to { transform: scaleX(calc(var(--p, 0.4) + 0.14)); } }
 .tile .mark { position: absolute; right: -9px; top: -9px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 800; color: #000; transform: scale(0); transition: transform 0.5s var(--ease); }
 .tile.done { border-color: color-mix(in srgb, var(--done) 70%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--done) 40%, transparent), 0 0 40px color-mix(in srgb, var(--done) 30%, transparent); }
 .tile.done small { color: var(--done); font-weight: 600; }
-.tile.done .bar i { width: 100%; animation: none; background: var(--done); }
+.tile.done .bar i { transform: none; animation: none; background: var(--done); }
 .tile.done .mark { background: var(--done); transform: scale(1); }
 .tile.attn { border-color: color-mix(in srgb, var(--attn) 70%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--attn) 40%, transparent), 0 0 40px color-mix(in srgb, var(--attn) 30%, transparent); }
 .tile.attn small { color: var(--attn); font-weight: 600; }
 .tile.attn .bar i { animation: none; background: var(--attn); }
 .tile.attn .mark { background: var(--attn); transform: scale(1); animation: pulse 1.6s ease-in-out infinite; }
-@keyframes pulse { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--attn) 0%, transparent); transform: scale(1.12); } 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--attn) 60%, transparent); } }
+@keyframes pulse { 50% { transform: scale(1.15); } }
 .tiles.focus .tile:not(.done):not(.attn) { filter: saturate(0.3) brightness(0.45); }
 @media (max-width: 1180px) { .tiles { grid-template-columns: repeat(3, 240px); } .tiles .row-offset { transform: none; } .tiles .tile:nth-child(8) { grid-column: auto; } .tile:nth-child(n+10) { display: none; } }
 @media (max-width: 800px) { .tiles { grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; } .tile:nth-child(n+7) { display: none; } }
@@ -474,7 +473,11 @@ button { font: inherit; color: inherit; }
 .flow { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 48px; }
 .flow-line { position: absolute; left: 16%; right: 16%; top: 18px; width: 68%; height: 40px; overflow: visible; pointer-events: none; }
 .flow-line path { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 2; stroke-dasharray: 2 8; vector-effect: non-scaling-stroke; }
-.flow-dot { position: absolute; opacity: 0; top: 38px; width: 10px; height: 10px; margin: -5px; border-radius: 50%; background: var(--c, var(--work)); box-shadow: 0 0 14px var(--c, var(--work)); pointer-events: none; }
+.flow-track { position: absolute; left: 16%; right: 16%; top: 38px; height: 0; pointer-events: none; }
+/* Each dot is a track-wide box, so translateX(100%) carries its ::before across the line. */
+.flow-dot { position: absolute; left: 0; top: 0; width: 100%; height: 0; animation: travel 3.6s ease-in-out infinite; animation-delay: var(--delay, 0s); opacity: 0; }
+.flow-dot::before { content: ""; position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--work)); box-shadow: 0 0 14px var(--c, var(--work)); }
+@keyframes travel { 0% { transform: translateX(0); opacity: 0; } 11% { opacity: 1; } 89% { opacity: 1; } 100% { transform: translateX(100%); opacity: 0; } }
 .flow-node { position: relative; text-align: center; padding: 0 10px; }
 .flow-icon { width: 76px; height: 76px; margin: 0 auto 26px; border-radius: 22px; display: grid; place-items: center; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line-2); position: relative; z-index: 1; }
 .flow-icon img { width: 30px; height: 30px; filter: invert(1); opacity: 0.9; }
@@ -482,7 +485,7 @@ button { font: inherit; color: inherit; }
 .badges-cluster .badge { width: 18px; height: 18px; box-shadow: inset 0 0 0 1.5px var(--c); }
 .flow-node h3 { font-size: 24px; letter-spacing: -0.03em; margin: 0 0 8px; }
 .flow-node p { color: var(--muted); margin: 0 auto; max-width: 320px; }
-@media (max-width: 900px) { .flow { grid-template-columns: 1fr; gap: 48px; } .flow-line, .flow-dot { display: none; } }
+@media (max-width: 900px) { .flow { grid-template-columns: 1fr; gap: 48px; } .flow-line, .flow-track { display: none; } }
 
 /* ---------- Values ---------- */
 .values-words { font-size: clamp(56px, 11vw, 150px); letter-spacing: -0.055em; line-height: 1; font-weight: 700; margin: 0 0 40px; }
@@ -550,6 +553,9 @@ button { font: inherit; color: inherit; }
 .credits { border-top: 1px solid var(--line); margin-top: 26px; padding-top: 20px; }
 .credits p { margin: 0 0 6px; }
 .credits a { color: var(--soft); }
+
+/* Looping animations stop while their section is off screen (main.js sets the class). */
+.is-offscreen *, .is-offscreen *::before, .is-offscreen *::after { animation-play-state: paused !important; }
 
 /* ---------- Phones in landscape ---------- */
 @media (orientation: landscape) and (max-height: 520px) {

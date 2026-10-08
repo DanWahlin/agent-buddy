@@ -11,6 +11,8 @@ window.AgentBuddyLive = (() => {
   // The device sleeps after two idle minutes. The engine counts only short steps.
   const DOZE_STEP = 1 / 30;
   const DOZE_LIMIT = 150;
+  // The device animates at about 30 fps. Drawing at a 120 Hz display's rate costs four times the work for no gain.
+  const FRAME_MS = 1000 / 30;
   let engine = null;
   let presenter = null;
   let canvas = null;
@@ -155,6 +157,7 @@ window.AgentBuddyLive = (() => {
 
   function step(now) {
     frame = requestAnimationFrame(step);
+    if (now - last < FRAME_MS - 2) return;
     const seconds = Math.min(0.25, (now - last) / 1000);
     last = now;
     if (!loaded || dozing) return;

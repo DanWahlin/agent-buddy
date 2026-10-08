@@ -31,13 +31,23 @@ const TILES = [
   ['claude', 'Review pull request', 35], ['codex', 'Plan the API', 45], ['hermes', 'Triage bug reports', 52], ['grok', 'Speed up the query', 80],
 ];
 $('#tiles').innerHTML = TILES.map(([id, task, p, outcome], i) => `
-  <div class="tile${i >= 4 && i < 7 ? ' row-offset' : ''}" data-outcome="${outcome || ''}" style="--p:${p}%">
+  <div class="tile${i >= 4 && i < 7 ? ' row-offset' : ''}" data-outcome="${outcome || ''}" style="--p:${p / 100}">
     ${badge(id)}<b>${agent(id).name}</b><small data-task="${task}">${task}</small>
     <div class="bar"><i></i></div><span class="mark">${outcome === 'done' ? '✓' : '?'}</span>
   </div>`).join('');
 
 $('#agent-list').innerHTML = AGENTS.map((a) => `<li><i style="--c:${a.color}"></i>${a.name}</li>`).join('');
 $('#orbit').innerHTML = AGENTS.map((a) => badge(a.id)).join('');
+// Events travel along the flow line, from the hooks to your buddy (CSS animation).
+$('#flow').insertAdjacentHTML('beforeend', `<div class="flow-track" aria-hidden="true">${
+  ['var(--work)', 'var(--attn)', 'var(--done)'].map((c, i) => `<span class="flow-dot" style="--c:${c};--delay:${i * 1.2}s"></span>`).join('')}</div>`);
+
+// Pause looping CSS animations in sections that are off screen.
+const offscreen = new IntersectionObserver((entries) => {
+  for (const entry of entries) entry.target.classList.toggle('is-offscreen', !entry.isIntersecting);
+}, { rootMargin: '100px 0px' });
+$$('main > section, .finale').forEach((s) => offscreen.observe(s));
+
 $('.badges-cluster').innerHTML = AGENTS.map((a) => badge(a.id)).join('');
 $('#live-agents').innerHTML = AGENTS.map((a, i) =>
   `<button class="chip${i < 2 ? ' is-on' : ''}" data-agent="${a.id}" aria-pressed="${i < 2}">${badge(a.id)}${a.name}</button>`).join('');
@@ -466,18 +476,6 @@ function flourish() {
   gsap.from('.video-frame', { y: 80, opacity: 0, scale: 0.95, duration: 1.4, ease, scrollTrigger: { trigger: '.video-frame', start: 'top 92%' } });
   gsap.from('.finale-title, .finale .btn', { y: 30, opacity: 0, duration: 1.2, ease, stagger: 0.1, scrollTrigger: { trigger: '.finale-title', start: 'top 90%' } });
 
-  // Events travel along the flow line, from the hooks to your buddy.
-  const flow = $('#flow');
-  ['var(--work)', 'var(--attn)', 'var(--done)'].forEach((color, i) => {
-    const dot = document.createElement('span');
-    dot.className = 'flow-dot';
-    dot.style.setProperty('--c', color);
-    flow.append(dot);
-    gsap.timeline({ repeat: -1, delay: i * 1.2 })
-      .fromTo(dot, { left: '16%' }, { left: '84%', duration: 3.6, ease: 'power1.inOut' }, 0)
-      .fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.4 }, 0)
-      .to(dot, { opacity: 0, duration: 0.4 }, 3.2);
-  });
 }
 
 function outcomes(on) {
