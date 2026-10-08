@@ -1,6 +1,7 @@
 {
   "name": "esp32-agent-companion",
   "private": true,
+  "license": "MIT",
   "description": "One-word commands for setting up and customizing the ESP32 Agent Companion.",
   "engines": {
     "node": ">=24.11.0"

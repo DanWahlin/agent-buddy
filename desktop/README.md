@@ -184,6 +184,7 @@ its tray, placement memory and multi-monitor checks) is his work, in
 [apps/desktop](apps/desktop/README.md). The animation engine is the ESP32
 Agent Companion firmware.
 
-The repository carries no LICENSE file, so that approval is what settles reuse.
-`copilot` renders a character of GitHub's, `claude` one of Anthropic's and
-`openclaw` one of the OpenClaw project's.
+The code is under the repository's [MIT License](../LICENSE). The MIT License
+does not cover the characters: `copilot` renders a character of GitHub's,
+`claude` one of Anthropic's and `openclaw` one of the OpenClaw project's. See
+[TRADEMARKS.md](../TRADEMARKS.md).
