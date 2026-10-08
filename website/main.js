@@ -86,7 +86,6 @@ const sections = navLinks.map((a) => $(a.getAttribute('href')));
 
 /* ---------- Scroll-driven scenes (no library needed) ---------- */
 
-const valuesWords = $$('#values-words span');
 const desktopWindow = $('#desktop-window');
 
 const STATE_EVENTS = {
@@ -118,8 +117,6 @@ function onScroll() {
   sections.forEach((s, i) => { if (s && s.getBoundingClientRect().top < innerHeight * 0.45) active = i; });
   navLinks.forEach((a, i) => a.classList.toggle('is-active', i === active));
 
-  const v = passProgress($('#values'));
-  valuesWords.forEach((w, i) => w.classList.toggle('lit', v > 0.3 + i * 0.08));
 
   if (!reduceMotion) {
     const d = clamp(passProgress(desktopWindow) * 2.2, 0, 1);
