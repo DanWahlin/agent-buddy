@@ -53,9 +53,10 @@ function webgl(canvas: HTMLCanvasElement, width: number, height: number,
   };
   const gl2 = canvas.getContext('webgl2', options);
   const gl = gl2 ?? canvas.getContext('webgl', options);
-  if (!gl || !setUp(gl, gl2, width, height)) return null;
-
-  let lost = false;
+  if (!gl) return null;
+  // A context can already be lost when the window opens; it is set up when it returns.
+  let lost = gl.isContextLost();
+  if (!lost && !setUp(gl, gl2, width, height)) return null;
   canvas.addEventListener('webglcontextlost', event => {
     // Without preventDefault the context never comes back.
     event.preventDefault();

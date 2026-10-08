@@ -66,3 +66,17 @@ test('the presenter recovers its WebGL context and asks for a whole frame', () =
   assert.deepEqual(calls.filter(name => name === 'texSubImage2D' || name === 'drawArrays'),
     ['texSubImage2D', 'drawArrays']);
 });
+
+test('a context lost before the presenter exists is set up when it returns', () => {
+  const { gl, calls, lose } = fakeGl();
+  lose(true);
+  const canvas = fakeCanvas(gl);
+  let restored = 0;
+  const presenter = createPresenter(canvas, 4, 2, () => { restored += 1; });
+  presenter.present(new Uint8Array(4 * 2 * 4), null);
+  assert.deepEqual(calls, [], 'sets up and draws nothing while lost');
+  lose(false);
+  canvas.fire('webglcontextrestored');
+  assert.equal(restored, 1);
+  assert.ok(calls.includes('texImage2D') && calls.includes('linkProgram'));
+});
