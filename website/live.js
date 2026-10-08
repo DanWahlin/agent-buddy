@@ -7,6 +7,10 @@
  */
 window.AgentBuddyLive = (() => {
   const MODES = { idle: 0, surprise: 1, working: 2, complete: 3, attention: 4 };
+  const SLEEP = 5;
+  // The device sleeps after two idle minutes. The engine counts only short steps.
+  const DOZE_STEP = 1 / 30;
+  const DOZE_LIMIT = 150;
   let engine = null;
   let presenter = null;
   let canvas = null;
@@ -18,6 +22,9 @@ window.AgentBuddyLive = (() => {
   let iconPackets = [];
   let packs = null;
   let loadToken = 0;
+  let dozeToken = 0;
+  let dozing = false;
+  let shownMode = -1;
   const wanted = { mode: 'idle', badges: '', usage: '' };
 
   function loadScript(src) {
@@ -74,6 +81,9 @@ window.AgentBuddyLive = (() => {
     const token = ++loadToken;
     const bytes = await fetchPack(id, onProgress);
     if (token !== loadToken) return false;
+    dozeToken++;
+    dozing = false;
+    shownMode = -1;
     // Reserve first: reserving can grow the memory, which detaches any earlier HEAPU8.
     const at = engine._ac_reserve(bytes.length);
     engine.HEAPU8.set(bytes, at);
@@ -96,22 +106,70 @@ window.AgentBuddyLive = (() => {
     dirty = true;
   }
 
-  function setMode(mode) { wanted.mode = mode; if (loaded) engine._ac_mode(MODES[mode], 0); }
+  function setMode(mode) {
+    dozeToken++;
+    dozing = false;
+    wanted.mode = mode;
+    if (loaded) engine._ac_mode(MODES[mode], 0);
+  }
+
+  /*
+   * Sleep, as the device reaches it: idle for two minutes. Runs those minutes
+   * in chunks between frames, without drawing them, then shows the result.
+   * Resolves true when the character is asleep, false when cancelled.
+   */
+  function sleep() {
+    const token = ++dozeToken;
+    wanted.mode = 'idle';
+    if (!loaded) return Promise.resolve(false);
+    engine._ac_mode(MODES.idle, 0);
+    dozing = true;
+    let simulated = 0;
+    return new Promise((resolve) => {
+      const chunk = () => {
+        if (token !== dozeToken || !loaded) return resolve(false);
+        const until = performance.now() + 12;
+        while (performance.now() < until && simulated < DOZE_LIMIT && engine._ac_shown_mode() !== SLEEP) {
+          if (!engine._ac_frame(DOZE_STEP, 0)) break;
+          simulated += DOZE_STEP;
+        }
+        if (engine._ac_shown_mode() === SLEEP || simulated >= DOZE_LIMIT) {
+          dozing = false;
+          dirty = true;
+          last = performance.now();
+          return resolve(engine._ac_shown_mode() === SLEEP);
+        }
+        setTimeout(chunk, 0);
+      };
+      chunk();
+    });
+  }
   function setBadges(packet) { wanted.badges = packet; if (loaded) withString(engine._ac_badge_active, packet); }
   function setUsage(text) { wanted.usage = text; if (loaded) withString(engine._ac_usage, text); }
-  function tap() { if (loaded) engine._ac_mode(MODES.surprise, 1); }
+  function tap() {
+    if (!loaded) return;
+    dozeToken++;
+    dozing = false;
+    engine._ac_mode(MODES.surprise, 1);
+  }
 
   function step(now) {
     frame = requestAnimationFrame(step);
     const seconds = Math.min(0.25, (now - last) / 1000);
     last = now;
-    if (!loaded) return;
+    if (!loaded || dozing) return;
     const pixels = engine._ac_frame(seconds, 0);
     if (!pixels) {
       stop();
       loaded = false;
       document.dispatchEvent(new CustomEvent('agentbuddy:error', { detail: engine.UTF8ToString(engine._ac_error()) }));
       return;
+    }
+    const mode = engine._ac_shown_mode();
+    if (mode !== shownMode) {
+      const from = shownMode;
+      shownMode = mode;
+      document.dispatchEvent(new CustomEvent('agentbuddy:mode', { detail: { from, to: mode, asleep: mode === SLEEP } }));
     }
     if (!engine._ac_changed() && !dirty) return;
     const width = engine._ac_width();
@@ -216,5 +274,5 @@ window.AgentBuddyLive = (() => {
     };
   }
 
-  return { init, loadCharacter, setMode, setBadges, setUsage, tap, start, stop, get ready() { return loaded; } };
+  return { init, loadCharacter, setMode, sleep, setBadges, setUsage, tap, start, stop, get ready() { return loaded; } };
 })();

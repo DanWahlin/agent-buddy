@@ -225,7 +225,7 @@ let liveEngine = false;
 let liveVisible = false;
 
 function badgePacket() {
-  if (liveState.mode === 'idle') return '';
+  if (liveState.mode === 'idle' || liveState.mode === 'sleep') return '';
   const role = { working: 'w', complete: 'c' };
   return liveState.agents.map((id, i) =>
     `${id}=${liveState.mode === 'attention' ? (i === 0 ? 'a' : 'w') : role[liveState.mode]}`).join(',');
@@ -248,7 +248,37 @@ async function loadLiveCharacter(id) {
   liveDevice.classList.add('live-ready');
   liveStatus.textContent = 'Live in your browser';
   if (liveVisible) live.start();
+  if (liveState.mode === 'sleep') doze();
 }
+let dozeCall = 0;
+async function doze() {
+  const call = ++dozeCall;
+  liveDevice.classList.add('live-dozing');
+  liveStatus.textContent = 'Fast-forwarding two quiet minutes…';
+  const asleep = await live.sleep();
+  // A later doze (after a character switch) owns the result.
+  if (call !== dozeCall) return;
+  liveDevice.classList.remove('live-dozing');
+  if (asleep) {
+    liveStatus.textContent = 'Asleep · it wakes after a minute, or when you tap it';
+  } else if (liveState.mode === 'sleep') {
+    // A tap woke it before it fell asleep.
+    showMode('idle');
+    liveStatus.textContent = 'Live in your browser';
+  }
+}
+function showMode(mode) {
+  liveState.mode = mode;
+  liveDevice.dataset.state = mode;
+  $$('#live-states .chip').forEach((c) => c.classList.toggle('is-on', c.dataset.mode === mode));
+}
+// The character wakes on its own after a minute, or when tapped, as on the device.
+document.addEventListener('agentbuddy:mode', (e) => {
+  if (liveState.mode === 'sleep' && e.detail.from === 5 && !e.detail.asleep) {
+    showMode('idle');
+    liveStatus.textContent = 'Live in your browser';
+  }
+});
 async function startLive() {
   if (liveStarted) return;
   liveStarted = true;
@@ -258,7 +288,7 @@ async function startLive() {
     liveEngine = true;
     $$('#live-chars .chip').forEach((b) => { if (!available.includes(b.dataset.char)) b.hidden = true; });
     if (!available.includes(liveState.character)) liveState.character = available[0];
-    live.setMode(liveState.mode);
+    live.setMode(liveState.mode === 'sleep' ? 'idle' : liveState.mode);
     live.setBadges(badgePacket());
     await loadLiveCharacter(liveState.character);
   } catch (error) {
@@ -281,11 +311,16 @@ function choose(group, button) {
 $('#live-states').addEventListener('click', (e) => {
   const b = e.target.closest('[data-mode]');
   if (!b) return;
-  choose(e.currentTarget, b);
-  liveState.mode = b.dataset.mode;
-  liveDevice.dataset.state = liveState.mode;
-  live.setMode(liveState.mode);
+  if (b.dataset.mode === liveState.mode && b.dataset.mode !== 'sleep') return;
+  showMode(b.dataset.mode);
   live.setBadges(badgePacket());
+  liveDevice.classList.remove('live-dozing');
+  if (liveState.mode === 'sleep') {
+    if (live.ready) doze();
+    return;
+  }
+  live.setMode(liveState.mode);
+  if (live.ready) liveStatus.textContent = 'Live in your browser';
 });
 $('#live-agents').addEventListener('click', (e) => {
   const b = e.target.closest('[data-agent]');

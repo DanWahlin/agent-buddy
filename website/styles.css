@@ -23,6 +23,7 @@
   --attn: #ffb547;
   --done: #5ee0a0;
   --idle: #4f7dff;
+  --sleep: #8f86ff;
   --blue: #2997ff;
   --radius: 28px;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -160,6 +161,7 @@ button { font: inherit; color: inherit; }
 .device[data-state="working"] { --state: var(--work); }
 .device[data-state="attention"] { --state: var(--attn); }
 .device[data-state="complete"] { --state: var(--done); }
+.device[data-state="sleep"] { --state: #2c2a66; }
 .device-xl { --size: min(540px, 82vw, 56vh); }
 .device-lg { --size: min(480px, 80vw, 72svh); }
 .device-md { --size: min(400px, 72vw, 66svh); }
@@ -402,6 +404,7 @@ button { font: inherit; color: inherit; }
 .try-stage { display: grid; justify-items: center; gap: 22px; perspective: 1400px; }
 #live-canvas { left: 5.79%; width: 88.41%; object-fit: fill; opacity: 0; transition: opacity 0.6s; image-rendering: auto; }
 .live-ready #live-canvas { opacity: 1; }
+.live-ready.live-dozing #live-canvas { opacity: 0.35; }
 .live-fallback { opacity: 0; transition: opacity 0.6s; }
 .live-failed .live-fallback { opacity: 1; }
 .live-loading { position: absolute; inset: 0; display: grid; place-items: center; transition: opacity 0.4s; }
