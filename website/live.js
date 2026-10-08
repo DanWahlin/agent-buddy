@@ -68,18 +68,24 @@ window.AgentBuddyLive = (() => {
   async function fetchPack(id, onProgress) {
     const response = await fetch(`engine/${id}.acpk`);
     if (!response.ok) throw new Error(`Could not load the ${id} character (${response.status}).`);
-    const total = Number(response.headers.get('content-length')) || packs.find((p) => p.id === id)?.bytes || 0;
+    // The pack's real size comes from packs.json. A server that compresses the
+    // download (GitHub Pages does) sends the compressed size as Content-Length.
+    const total = packs.find((p) => p.id === id)?.bytes || 0;
     if (!response.body || !total) return new Uint8Array(await response.arrayBuffer());
-    const bytes = new Uint8Array(total);
+    let bytes = new Uint8Array(total);
     const reader = response.body.getReader();
     let offset = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (offset + value.length > bytes.length) throw new Error('The character pack is larger than expected.');
+      if (offset + value.length > bytes.length) {
+        const bigger = new Uint8Array(Math.max(bytes.length * 2, offset + value.length));
+        bigger.set(bytes.subarray(0, offset));
+        bytes = bigger;
+      }
       bytes.set(value, offset);
       offset += value.length;
-      onProgress?.(offset / total);
+      onProgress?.(Math.min(1, offset / total));
     }
     return bytes.subarray(0, offset);
   }
