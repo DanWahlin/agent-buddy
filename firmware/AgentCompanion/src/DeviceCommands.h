@@ -9,7 +9,7 @@ enum class DeviceCommand {
   DefineAgentIcon, SetAgentBadges, SetUsage, GetOrientation, ConfigureOrientation,
   Idle, Surprise, Working, Complete, Attention
 };
-constexpr unsigned kDeviceProtocol = 12;
+constexpr unsigned kDeviceProtocol = 13;
 
 inline const char* commandName(DeviceCommand command) {
   switch (command) {

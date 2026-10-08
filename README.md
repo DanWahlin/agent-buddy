@@ -677,6 +677,66 @@ connection** on the settings page's **Status** card, or with `npm run connection
 
 </details>
 
+## Speech
+
+On macOS, the companion can speak a short phrase through the device speaker:
+
+```bash
+npm run speak "Hello from your Agent Companion"
+```
+
+The background service uses macOS `say` and `afconvert` locally, converts the
+result to mono 24 kHz signed 16-bit PCM, and streams up to 15 seconds to the
+paired device over Wi-Fi. Speech requires current firmware and a reachable
+Wi-Fi connection even when USB is also connected. Linux and Windows currently
+report that no speech provider is available rather than claiming success.
+
+Speech preempts a cue that is already playing. Cues requested while speech is
+playing are serialized behind it, and a second speech request is rejected until
+the first finishes. The configured device volume applies to both cues and
+speech.
+
+**Voice notifications.** The companion can announce state changes with short,
+varied phrases:
+
+```bash
+npm run voice milestones
+```
+
+The setting is also available on the **Agents** tab in Settings:
+
+| Mode | Announcements |
+| --- | --- |
+| **Off** (default) | Never speaks automatically |
+| **Milestones** | Questions that need attention and completed work |
+| **Chatty** | Milestones plus working and idle transitions |
+| **Contextual** | Chatty plus short purpose-written lines from the active agent |
+
+Announcements use a rotating set of fixed, lightly whimsical phrases, including
+occasional thinking sounds in Chatty mode. They do not repeat the same line
+every time and never read prompts, tool arguments, responses, file names, or
+other session content aloud. Use `npm run voice off` at any time to disable
+them.
+
+Contextual mode lets an integrated agent explicitly submit a short narration
+such as “Let me send that message to Paul for you.” The daemon does not derive
+these lines from prompts, and rejects multiline text, URLs, email addresses, and
+lines longer than 180 characters. Agents are instructed to omit secrets,
+identifiers, code, file names, and message contents. You can exercise the same
+path manually with:
+
+```bash
+npm run voice contextual
+npm run narrate "Let me check the calendar for you"
+```
+
+The text is passed only to the operating system's local speech synthesizer. The
+generated audio is held in a temporary file on the computer, deleted after
+conversion, and streamed through a bounded device buffer rather than retained
+as a recording. The authenticated request stays on the local network, but like
+the rest of the Wi-Fi control protocol it uses plain HTTP, so use speech only on
+a trusted network.
+
 ## Update
 
 **Companion daemon.** If the desktop app installed it, install the new release
@@ -727,6 +787,9 @@ Run these from the repository folder.
 | `npm run setup` | Installs or updates the daemon, agent hooks, and background service. Add `-- --no-open` to skip opening the browser. |
 | `npm run settings` | Opens the settings page |
 | `npm run status` | Shows the connection, character, state, and any pending agent steps |
+| `npm run speak "<text>"` | Speaks up to 15 seconds of locally synthesized audio over Wi-Fi (macOS) |
+| `npm run narrate "<text>"` | Sends a validated contextual line when Contextual mode is enabled |
+| `npm run voice off\|milestones\|chatty\|contextual` | Controls automatic and contextual spoken notifications |
 | `npm run agents` | Lists agents with their versions and hook status |
 | `npm run agents enable\|disable <agent>` | Lets an agent drive the device, or stops it |
 | `npm run agents install\|uninstall <agent>` | Installs or removes one agent's hook |

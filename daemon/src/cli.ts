@@ -8,6 +8,7 @@ import {pairWifi} from './wifi-config.js';
 import {defaultAgentContext, normalizeAgentHook, shouldIgnoreGrokClaudeHook, type AgentId} from './agents/index.js';
 import {agentRunsHeadless} from './agents/headless.js';
 import {isAgentId} from './agents/types.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
 
 async function main(): Promise<void> {
   const [command, argument, file, ...options] = process.argv.slice(2);
@@ -22,6 +23,18 @@ async function main(): Promise<void> {
   }
   if (command === 'send' && characterStates.includes(argument as never)) {
     console.log(JSON.stringify(await requestDaemon({type: 'send', state: argument as typeof characterStates[number]})));
+    return;
+  }
+  if (command === 'speak') {
+    const text = [argument, file, ...options].filter((value): value is string => value !== undefined).join(' ');
+    const response = checked(await requestDaemon({type: 'speak', text}, 60_000));
+    console.log(JSON.stringify(response));
+    return;
+  }
+  if (command === 'narrate') {
+    const text = [argument, file, ...options].filter((value): value is string => value !== undefined).join(' ');
+    const response = checked(await requestDaemon({type: 'narrate', text}, 60_000));
+    console.log(JSON.stringify(response));
     return;
   }
   if (command === 'hook') {
@@ -67,6 +80,12 @@ async function main(): Promise<void> {
     if (argument !== 'on' && argument !== 'off') throw new Error('Usage: agent-companion badges on|off');
     const enabled = argument === 'on';
     console.log(JSON.stringify(checked(await requestDaemon({type: 'badges', enabled}, 2000))));
+    return;
+  }
+  if (command === 'voice') {
+    if (!isVoiceNotificationMode(argument))
+      throw new Error('Usage: agent-companion voice off|milestones|chatty|contextual');
+    console.log(JSON.stringify(checked(await requestDaemon({type: 'voice', mode: argument}, 2000))));
     return;
   }
   if (command === 'list-characters') {
@@ -129,7 +148,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage: agent-companion {daemon|status|send STATE|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
+    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|narrate TEXT|voice off|milestones|chatty|contextual|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
 }
 
 function parseHookArguments(first: string | undefined, second: string | undefined):

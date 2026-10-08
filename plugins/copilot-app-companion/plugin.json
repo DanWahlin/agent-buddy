@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "esp32-agent-companion",
+  "version": "0.2.0",
+  "description": "Connects GitHub Copilot activity to the ESP32 Agent Companion through its local daemon.",
+  "author": {
+    "name": "ESP32 Agent Companion contributors"
+  },
+  "homepage": "https://github.com/bradygaster/esp32-agent-companion",
+  "repository": "https://github.com/bradygaster/esp32-agent-companion",
+  "license": "MIT",
+  "keywords": [
+    "copilot",
+    "esp32",
+    "usb",
+    "companion"
+  ]
+}

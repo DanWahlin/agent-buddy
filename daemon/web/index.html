@@ -111,6 +111,24 @@
           </select>
         </div>
       </section>
+      <section class="group" aria-labelledby="voice-title">
+        <div class="group-head">
+          <h3 id="voice-title">Voice notifications</h3>
+        </div>
+        <p class="hint">Speak short, varied status lines through the device. Contextual mode also lets the active agent contribute a purpose-written line without reading raw prompts aloud.</p>
+        <div class="setting-row static">
+          <span>
+            <strong id="voice-mode-label">Announcement level</strong>
+            <span class="hint">Milestones announces questions and completed work. Chatty adds activity. Contextual also allows short agent-written lines for meaningful actions.</span>
+          </span>
+          <select id="voice-mode" aria-labelledby="voice-mode-label">
+            <option value="off">Off</option>
+            <option value="milestones">Milestones</option>
+            <option value="chatty">Chatty</option>
+            <option value="contextual">Contextual</option>
+          </select>
+        </div>
+      </section>
       <section class="group" aria-labelledby="agents-title">
         <div class="group-head">
           <h3 id="agents-title">Agents</h3>

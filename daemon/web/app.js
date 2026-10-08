@@ -295,6 +295,13 @@ function renderStatus() {
   const badgesToggle = $('badges-toggle');
   // Don't let an update that raced a click undo the switch the user just flipped.
   if (badgesToggle && !badgesPending) badgesToggle.checked = status.badges?.enabled !== false;
+  const voiceMode = $('voice-mode');
+  if (voiceMode && !voicePending) {
+    voiceMode.value = status.voice?.mode ?? 'off';
+    voiceMode.disabled = status.voice?.supported === false;
+    voiceMode.title = status.voice?.supported === false
+      ? 'Voice notifications currently require macOS.' : '';
+  }
 
   for (const button of document.querySelectorAll('#modes button')) {
     button.setAttribute('aria-checked', String(button.dataset.mode === status.mode));
@@ -1051,6 +1058,7 @@ darkScheme.addEventListener('change', renderTheme);
 renderTheme();
 
 let badgesPending = false;
+let voicePending = false;
 let usagePending = false;
 const usageWindowNames = {today: 'Today', month: 'This month', active: 'Active sessions'};
 
@@ -1127,6 +1135,26 @@ $('badges-toggle')?.addEventListener('change', async event => {
     toast(error.message, 'error');
   } finally {
     badgesPending = false;
+  }
+});
+
+$('voice-mode')?.addEventListener('change', async event => {
+  const mode = event.target.value;
+  voicePending = true;
+  try {
+    await api('/api/voice', {
+      method: 'POST', type: 'application/json', body: JSON.stringify({mode}),
+    });
+    if (status?.voice) status.voice.mode = mode;
+    toast(mode === 'off' ? 'Voice notifications are off.'
+      : mode === 'milestones' ? 'Voice notifications announce milestones.'
+      : mode === 'chatty' ? 'Voice notifications are chatty.'
+      : 'Agents can add contextual narration.', 'success');
+  } catch (error) {
+    event.target.value = status?.voice?.mode ?? 'off';
+    toast(error.message, 'error');
+  } finally {
+    voicePending = false;
   }
 });
 

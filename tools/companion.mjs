@@ -180,6 +180,9 @@ const commands = {
     console.log('\nTry:');
     console.log('  npm run settings');
     console.log('  npm run status');
+    console.log('  npm run speak "Hello from your companion"');
+    console.log('  npm run narrate "Let me check that for you"');
+    console.log('  npm run voice milestones');
     console.log('  npm run wifi "Your Wi-Fi name"');
     console.log('  npm run character openclaw');
     console.log('  npm run badges off');
@@ -224,6 +227,31 @@ const commands = {
       console.log('\nAgents that need a one-time step:');
       printAgentActions(pending);
     }
+  },
+
+  async speak(args) {
+    const text = args.join(' ').trim();
+    if (!text) throw new Error('Usage: npm run speak "Hello from your companion"');
+    await cli(['speak', text], {quiet: true});
+    console.log('Speech sent to the companion.');
+  },
+
+  async narrate(args) {
+    const text = args.join(' ').trim();
+    if (!text) throw new Error('Usage: npm run narrate "Let me check that for you"');
+    await cli(['narrate', text], {quiet: true});
+    console.log('Contextual narration sent to the companion.');
+  },
+
+  async voice(args) {
+    const mode = args[0]?.toLowerCase();
+    if (!['off', 'milestones', 'chatty', 'contextual'].includes(mode))
+      throw new Error('Usage: npm run voice off|milestones|chatty|contextual');
+    await cli(['voice', mode], {quiet: true});
+    console.log(mode === 'off' ? 'Voice notifications are off.'
+      : mode === 'milestones' ? 'Voice notifications announce milestones.'
+      : mode === 'chatty' ? 'Voice notifications announce activity and milestones.'
+      : 'Voice notifications include agent-written contextual narration.');
   },
 
   async agents(args) {
@@ -314,7 +342,7 @@ const commands = {
 const [name, ...args] = process.argv.slice(2);
 const command = commands[name];
 if (!command) {
-  console.error('Usage: npm run setup | settings | status | agents | wifi [NAME] | pair CODE | character [NAME|PATH] | connection [auto|wifi|usb] | badges [on|off]');
+  console.error('Usage: npm run setup | settings | status | speak TEXT | narrate TEXT | voice [off|milestones|chatty|contextual] | agents | wifi [NAME] | pair CODE | character [NAME|PATH] | connection [auto|wifi|usb] | badges [on|off]');
   process.exit(2);
 }
 command(args).catch(error => {

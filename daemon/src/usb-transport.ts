@@ -27,7 +27,7 @@ import {
 
 const networkRefreshMs = 5000;
 // The newest firmware protocol this daemon knows; see kDeviceProtocol in DeviceCommands.h.
-const maxProtocol = 12;
+const maxProtocol = 13;
 
 interface LineWaiter {
   match: (line: string) => boolean;
@@ -144,6 +144,21 @@ export class UsbTransport {
     this.#commands = this.#commands
       .then(() => this.#sendState(state))
       .catch(error => console.error(`[usb] ${this.#message(error)}`));
+  }
+
+  async setStateConfirmed(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('USB device is not connected.');
+    this.#desired = state;
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => console.error(`[usb] ${this.#message(error)}`));
+    await command;
+  }
+
+  async sendTransientState(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('USB device is not connected.');
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => console.error(`[usb] ${this.#message(error)}`));
+    await command;
   }
 
   setAgentBadges(icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[]): void {
