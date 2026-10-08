@@ -44,6 +44,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
+/* Device glows reach past the screen edge. Clip them sideways only, so they stay
+   soft above and below and phones do not zoom out to fit a wider page. */
+html { overflow-x: hidden; }
+@supports (overflow: clip) { html, body { overflow-x: clip; } }
+main > section, .finale { overflow-x: clip; }
 img, video, canvas { display: block; max-width: 100%; }
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -61,8 +66,10 @@ button { font: inherit; color: inherit; }
   background: linear-gradient(90deg, var(--g1), var(--g2) 50%, var(--g3));
   -webkit-background-clip: text; background-clip: text;
   color: transparent;
-  /* Room for glyphs that overhang their box (tight tracking), so the gradient reaches them. */
-  padding-right: 0.08em; margin-right: -0.08em;
+  /* The gradient paints only inside the box. Give it room for descenders (y, g, p)
+     and for glyphs that overhang on the right with tight tracking. */
+  padding: 0 0.08em 0.28em 0; margin: 0 -0.08em -0.28em 0;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 
 .eyebrow {
@@ -83,7 +90,7 @@ button { font: inherit; color: inherit; }
   margin: 0 0 24px;
 }
 .display.left { text-align: left; }
-.lines .line { display: block; overflow: hidden; padding-bottom: 0.08em; margin-bottom: -0.08em; }
+.lines .line { display: block; overflow: hidden; padding: 0 0.1em 0.28em; margin: 0 -0.1em -0.28em; }
 .lines .line > span { display: inline-block; }
 
 .lede {
@@ -116,7 +123,7 @@ button { font: inherit; color: inherit; }
 .btn-small { font-size: 15px; padding: 8px 18px; }
 .btn-ghost { background: transparent; border: 1px solid var(--line-2); color: var(--ink); }
 .btn-ghost:hover { background: rgba(255, 255, 255, 0.06); }
-.link-arrow { color: var(--blue); font-size: 19px; }
+.link-arrow { color: var(--blue); font-size: 19px; padding: 10px 4px; }
 .link-arrow span { display: inline-block; transition: transform 0.3s var(--ease); }
 .link-arrow:hover span { transform: translateX(4px); }
 
@@ -136,7 +143,7 @@ button { font: inherit; color: inherit; }
 .nav-brand:hover { text-decoration: none; }
 .nav-brand img { width: 30px; height: auto; }
 .nav-links { display: flex; gap: 30px; margin-left: auto; }
-.nav-links a { color: var(--soft); font-size: 15px; opacity: 0.85; transition: opacity 0.2s, color 0.2s; }
+.nav-links a { color: var(--soft); font-size: 15px; padding: 10px 0; opacity: 0.85; transition: opacity 0.2s, color 0.2s; }
 .nav-links a:hover, .nav-links a.is-active { color: var(--ink); opacity: 1; text-decoration: none; }
 @media (max-width: 1000px) { .nav-links { display: none; } .nav-inner .btn { margin-left: auto; } }
 
@@ -154,8 +161,8 @@ button { font: inherit; color: inherit; }
 .device[data-state="attention"] { --state: var(--attn); }
 .device[data-state="complete"] { --state: var(--done); }
 .device-xl { --size: min(540px, 82vw, 56vh); }
-.device-lg { --size: min(480px, 80vw); }
-.device-md { --size: min(400px, 72vw); }
+.device-lg { --size: min(480px, 80vw, 72svh); }
+.device-md { --size: min(400px, 72vw, 66svh); }
 .device-sm { --size: 220px; }
 .device-screen {
   position: absolute;
@@ -216,7 +223,7 @@ button { font: inherit; color: inherit; }
   font-weight: 700;
   margin: 0;
 }
-.hero-title .mask { display: inline-block; overflow: hidden; padding: 0 0.1em 0.12em; margin: 0 -0.1em -0.12em; vertical-align: bottom; }
+.hero-title .mask { display: inline-block; overflow: hidden; padding: 0 0.1em 0.28em; margin: 0 -0.1em -0.28em; vertical-align: bottom; }
 .hero-title .mask > span { display: inline-block; }
 .hero-sub { font-size: clamp(21px, 2.2vw, 28px); color: var(--soft); margin: 14px 0 24px; font-weight: 500; letter-spacing: -0.02em; }
 .hero-cta { display: flex; gap: 28px; justify-content: center; align-items: center; flex-wrap: wrap; }
@@ -292,7 +299,7 @@ button { font: inherit; color: inherit; }
 .state-row { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: clamp(32px, 5vw, 72px); }
 .state-row:nth-child(even) .state-stage { order: 2; }
 .state-stage { position: relative; display: grid; place-items: center; }
-.state-stage .device { --size: min(440px, 80vw); }
+.state-stage .device { --size: min(440px, 80vw, 72svh); }
 .state-copy h3 { font-size: clamp(44px, 5vw, 72px); line-height: 1; letter-spacing: -0.045em; margin: 0 0 18px; font-weight: 700; }
 .state-row[data-state="working"] h3 { color: var(--work); }
 .state-row[data-state="attention"] h3 { color: var(--attn); }
@@ -385,6 +392,7 @@ button { font: inherit; color: inherit; }
   transition: background 0.35s var(--ease), color 0.35s;
 }
 .segmented button[aria-selected="true"] { background: var(--ink); color: #000; }
+@media (max-width: 480px) { .segmented button { padding: 9px 13px; font-size: 14px; } }
 .char-caption { color: var(--muted); margin: 22px auto 0; min-height: 3em; max-width: 520px; }
 .char-caption a { white-space: nowrap; }
 
@@ -539,6 +547,35 @@ button { font: inherit; color: inherit; }
 .credits { border-top: 1px solid var(--line); margin-top: 26px; padding-top: 20px; }
 .credits p { margin: 0 0 6px; }
 .credits a { color: var(--soft); }
+
+/* ---------- Phones in landscape ---------- */
+@media (orientation: landscape) and (max-height: 520px) {
+  .section { padding: 48px 0; }
+  .hero { padding-top: calc(60px + 20px); }
+  .hero-title { font-size: clamp(48px, 9vw, 96px); }
+  .hero-sub { margin: 8px 0 14px; }
+  .display { font-size: clamp(32px, 5vw, 52px); }
+  .state-row { grid-template-columns: 1fr 1fr; text-align: left; gap: 28px; }
+  .state-row:nth-child(even) .state-stage { order: 2; }
+  .state-copy p { margin-inline: 0; }
+  .state-copy h3 { font-size: 40px; }
+  .state-stage .device { --size: min(300px, 40vw, 68svh); }
+  .events { transform: scale(0.85); transform-origin: 0 100%; }
+  .try-grid { grid-template-columns: 1fr 1fr; gap: 24px; }
+  .try-stage .device { --size: min(340px, 44vw, 74svh); }
+  .console { padding: 20px; gap: 14px; }
+  .chip { padding: 6px 11px; font-size: 13px; }
+  .cards { grid-template-columns: repeat(3, 1fr); max-width: none; gap: 14px; }
+  .card { padding: 24px 16px 20px; }
+  .card .device { --size: min(170px, 24vw); margin-bottom: 18px; }
+  .card h3 { font-size: 20px; }
+  .card p { font-size: 15px; }
+  .orbit-stage { width: min(560px, 100%); }
+  .facts { grid-template-columns: 1fr 1fr; }
+  .flow { grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .paths { grid-template-columns: 1fr 1fr; }
+  .path { padding: 24px; }
+}
 
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {

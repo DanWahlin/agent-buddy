@@ -385,7 +385,7 @@ function flourish() {
 
   // Hero intro.
   gsap.timeline({ defaults: { ease } })
-    .from('.hero-title .mask > span', { yPercent: 110, duration: 1.4, stagger: 0.12 }, 0.15)
+    .from('.hero-title .mask > span', { yPercent: 140, duration: 1.4, stagger: 0.12 }, 0.15)
     .from('.hero-copy .reveal-up', { y: 24, opacity: 0, duration: 1.2, stagger: 0.1 }, 0.35)
     .from('.hero-rise', { y: 140, scale: 0.86, opacity: 0, duration: 1.8 }, 0.2)
     .from('.hero-bg', { opacity: 0, duration: 2 }, 0);
@@ -393,7 +393,7 @@ function flourish() {
   // Headlines rise out of a mask, line by line.
   for (const heading of $$('.lines')) {
     gsap.from($$('.line > span', heading), {
-      yPercent: 110, duration: 1.3, ease, stagger: 0.1,
+      yPercent: 140, duration: 1.3, ease, stagger: 0.1,
       scrollTrigger: { trigger: heading, start: 'top 85%' },
     });
   }
