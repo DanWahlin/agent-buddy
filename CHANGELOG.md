@@ -2,6 +2,62 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.13.0]
+
+### Features and improvements
+
+- Add the Agent Buddy website with a live firmware-engine demo and a GitHub Pages deploy
+
+- Add the MIT License and a trademark policy for the Agent Buddy name and logo
+
+- Add a Sleeping state to the live demo
+
+
+### Fixes
+
+- Fix clipped descenders in headings and make the website fit phones in portrait and landscape
+
+- Review the website code: remove dead code, share repeated logic, and fix accessibility details
+
+
+### Other changes
+
+- Tighten the website layout, split the states into rows, and move the live demo up
+
+- Keep the website preview server running when browsers cancel requests
+
+- Serve the website preview on port 4790 and report a busy port
+
+- Host the overview video on the website in place of a YouTube embed
+
+- Set the license copyright holder to Dan Wahlin
+
+- Use plain words in the live demo text
+
+- Cut the website's idle CPU use and rename the states headline
+
+- Remove the Local. Private. Yours. section from the website
+
+- Keep only the license and trademark line in the website footer
+
+- Make the tray icon transparent and keep Settings character cards from cutting off text
+
+- Keep Needs attention while other tools in a Copilot question's batch finish
+
+- Center the hero device between the buttons and the next section
+
+- Fill the window with the hero and center the device in the space under the buttons
+
+- Loop the Working track in base-patch character packs
+
+- Load character packs when the server compresses them
+
+- Keep character packs installed from a path
+
+- Resume the agent's state after a tap or click
+
+- Point the website at getagentbuddy.com
+
 ## [v0.12.0]
 
 ### Features and improvements
