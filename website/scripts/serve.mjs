@@ -2,6 +2,7 @@
 // Serve website/dist on http://127.0.0.1:4173 (or PORT) for a local preview.
 // Run build.mjs first.
 import http from "node:http";
+import { pipeline } from "node:stream";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,8 +23,22 @@ if (!fs.existsSync(root)) {
 }
 
 http.createServer((req, res) => {
-  const url = new URL(req.url, "http://localhost");
-  let file = path.join(root, decodeURIComponent(url.pathname));
+  try {
+    handle(req, res);
+  } catch {
+    // A rebuild can remove a file between the checks and the read.
+    if (!res.headersSent) res.writeHead(500);
+    res.end();
+  }
+}).listen(port, "127.0.0.1", () => console.log(`Agent Buddy website: http://127.0.0.1:${port}/`));
+
+function handle(req, res) {
+  let file;
+  try {
+    file = path.join(root, decodeURIComponent(new URL(req.url, "http://localhost").pathname));
+  } catch {
+    return void res.writeHead(400).end();
+  }
   if (!file.startsWith(root)) return void res.writeHead(403).end();
   if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
   if (!fs.existsSync(file)) return void res.writeHead(404).end("Not found");
@@ -34,10 +49,16 @@ http.createServer((req, res) => {
   if (range && (range[1] || range[2])) {
     const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
     const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return void res.writeHead(416, { "Content-Range": `bytes */${size}` }).end();
     res.writeHead(206, { "Content-Type": type, "Content-Length": end - start + 1,
       "Content-Range": `bytes ${start}-${end}/${size}`, "Accept-Ranges": "bytes" });
-    return void fs.createReadStream(file, { start, end }).pipe(res);
+    return void send(fs.createReadStream(file, { start, end }), res);
   }
   res.writeHead(200, { "Content-Type": type, "Content-Length": size, "Accept-Ranges": "bytes" });
-  fs.createReadStream(file).pipe(res);
-}).listen(port, "127.0.0.1", () => console.log(`Agent Buddy website: http://127.0.0.1:${port}/`));
+  send(fs.createReadStream(file), res);
+}
+
+// Browsers cancel many requests, video ranges most of all. A cancel is not an error.
+function send(stream, res) {
+  pipeline(stream, res, () => {});
+}
