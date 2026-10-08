@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.13.1]
+
+### Other changes
+
+- Recover the desktop character after a lost WebGL context (#11)
+
 ## [v0.13.0]
 
 ### Features and improvements
