@@ -39,6 +39,12 @@ window.AgentBuddyLive = (() => {
     });
   }
 
+  /** Stop any fast-forward to sleep. */
+  function cancelDoze() {
+    dozeToken++;
+    dozing = false;
+  }
+
   function withString(fn, text) {
     const at = engine.stringToNewUTF8(text);
     try { return fn(at); } finally { engine._free(at); }
@@ -83,8 +89,7 @@ window.AgentBuddyLive = (() => {
     const token = ++loadToken;
     const bytes = await fetchPack(id, onProgress);
     if (token !== loadToken) return false;
-    dozeToken++;
-    dozing = false;
+    cancelDoze();
     shownMode = -1;
     // Reserve first: reserving can grow the memory, which detaches any earlier HEAPU8.
     const at = engine._ac_reserve(bytes.length);
@@ -96,7 +101,6 @@ window.AgentBuddyLive = (() => {
     loaded = true;
     if (!presenter) presenter = createPresenter(canvas, engine._ac_width(), engine._ac_height());
     apply();
-    dirty = true;
     return true;
   }
 
@@ -109,8 +113,7 @@ window.AgentBuddyLive = (() => {
   }
 
   function setMode(mode) {
-    dozeToken++;
-    dozing = false;
+    cancelDoze();
     wanted.mode = mode;
     if (loaded) engine._ac_mode(MODES[mode], 0);
   }
@@ -150,8 +153,7 @@ window.AgentBuddyLive = (() => {
   function setUsage(text) { wanted.usage = text; if (loaded) withString(engine._ac_usage, text); }
   function tap() {
     if (!loaded) return;
-    dozeToken++;
-    dozing = false;
+    cancelDoze();
     engine._ac_mode(MODES.surprise, 1);
   }
 
@@ -170,9 +172,9 @@ window.AgentBuddyLive = (() => {
     }
     const mode = engine._ac_shown_mode();
     if (mode !== shownMode) {
-      const from = shownMode;
+      const wasAsleep = shownMode === SLEEP;
       shownMode = mode;
-      document.dispatchEvent(new CustomEvent('agentbuddy:mode', { detail: { from, to: mode, asleep: mode === SLEEP } }));
+      document.dispatchEvent(new CustomEvent('agentbuddy:mode', { detail: { asleep: mode === SLEEP, wasAsleep } }));
     }
     if (!engine._ac_changed() && !dirty) return;
     const width = engine._ac_width();
@@ -258,7 +260,9 @@ window.AgentBuddyLive = (() => {
   }
 
   function canvas2d(target, width, height) {
+    // A canvas keeps the first kind of context it gets, so this fails after a failed WebGL setup.
     const context = target.getContext('2d');
+    if (!context) throw new Error('This browser cannot draw the character.');
     const image = context.createImageData(width, height);
     return {
       present(rgba) {

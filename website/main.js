@@ -18,9 +18,9 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-function badge(id, extra = '') {
+function badge(id) {
   const a = agent(id);
-  return `<span class="badge ${extra}" style="--c:${a.color};--icon:url(assets/badges/${id}.svg)" aria-hidden="true"></span>`;
+  return `<span class="badge" style="--c:${a.color};--icon:url(assets/badges/${id}.svg)" aria-hidden="true"></span>`;
 }
 
 /* ---------- Generated content ---------- */
@@ -37,7 +37,9 @@ $('#tiles').innerHTML = TILES.map(([id, task, p, outcome], i) => `
   </div>`).join('');
 
 $('#agent-list').innerHTML = AGENTS.map((a) => `<li><i style="--c:${a.color}"></i>${a.name}</li>`).join('');
-$('#orbit').innerHTML = AGENTS.map((a) => badge(a.id)).join('');
+const allBadges = AGENTS.map((a) => badge(a.id)).join('');
+$('#orbit').innerHTML = allBadges;
+$('.badges-cluster').innerHTML = allBadges;
 // Events travel along the flow line, from the hooks to your buddy (CSS animation).
 $('#flow').insertAdjacentHTML('beforeend', `<div class="flow-track" aria-hidden="true">${
   ['var(--work)', 'var(--attn)', 'var(--done)'].map((c, i) => `<span class="flow-dot" style="--c:${c};--delay:${i * 1.2}s"></span>`).join('')}</div>`);
@@ -46,9 +48,8 @@ $('#flow').insertAdjacentHTML('beforeend', `<div class="flow-track" aria-hidden=
 const offscreen = new IntersectionObserver((entries) => {
   for (const entry of entries) entry.target.classList.toggle('is-offscreen', !entry.isIntersecting);
 }, { rootMargin: '100px 0px' });
-$$('main > section, .finale').forEach((s) => offscreen.observe(s));
+$$('main > section').forEach((s) => offscreen.observe(s));
 
-$('.badges-cluster').innerHTML = AGENTS.map((a) => badge(a.id)).join('');
 $('#live-agents').innerHTML = AGENTS.map((a, i) =>
   `<button class="chip${i < 2 ? ' is-on' : ''}" data-agent="${a.id}" aria-pressed="${i < 2}">${badge(a.id)}${a.name}</button>`).join('');
 
@@ -67,6 +68,15 @@ const videoObserver = new IntersectionObserver((entries) => {
   }
 }, { rootMargin: '200px 0px' });
 $$('video.autoplay, video.layer').forEach((v) => videoObserver.observe(v));
+
+/** Mark one button in a group as pressed. */
+function press(buttons, isOn) {
+  for (const b of buttons) {
+    const on = isOn(b);
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
 
 function showLayer(container, attr, value) {
   for (const layer of $$('.layer', container)) {
@@ -111,15 +121,14 @@ function passProgress(el) {
 let ticking = false;
 function onScroll() {
   ticking = false;
+  // Read all layout first, then write, so the browser lays out the page once.
+  const line = innerHeight * 0.45;
+  const active = sections.reduce((last, s, i) => (s.getBoundingClientRect().top < line ? i : last), -1);
+  const d = reduceMotion ? 1 : clamp(passProgress(desktopWindow) * 2.2, 0, 1);
+
   nav.classList.toggle('scrolled', scrollY > 10);
-
-  let active = -1;
-  sections.forEach((s, i) => { if (s && s.getBoundingClientRect().top < innerHeight * 0.45) active = i; });
   navLinks.forEach((a, i) => a.classList.toggle('is-active', i === active));
-
-
   if (!reduceMotion) {
-    const d = clamp(passProgress(desktopWindow) * 2.2, 0, 1);
     desktopWindow.style.transform = `rotateX(${(1 - d) * 26}deg) scale(${0.86 + d * 0.14})`;
     desktopWindow.style.opacity = String(0.4 + d * 0.6);
   }
@@ -140,7 +149,6 @@ if (!reduceMotion && matchMedia('(pointer: fine)').matches) {
       device.style.transform = `rotateY(${x * 10}deg) rotateX(${-y * 8}deg)`;
     });
     host.addEventListener('pointerleave', () => { device.style.transform = ''; });
-    device.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
   }
 }
 
@@ -150,10 +158,14 @@ const orbit = $('#orbit');
 const orbitBadges = $$('.badge', orbit);
 let orbitOn = false;
 let orbitFrame = 0;
+let rx = 0;
+let ry = 0;
+new ResizeObserver(([entry]) => {
+  rx = entry.contentRect.width * 0.48;
+  ry = entry.contentRect.height * 0.24;
+  if (!orbitOn) requestAnimationFrame(spin);
+}).observe(orbit);
 function spin(now) {
-  const r = orbit.getBoundingClientRect();
-  const rx = r.width * 0.48;
-  const ry = r.height * 0.24;
   const t = reduceMotion ? 0 : now / 1000;
   orbitBadges.forEach((b, i) => {
     const a = t * 0.35 + (i / orbitBadges.length) * Math.PI * 2;
@@ -171,7 +183,30 @@ new IntersectionObserver(([entry]) => {
   orbitFrame = requestAnimationFrame(spin);
 }).observe(orbit);
 
-/* ---------- Character picker ---------- */
+/* ---------- Segmented controls that rotate on their own until clicked ---------- */
+
+function autoRotate(group, key, show, watched, { interval, threshold }) {
+  const buttons = $$('button', group);
+  let auto = true;
+  let timer = 0;
+  const pick = (id) => {
+    press(buttons, (b) => b.dataset[key] === id);
+    show(id);
+  };
+  buttons.forEach((b) => b.addEventListener('click', () => {
+    auto = false;
+    clearInterval(timer);
+    pick(b.dataset[key]);
+  }));
+  new IntersectionObserver(([entry]) => {
+    clearInterval(timer);
+    if (!entry.isIntersecting || reduceMotion || !auto) return;
+    timer = setInterval(() => {
+      const i = buttons.findIndex((b) => b.getAttribute('aria-pressed') === 'true');
+      pick(buttons[(i + 1) % buttons.length].dataset[key]);
+    }, interval);
+  }, { threshold }).observe(watched);
+}
 
 const CHARACTERS = {
   copilot: { glow: '#4f7dff', caption: 'Built in. The device holds one character at a time, and you can switch over USB or Wi-Fi.' },
@@ -180,45 +215,16 @@ const CHARACTERS = {
   custom: { glow: '#8f86ff', caption: 'Make your own .acpk pack and add it in Settings. <a href="https://github.com/DanWahlin/agent-buddy/blob/main/characters/README.md">How to make a character</a>' },
 };
 const charDevice = $('#char-device');
-const charButtons = $$('#char-picker button');
-let charAuto = true;
-function pickCharacter(id) {
-  charButtons.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.char === id)));
+autoRotate($('#char-picker'), 'char', (id) => {
   showLayer(charDevice, 'char', id);
   charDevice.style.setProperty('--state', CHARACTERS[id].glow);
   $('#char-caption').innerHTML = CHARACTERS[id].caption;
-}
-charButtons.forEach((b) => b.addEventListener('click', () => { charAuto = false; pickCharacter(b.dataset.char); }));
-let charTimer = 0;
-new IntersectionObserver(([entry]) => {
-  clearInterval(charTimer);
-  if (!entry.isIntersecting || reduceMotion) return;
-  charTimer = setInterval(() => {
-    if (!charAuto) return clearInterval(charTimer);
-    const i = charButtons.findIndex((b) => b.getAttribute('aria-selected') === 'true');
-    pickCharacter(charButtons[(i + 1) % charButtons.length].dataset.char);
-  }, 3800);
-}, { threshold: 0.5 }).observe(charDevice);
+}, charDevice, { interval: 3800, threshold: 0.5 });
 
-/* ---------- Settings tabs ---------- */
-
-const shotButtons = $$('#settings-tabs button');
-let shotAuto = true;
-function pickShot(id) {
-  shotButtons.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.shot === id)));
-  $$('#shots .shot').forEach((s) => s.classList.toggle('is-on', s.dataset.shot === id));
-}
-shotButtons.forEach((b) => b.addEventListener('click', () => { shotAuto = false; pickShot(b.dataset.shot); }));
-let shotTimer = 0;
-new IntersectionObserver(([entry]) => {
-  clearInterval(shotTimer);
-  if (!entry.isIntersecting || reduceMotion) return;
-  shotTimer = setInterval(() => {
-    if (!shotAuto) return clearInterval(shotTimer);
-    const i = shotButtons.findIndex((b) => b.getAttribute('aria-selected') === 'true');
-    pickShot(shotButtons[(i + 1) % shotButtons.length].dataset.shot);
-  }, 3600);
-}, { threshold: 0.4 }).observe($('#shots'));
+const shots = $$('#shots .shot');
+autoRotate($('#settings-tabs'), 'shot', (id) => {
+  shots.forEach((s) => s.classList.toggle('is-on', s.dataset.shot === id));
+}, $('#shots'), { interval: 3600, threshold: 0.4 });
 
 /* ---------- Live demo ---------- */
 
@@ -230,6 +236,7 @@ const liveState = { mode: 'idle', agents: ['copilot', 'claude'], character: 'cop
 let liveStarted = false;
 let liveEngine = false;
 let liveVisible = false;
+const LIVE_TEXT = 'Live in your browser';
 
 function badgePacket() {
   if (liveState.mode === 'idle' || liveState.mode === 'sleep') return '';
@@ -249,11 +256,11 @@ function liveFailed(message) {
 async function loadLiveCharacter(id) {
   liveDevice.classList.remove('live-ready');
   liveLoading.style.setProperty('--p', 0);
-  liveStatus.textContent = `Loading the ${id === 'openclaw' ? 'OpenClaw' : id[0].toUpperCase() + id.slice(1)} character…`;
+  liveStatus.textContent = `Loading the ${$(`#live-chars [data-char="${id}"]`).textContent} character…`;
   const ok = await live.loadCharacter(id, (p) => liveLoading.style.setProperty('--p', p));
   if (!ok) return;
   liveDevice.classList.add('live-ready');
-  liveStatus.textContent = 'Live in your browser';
+  liveStatus.textContent = LIVE_TEXT;
   if (liveVisible) live.start();
   if (liveState.mode === 'sleep') doze();
 }
@@ -271,19 +278,19 @@ async function doze() {
   } else if (liveState.mode === 'sleep') {
     // A tap woke it before it fell asleep.
     showMode('idle');
-    liveStatus.textContent = 'Live in your browser';
+    liveStatus.textContent = LIVE_TEXT;
   }
 }
 function showMode(mode) {
   liveState.mode = mode;
   liveDevice.dataset.state = mode;
-  $$('#live-states .chip').forEach((c) => c.classList.toggle('is-on', c.dataset.mode === mode));
+  press($$('#live-states .chip'), (c) => c.dataset.mode === mode);
 }
 // The character wakes on its own after a minute, or when tapped, as on the device.
 document.addEventListener('agentbuddy:mode', (e) => {
-  if (liveState.mode === 'sleep' && e.detail.from === 5 && !e.detail.asleep) {
+  if (liveState.mode === 'sleep' && e.detail.wasAsleep && !e.detail.asleep) {
     showMode('idle');
-    liveStatus.textContent = 'Live in your browser';
+    liveStatus.textContent = LIVE_TEXT;
   }
 });
 async function startLive() {
@@ -313,7 +320,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function choose(group, button) {
-  $$('.chip', group).forEach((b) => b.classList.toggle('is-on', b === button));
+  press($$('.chip', group), (b) => b === button);
 }
 $('#live-states').addEventListener('click', (e) => {
   const b = e.target.closest('[data-mode]');
@@ -327,7 +334,7 @@ $('#live-states').addEventListener('click', (e) => {
     return;
   }
   live.setMode(liveState.mode);
-  if (live.ready) liveStatus.textContent = 'Live in your browser';
+  if (live.ready) liveStatus.textContent = LIVE_TEXT;
 });
 $('#live-agents').addEventListener('click', (e) => {
   const b = e.target.closest('[data-agent]');
@@ -335,11 +342,7 @@ $('#live-agents').addEventListener('click', (e) => {
   const id = b.dataset.agent;
   if (liveState.agents.includes(id)) liveState.agents = liveState.agents.filter((a) => a !== id);
   else liveState.agents = [...liveState.agents, id].slice(-4);
-  $$('[data-agent]', e.currentTarget).forEach((c) => {
-    const on = liveState.agents.includes(c.dataset.agent);
-    c.classList.toggle('is-on', on);
-    c.setAttribute('aria-pressed', String(on));
-  });
+  press($$('[data-agent]', e.currentTarget), (c) => liveState.agents.includes(c.dataset.agent));
   live.setBadges(badgePacket());
 });
 $('#live-chars').addEventListener('click', (e) => {
@@ -383,7 +386,8 @@ new IntersectionObserver(([entry]) => {
   const ua = navigator.userAgent;
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
   let os = '';
-  if (/Mac/i.test(platform) || /Macintosh/.test(ua)) os = 'mac';
+  const touchMac = navigator.maxTouchPoints > 1;
+  if ((/Mac/i.test(platform) || /Macintosh/.test(ua)) && !touchMac) os = 'mac';
   else if (/Win/i.test(platform) || /Windows/.test(ua)) os = /ARM|aarch64/i.test(ua) ? 'win-arm' : 'win';
   else if (/Linux/i.test(platform) && !/Android/i.test(ua)) os = 'linux';
   const mine = $(`.dl[data-os="${os}"]`);
@@ -421,7 +425,7 @@ $('#copy-code').addEventListener('click', async (e) => {
 
 function flourish() {
   const { gsap, ScrollTrigger } = window;
-  if (!gsap || !ScrollTrigger || reduceMotion) return;
+  if (!gsap || !ScrollTrigger || reduceMotion) return false;
   gsap.registerPlugin(ScrollTrigger);
   const ease = 'expo.out';
 
@@ -472,7 +476,7 @@ function flourish() {
   gsap.from('.shots', { y: 80, opacity: 0, duration: 1.4, ease, scrollTrigger: { trigger: '.shots', start: 'top 92%' } });
   gsap.from('.video-frame', { y: 80, opacity: 0, scale: 0.95, duration: 1.4, ease, scrollTrigger: { trigger: '.video-frame', start: 'top 92%' } });
   gsap.from('.finale-title, .finale .btn', { y: 30, opacity: 0, duration: 1.2, ease, stagger: 0.1, scrollTrigger: { trigger: '.finale-title', start: 'top 90%' } });
-
+  return true;
 }
 
 function outcomes(on) {
@@ -486,9 +490,8 @@ function outcomes(on) {
   }
 }
 
-if (window.gsap) flourish();
-else addEventListener('load', flourish);
-if (!window.gsap || reduceMotion) {
+// The GSAP scripts are deferred and run before this one, so they have loaded or failed by now.
+if (!flourish()) {
   // Without GSAP, still show the outcome once the tiles are on screen.
   new IntersectionObserver(([entry]) => outcomes(entry.isIntersecting), { threshold: 0.6 }).observe($('#tiles'));
 }

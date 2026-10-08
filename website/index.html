@@ -6,9 +6,10 @@
   <title>Agent Buddy · A desk buddy for your AI coding agents</title>
   <meta name="description" content="Agent Buddy is an animated desk companion that shows what your AI coding agents are doing. Working, needs attention, complete: see it at a glance, on a small round device or on your desktop.">
   <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Agent Buddy">
-  <meta property="og:description" content="A desk buddy for your AI coding agents. Local. Private. Yours.">
+  <meta property="og:description" content="A desk buddy for your AI coding agents. See what they are doing at a glance.">
   <meta property="og:url" content="https://danwahlin.github.io/agent-buddy/">
   <meta property="og:image" content="https://danwahlin.github.io/agent-buddy/assets/img/og-image.jpg">
   <meta name="twitter:card" content="summary_large_image">
@@ -23,7 +24,7 @@
   <header class="nav" id="nav">
     <div class="nav-inner">
       <a class="nav-brand" href="#top" aria-label="Agent Buddy home">
-        <img src="assets/img/logo.webp" alt="" width="28" height="28">
+        <img src="assets/img/logo.webp" alt="" width="30" height="30">
         <span>Agent Buddy</span>
       </a>
       <nav class="nav-links" aria-label="Sections">
@@ -58,15 +59,12 @@
         </div>
         <div class="hero-stage">
           <div class="hero-rise">
-          <div class="device device-xl tilt" data-state="idle" id="hero-device">
-            <div class="device-glow" aria-hidden="true"></div>
-            <div class="device-screen">
-              <video class="autoplay" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="auto" aria-label="The Copilot character on Agent Buddy looks around and blinks"></video>
+            <div class="device device-xl tilt" data-state="idle">
+              <div class="device-screen">
+                <video class="autoplay" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="auto" aria-label="The Copilot character on Agent Buddy looks around and blinks"></video>
+              </div>
             </div>
-            <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-            <div class="device-shine" aria-hidden="true"></div>
-          </div>
-          <div class="device-shadow" aria-hidden="true"></div>
+            <div class="device-shadow" aria-hidden="true"></div>
           </div>
         </div>
       </div>
@@ -101,10 +99,7 @@
         <article class="state-row" data-state="working">
           <div class="state-stage">
             <div class="device device-lg" data-state="working">
-              <div class="device-glow" aria-hidden="true"></div>
               <div class="device-screen"><video class="autoplay" src="assets/media/working.mp4" poster="assets/media/working.webp" muted loop playsinline preload="none" aria-label="Working state: focused eyes, orbiting dots, and drifting binary digits"></video></div>
-              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-              <div class="device-shine" aria-hidden="true"></div>
             </div>
             <div class="events" data-events="working"></div>
           </div>
@@ -116,10 +111,7 @@
         <article class="state-row" data-state="attention">
           <div class="state-stage">
             <div class="device device-lg" data-state="attention">
-              <div class="device-glow" aria-hidden="true"></div>
               <div class="device-screen"><video class="autoplay" src="assets/media/attention.mp4" poster="assets/media/attention.webp" muted loop playsinline preload="none" aria-label="Needs attention state: a head tilt and an amber question mark"></video></div>
-              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-              <div class="device-shine" aria-hidden="true"></div>
             </div>
             <div class="events" data-events="attention"></div>
           </div>
@@ -131,10 +123,7 @@
         <article class="state-row" data-state="complete">
           <div class="state-stage">
             <div class="device device-lg" data-state="complete">
-              <div class="device-glow" aria-hidden="true"></div>
               <div class="device-screen"><video class="autoplay" src="assets/media/complete.mp4" poster="assets/media/complete.webp" muted loop playsinline preload="none" aria-label="Complete state: a short celebration"></video></div>
-              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-              <div class="device-shine" aria-hidden="true"></div>
             </div>
             <div class="events" data-events="complete"></div>
           </div>
@@ -159,7 +148,6 @@
       <div class="try-grid">
         <div class="try-stage">
           <div class="device device-lg tilt" id="live-device" data-state="idle">
-            <div class="device-glow" aria-hidden="true"></div>
             <div class="device-screen">
               <video class="live-fallback" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="none" aria-label="A recording of the character"></video>
               <canvas id="live-canvas" width="412" height="466" aria-label="The live character. Select it to tap it."></canvas>
@@ -167,8 +155,6 @@
                 <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle><circle class="arc" cx="50" cy="50" r="44"></circle></svg>
               </div>
             </div>
-            <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-            <div class="device-shine" aria-hidden="true"></div>
             <button class="device-hit" id="live-tap" aria-label="Tap the character"></button>
           </div>
           <p class="live-status" id="live-status" role="status">Scroll here to wake up your buddy.</p>
@@ -177,11 +163,11 @@
           <fieldset>
             <legend>State</legend>
             <div class="chips" id="live-states">
-              <button class="chip is-on" data-mode="idle">Idle</button>
-              <button class="chip" data-mode="working"><i style="--c:var(--work)"></i>Working</button>
-              <button class="chip" data-mode="attention"><i style="--c:var(--attn)"></i>Needs attention</button>
-              <button class="chip" data-mode="complete"><i style="--c:var(--done)"></i>Complete</button>
-              <button class="chip" data-mode="sleep"><i style="--c:var(--sleep)"></i>Sleeping</button>
+              <button class="chip is-on" aria-pressed="true" data-mode="idle">Idle</button>
+              <button class="chip" aria-pressed="false" data-mode="working"><i style="--c:var(--work)"></i>Working</button>
+              <button class="chip" aria-pressed="false" data-mode="attention"><i style="--c:var(--attn)"></i>Needs attention</button>
+              <button class="chip" aria-pressed="false" data-mode="complete"><i style="--c:var(--done)"></i>Complete</button>
+              <button class="chip" aria-pressed="false" data-mode="sleep"><i style="--c:var(--sleep)"></i>Sleeping</button>
             </div>
           </fieldset>
           <fieldset>
@@ -191,17 +177,17 @@
           <fieldset>
             <legend>Character</legend>
             <div class="chips" id="live-chars">
-              <button class="chip is-on" data-char="copilot">Copilot</button>
-              <button class="chip" data-char="claude">Claude</button>
-              <button class="chip" data-char="openclaw">OpenClaw</button>
+              <button class="chip is-on" aria-pressed="true" data-char="copilot">Copilot</button>
+              <button class="chip" aria-pressed="false" data-char="claude">Claude</button>
+              <button class="chip" aria-pressed="false" data-char="openclaw">OpenClaw</button>
             </div>
           </fieldset>
           <fieldset>
             <legend>Usage</legend>
             <div class="chips" id="live-usage">
-              <button class="chip is-on" data-usage="">Off</button>
-              <button class="chip" data-usage="AIC: 1,248">AIC</button>
-              <button class="chip" data-usage="Tokens: 2.4M">Tokens</button>
+              <button class="chip is-on" aria-pressed="true" data-usage="">Off</button>
+              <button class="chip" aria-pressed="false" data-usage="AIC: 1,248">AIC</button>
+              <button class="chip" aria-pressed="false" data-usage="Tokens: 2.4M">Tokens</button>
             </div>
           </fieldset>
           <p class="console-tip">Tip: tap the screen.</p>
@@ -221,12 +207,9 @@
       <div class="orbit-stage">
         <div class="orbit" id="orbit" aria-hidden="true"></div>
         <div class="device device-md" data-state="working">
-          <div class="device-glow" aria-hidden="true"></div>
           <div class="device-screen">
             <video class="autoplay" src="assets/media/agents.mp4" poster="assets/media/agents.webp" muted loop playsinline preload="metadata" aria-label="Agent badges for several agents appear around the character"></video>
           </div>
-          <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-          <div class="device-shine" aria-hidden="true"></div>
         </div>
       </div>
       <ul class="agent-list" id="agent-list"></ul>
@@ -243,7 +226,6 @@
           <article class="card rise">
             <div class="device device-sm">
               <div class="device-screen"><video class="autoplay" src="assets/media/tap.mp4" poster="assets/media/tap.webp" muted loop playsinline preload="none" aria-label="The character recoils when tapped"></video></div>
-              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
               <span class="tap-ripple" aria-hidden="true"></span>
             </div>
             <h3>Tap to say hi</h3>
@@ -252,7 +234,6 @@
           <article class="card rise">
             <div class="device device-sm">
               <div class="device-screen"><video class="autoplay" src="assets/media/usage.mp4" poster="assets/media/usage.webp" muted loop playsinline preload="none" aria-label="The usage line at the bottom of the screen"></video></div>
-              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
               <div class="lens" aria-hidden="true"><video class="autoplay" src="assets/media/usage-lens.mp4" muted loop playsinline preload="none"></video></div>
             </div>
             <h3>Usage at a glance</h3>
@@ -261,7 +242,6 @@
           <article class="card rise">
             <div class="device device-sm">
               <div class="device-screen"><video class="autoplay" src="assets/media/sleep.mp4" poster="assets/media/sleep.webp" muted loop playsinline preload="none" aria-label="The character falls asleep"></video></div>
-              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
             </div>
             <h3>Naps when idle</h3>
             <p>Drowsy eyelids and drifting Zs after two quiet minutes.</p>
@@ -280,7 +260,6 @@
       </div>
       <div class="picker-stage">
         <div class="device device-lg" id="char-device" data-state="idle">
-          <div class="device-glow" aria-hidden="true"></div>
           <div class="device-screen">
             <video class="layer is-on" data-char="copilot" src="assets/media/copilot.mp4" poster="assets/media/copilot.webp" muted loop playsinline preload="metadata" aria-label="The Copilot character"></video>
             <video class="layer" data-char="claude" src="assets/media/claude.mp4" poster="assets/media/claude.webp" muted loop playsinline preload="metadata" aria-label="The Claude character"></video>
@@ -290,16 +269,14 @@
               <span>Your own pack</span>
             </div>
           </div>
-          <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-          <div class="device-shine" aria-hidden="true"></div>
         </div>
       </div>
       <div class="container center">
-        <div class="segmented" role="tablist" aria-label="Characters" id="char-picker">
-          <button role="tab" aria-selected="true" data-char="copilot">Copilot</button>
-          <button role="tab" aria-selected="false" data-char="claude">Claude</button>
-          <button role="tab" aria-selected="false" data-char="openclaw">OpenClaw</button>
-          <button role="tab" aria-selected="false" data-char="custom">Your own</button>
+        <div class="segmented" role="group" aria-label="Characters" id="char-picker">
+          <button aria-pressed="true" data-char="copilot">Copilot</button>
+          <button aria-pressed="false" data-char="claude">Claude</button>
+          <button aria-pressed="false" data-char="openclaw">OpenClaw</button>
+          <button aria-pressed="false" data-char="custom">Your own</button>
         </div>
         <p class="char-caption" id="char-caption">Built in. The device holds one character at a time, and you can switch over USB or Wi-Fi.</p>
       </div>
@@ -339,11 +316,11 @@
           <span class="line"><span class="grad">yours.</span></span>
         </h2>
         <p class="lede fade-up">A local Settings page for characters, agents, badges, Wi-Fi, and the desktop app. Press the BOOT button on the device to open it.</p>
-        <div class="segmented" role="tablist" aria-label="Settings pages" id="settings-tabs">
-          <button role="tab" aria-selected="true" data-shot="characters">Characters</button>
-          <button role="tab" aria-selected="false" data-shot="agents">Agents</button>
-          <button role="tab" aria-selected="false" data-shot="device">Device</button>
-          <button role="tab" aria-selected="false" data-shot="desktop">Desktop</button>
+        <div class="segmented" role="group" aria-label="Settings pages" id="settings-tabs">
+          <button aria-pressed="true" data-shot="characters">Characters</button>
+          <button aria-pressed="false" data-shot="agents">Agents</button>
+          <button aria-pressed="false" data-shot="device">Device</button>
+          <button aria-pressed="false" data-shot="desktop">Desktop</button>
         </div>
       </div>
       <div class="shots" id="shots">
@@ -365,7 +342,7 @@
       <div class="container">
         <div class="flow" id="flow">
           <svg class="flow-line" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden="true">
-            <path id="flow-path" d="M 40 20 L 960 20"></path>
+            <path d="M 40 20 L 960 20"></path>
           </svg>
           <div class="flow-node rise">
             <div class="flow-icon badges-cluster" aria-hidden="true"></div>
@@ -466,12 +443,9 @@ npm run setup</code></pre>
     <!-- Finale -->
     <section class="finale" id="finale">
       <div class="device device-md" data-state="complete">
-        <div class="device-glow" aria-hidden="true"></div>
         <div class="device-screen">
           <video class="autoplay" src="assets/media/complete.mp4" poster="assets/media/complete.webp" muted loop playsinline preload="none" aria-label="The character celebrates"></video>
         </div>
-        <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
-        <div class="device-shine" aria-hidden="true"></div>
       </div>
       <h2 class="finale-title">Never miss a <span class="grad">done</span> again.</h2>
       <a class="btn" href="https://github.com/DanWahlin/agent-buddy" target="_blank" rel="noopener"><img src="assets/icons/mark-github-24.svg" alt="">Get it on GitHub</a>
@@ -499,8 +473,8 @@ npm run setup</code></pre>
     </div>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/ScrollTrigger.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/ScrollTrigger.min.js" integrity="sha384-xNHNOfrykny9oFwnmpfNbkSc6isny38d1GZvTRVuFV0l9fTMIZKhULvomyQJSMRl" crossorigin="anonymous" defer></script>
   <script src="live.js" defer></script>
   <script src="main.js" defer></script>
 </body>

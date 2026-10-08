@@ -8,7 +8,6 @@
 
 :root {
   --bg: #000;
-  --bg-2: #05070d;
   --panel: #0c0f18;
   --panel-2: #121725;
   --line: rgba(255, 255, 255, 0.08);
@@ -32,7 +31,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 60px; -webkit-text-size-adjust: 100%; }
+html { color-scheme: dark; scroll-behavior: smooth; scroll-padding-top: 60px; -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   background: var(--bg);
@@ -43,13 +42,12 @@ body {
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
 }
 /* Device glows reach past the screen edge. Clip them sideways only, so they stay
    soft above and below and phones do not zoom out to fit a wider page. */
-html { overflow-x: hidden; }
+html, body { overflow-x: hidden; }
 @supports (overflow: clip) { html, body { overflow-x: clip; } }
-main > section, .finale { overflow-x: clip; }
+main > section { overflow-x: clip; }
 img, video, canvas { display: block; max-width: 100%; }
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -148,7 +146,9 @@ button { font: inherit; color: inherit; }
 .nav-links a:hover, .nav-links a.is-active { color: var(--ink); opacity: 1; text-decoration: none; }
 @media (max-width: 1000px) { .nav-links { display: none; } .nav-inner .btn { margin-left: auto; } }
 
-/* ---------- Device ---------- */
+/* ---------- Device ----------
+   One element per device: the case is its background, the glow is ::before,
+   and the glass shine is ::after. Only the screen is markup. */
 .device {
   --size: 520px;
   --state: var(--idle);
@@ -157,49 +157,44 @@ button { font: inherit; color: inherit; }
   aspect-ratio: 1;
   max-width: 100%;
   isolation: isolate;
+  background: url("assets/img/case.webp") center / 100% 100% no-repeat;
 }
-.device[data-state="working"] { --state: var(--work); }
-.device[data-state="attention"] { --state: var(--attn); }
-.device[data-state="complete"] { --state: var(--done); }
-.device[data-state="sleep"] { --state: #2c2a66; }
 .device-xl { --size: min(540px, 82vw, 56vh); }
 .device-lg { --size: min(480px, 80vw, 72svh); }
 .device-md { --size: min(400px, 72vw, 66svh); }
 .device-sm { --size: 220px; }
-.device-screen {
-  position: absolute;
-  left: 8.39%; top: 8.39%;
-  width: 83.21%; height: 83.21%;
+.device::before {
+  content: ""; position: absolute; inset: -22%; z-index: -1;
   border-radius: 50%;
-  overflow: hidden;
-  background: #000;
-  isolation: isolate;
-  z-index: 1;
+  /* Soft by itself: a blur filter on top costs GPU time on every frame. */
+  background: radial-gradient(circle, color-mix(in srgb, var(--state) 42%, transparent) 0%, color-mix(in srgb, var(--state) 20%, transparent) 30%, color-mix(in srgb, var(--state) 6%, transparent) 52%, transparent 70%);
+  opacity: 0.75;
+  animation: breathe 6s ease-in-out infinite;
+  pointer-events: none;
+}
+.device-sm::before { content: none; }
+@keyframes breathe { 50% { opacity: 1; transform: scale(1.05); } }
+.device-screen, .device::after {
+  position: absolute; left: 8.39%; top: 8.39%; width: 83.21%; height: 83.21%;
+  border-radius: 50%;
+}
+.device-screen { overflow: hidden; background: #000; z-index: 1; }
+.device::after {
+  content: ""; z-index: 2; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.04));
 }
 .device-screen video, .device-screen canvas, .device-screen .layer {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
 }
 .device-screen .layer { opacity: 0; transition: opacity 0.6s ease; }
 .device-screen .layer.is-on { opacity: 1; }
-.device-case { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; user-select: none; z-index: 0; }
-.device-shine {
-  position: absolute; left: 8.39%; top: 8.39%; width: 83.21%; height: 83.21%;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.04));
-  pointer-events: none;
-  z-index: 2;
-}
-.device-glow {
-  position: absolute; inset: -22%;
-  border-radius: 50%;
-  /* Soft by itself: a blur filter on top cost GPU time on every frame. */
-  background: radial-gradient(circle, color-mix(in srgb, var(--state) 42%, transparent) 0%, color-mix(in srgb, var(--state) 20%, transparent) 30%, color-mix(in srgb, var(--state) 6%, transparent) 52%, transparent 70%);
-  opacity: 0.75;
-  transition: background 0.8s ease;
-  z-index: -1;
-  animation: breathe 6s ease-in-out infinite;
-}
-@keyframes breathe { 50% { opacity: 1; transform: scale(1.05); } }
+.tilt { transition: transform 0.6s var(--ease); }
+
+/* State colors, shared by devices, state headings, and event cards. */
+[data-state="working"], [data-kind="working"] { --state: var(--work); }
+[data-state="attention"], [data-kind="attention"] { --state: var(--attn); }
+[data-state="complete"], [data-kind="complete"] { --state: var(--done); }
+[data-state="sleep"] { --state: #2c2a66; }
 
 /* ---------- Hero ---------- */
 .hero { position: relative; overflow: hidden; padding: calc(60px + clamp(40px, 7vh, 80px)) 0 clamp(24px, 4vw, 48px); }
@@ -234,7 +229,6 @@ button { font: inherit; color: inherit; }
 @keyframes float { 50% { translate: 0 -14px; } }
 
 /* ---------- Notice tiles ---------- */
-.notice { overflow: hidden; }
 .tiles {
   position: relative;
   display: grid;
@@ -302,9 +296,7 @@ button { font: inherit; color: inherit; }
 .state-stage { position: relative; display: grid; place-items: center; }
 .state-stage .device { --size: min(440px, 80vw, 72svh); }
 .state-copy h3 { font-size: clamp(44px, 5vw, 72px); line-height: 1; letter-spacing: -0.045em; margin: 0 0 18px; font-weight: 700; }
-.state-row[data-state="working"] h3 { color: var(--work); }
-.state-row[data-state="attention"] h3 { color: var(--attn); }
-.state-row[data-state="complete"] h3 { color: var(--done); }
+.state-copy h3 { color: var(--state); }
 .state-copy p { font-size: clamp(19px, 1.6vw, 22px); color: var(--soft); max-width: 460px; margin: 0; }
 .events { position: absolute; left: 0; bottom: 4%; display: grid; gap: 10px; z-index: 3; }
 .event {
@@ -322,10 +314,7 @@ button { font: inherit; color: inherit; }
 .state-row.in-view .event:nth-child(2) { animation-delay: 0.6s; }
 .event .badge { width: 34px; height: 34px; }
 .event b { display: block; font-weight: 600; }
-.event span { color: var(--muted); font-size: 13px; }
-.event[data-kind="attention"] span { color: var(--attn); }
-.event[data-kind="complete"] span { color: var(--done); }
-.event[data-kind="working"] span { color: var(--work); }
+.event span { color: var(--state); font-size: 13px; }
 @keyframes pop { from { opacity: 0; transform: translateY(12px) scale(0.96); } to { opacity: 1; transform: none; } }
 @media (max-width: 900px) {
   .state-row { grid-template-columns: 1fr; text-align: center; gap: 24px; }
@@ -335,9 +324,7 @@ button { font: inherit; color: inherit; }
 }
 
 /* ---------- Agents ---------- */
-.agents { overflow: hidden; }
-.orbit-stage { position: relative; display: grid; place-items: center; margin: 32px auto 32px; width: min(760px, 100%); aspect-ratio: 1.25; }
-.orbit-stage { isolation: isolate; }
+.orbit-stage { position: relative; isolation: isolate; display: grid; place-items: center; margin: 32px auto; width: min(760px, 100%); aspect-ratio: 1.25; }
 .orbit-stage .device { z-index: 2; }
 .orbit { position: absolute; inset: 0; }
 .orbit::before { content: ""; position: absolute; inset: 6% 2%; border-radius: 50%; border: 1px dashed rgba(255, 255, 255, 0.1); }
@@ -381,7 +368,6 @@ button { font: inherit; color: inherit; }
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line);
-  position: relative;
   max-width: 100%;
   overflow-x: auto;
 }
@@ -392,7 +378,7 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
   transition: background 0.35s var(--ease), color 0.35s;
 }
-.segmented button[aria-selected="true"] { background: var(--ink); color: #000; }
+.segmented button[aria-pressed="true"] { background: var(--ink); color: #000; }
 @media (max-width: 480px) { .segmented button { padding: 9px 13px; font-size: 14px; } }
 .char-caption { color: var(--muted); margin: 22px auto 0; min-height: 3em; max-width: 520px; }
 .char-caption a { white-space: nowrap; }
@@ -401,7 +387,7 @@ button { font: inherit; color: inherit; }
 .try { background: radial-gradient(ellipse 70% 50% at 50% 60%, rgba(41, 151, 255, 0.08), transparent 70%); }
 .try-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 56px; align-items: center; width: min(1120px, 100% - 48px); margin: 48px auto 0; }
 .try-stage { display: grid; justify-items: center; gap: 22px; perspective: 1400px; }
-#live-canvas { left: 5.79%; width: 88.41%; object-fit: fill; opacity: 0; transition: opacity 0.6s; image-rendering: auto; }
+#live-canvas { left: 5.79%; width: 88.41%; object-fit: fill; opacity: 0; transition: opacity 0.6s; }
 .live-ready #live-canvas { opacity: 1; }
 .live-ready.live-dozing #live-canvas { opacity: 0.35; }
 .live-fallback { opacity: 0; transition: opacity 0.6s; }
@@ -443,7 +429,7 @@ button { font: inherit; color: inherit; }
 @media (max-width: 900px) { .try-grid { grid-template-columns: 1fr; gap: 36px; } }
 
 /* ---------- Desktop ---------- */
-.window-stage { perspective: 1600px; margin: 48px auto 48px; width: min(1100px, 100% - 48px); }
+.window-stage { perspective: 1600px; margin: 48px auto; width: min(1100px, 100% - 48px); }
 .window {
   border-radius: 16px;
   overflow: hidden;
@@ -471,7 +457,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------- How it works ---------- */
 .flow { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 48px; }
-.flow-line { position: absolute; left: 16%; right: 16%; top: 18px; width: 68%; height: 40px; overflow: visible; pointer-events: none; }
+.flow-line { position: absolute; left: 16%; top: 18px; width: 68%; height: 40px; overflow: visible; pointer-events: none; }
 .flow-line path { fill: none; stroke: rgba(255, 255, 255, 0.14); stroke-width: 2; stroke-dasharray: 2 8; vector-effect: non-scaling-stroke; }
 .flow-track { position: absolute; left: 16%; right: 16%; top: 38px; height: 0; pointer-events: none; }
 /* Each dot is a track-wide box, so translateX(100%) carries its ::before across the line. */

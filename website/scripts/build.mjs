@@ -53,6 +53,7 @@ for (const id of CHARACTERS) {
   fs.copyFileSync(file, path.join(engineDir, `${id}.acpk`));
   packs.push({ id, bytes: fs.statSync(file).size });
 }
+if (packsFrom && packsFrom !== local) fs.rmSync(packsFrom, { recursive: true, force: true });
 fs.writeFileSync(path.join(engineDir, "packs.json"), JSON.stringify({ packs }, null, 2) + "\n");
 fs.writeFileSync(path.join(out, ".nojekyll"), "");
 
@@ -69,6 +70,7 @@ function downloadPacks() {
     return temp;
   } catch (error) {
     console.warn(`warning: Could not download the character packs: ${error.message}`);
+    fs.rmSync(temp, { recursive: true, force: true });
     return null;
   }
 }
