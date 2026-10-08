@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Agent Buddy · A desk buddy for your AI coding agents</title>
+  <meta name="description" content="Agent Buddy is an animated desk companion that shows what your AI coding agents are doing. Working, needs attention, complete: see it at a glance, on a small round device or on your desktop.">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Agent Buddy">
+  <meta property="og:description" content="A desk buddy for your AI coding agents. Local. Private. Yours.">
+  <meta property="og:url" content="https://danwahlin.github.io/agent-buddy/">
+  <meta property="og:image" content="https://danwahlin.github.io/agent-buddy/assets/img/og-image.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preload" href="assets/img/case.webp" as="image">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="#top" aria-label="Agent Buddy home">
+        <img src="assets/img/logo.webp" alt="" width="28" height="28">
+        <span>Agent Buddy</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#states">Overview</a>
+        <a href="#agents">Agents</a>
+        <a href="#characters">Characters</a>
+        <a href="#try">Try it</a>
+        <a href="#desktop">Desktop</a>
+        <a href="#how">How it works</a>
+      </nav>
+      <a class="btn btn-small" href="#start">Get started</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" id="top">
+      <div class="hero-pin">
+        <div class="hero-bg" aria-hidden="true">
+          <div class="hex"></div>
+          <div class="aurora a1"></div>
+          <div class="aurora a2"></div>
+        </div>
+        <div class="hero-copy">
+          <p class="eyebrow reveal-up">Introducing</p>
+          <h1 class="hero-title"><span class="mask"><span>Agent</span></span> <span class="mask"><span class="grad">Buddy</span></span></h1>
+          <p class="hero-sub reveal-up">A desk buddy for your AI coding agents.</p>
+          <div class="hero-cta reveal-up">
+            <a class="btn" href="#start">Get started</a>
+            <a class="link-arrow" href="#film">Watch the film <span aria-hidden="true">›</span></a>
+          </div>
+        </div>
+        <div class="hero-stage">
+          <div class="hero-rise">
+          <div class="device device-xl tilt" data-state="idle" id="hero-device">
+            <div class="device-glow" aria-hidden="true"></div>
+            <div class="device-screen">
+              <video class="autoplay" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="auto" aria-label="The Copilot character on Agent Buddy looks around and blinks"></video>
+            </div>
+            <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+            <div class="device-shine" aria-hidden="true"></div>
+          </div>
+          <div class="device-shadow" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="scroll-cue" aria-hidden="true"><span></span></div>
+      </div>
+    </section>
+
+    <!-- The problem -->
+    <section class="section notice" id="notice">
+      <div class="container narrow center">
+        <h2 class="display lines">
+          <span class="line"><span>Your agent is done.</span></span>
+          <span class="line"><span>Another needs your attention.</span></span>
+          <span class="line"><span class="grad">Did you notice?</span></span>
+        </h2>
+      </div>
+      <div class="tiles" id="tiles" aria-hidden="true"></div>
+      <div class="container narrow center">
+        <p class="lede fade-up">Agents work in the background, in terminals and windows you are not looking at. <strong>Agent Buddy</strong> sits on your desk and tells you what they are doing, at a glance.</p>
+      </div>
+    </section>
+
+    <!-- States: pinned scroll story -->
+    <section class="states" id="states" aria-labelledby="states-title">
+      <div class="states-pin">
+        <div class="states-copy">
+          <p class="eyebrow" id="states-title">It reacts to your agents</p>
+          <ol class="steps">
+            <li class="step is-active" data-state="working">
+              <h3>Working</h3>
+              <p>An agent is busy. Your buddy is busy too: focused eyes, orbiting dots, and drifting binary digits.</p>
+            </li>
+            <li class="step" data-state="attention">
+              <h3>Needs attention</h3>
+              <p>An agent is waiting for your approval. A curious head tilt and an amber question mark tell you now, not ten minutes later.</p>
+            </li>
+            <li class="step" data-state="complete">
+              <h3>Complete</h3>
+              <p>The work is done. A short celebration, then back to idle. Come take a look.</p>
+            </li>
+          </ol>
+          <div class="step-bars" aria-hidden="true"><span></span><span></span><span></span></div>
+        </div>
+        <div class="states-stage">
+          <div class="device device-lg" id="states-device" data-state="working">
+            <div class="device-glow" aria-hidden="true"></div>
+            <div class="device-screen">
+              <video class="layer is-on" data-state="working" src="assets/media/working.mp4" poster="assets/media/working.webp" muted loop playsinline preload="metadata" aria-label="Working state"></video>
+              <video class="layer" data-state="attention" src="assets/media/attention.mp4" poster="assets/media/attention.webp" muted loop playsinline preload="metadata" aria-label="Needs attention state"></video>
+              <video class="layer" data-state="complete" src="assets/media/complete.mp4" poster="assets/media/complete.webp" muted loop playsinline preload="metadata" aria-label="Complete state"></video>
+            </div>
+            <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+            <div class="device-shine" aria-hidden="true"></div>
+          </div>
+          <div class="events" id="events" aria-live="polite"></div>
+          <p class="badge-note">The badge shows which agent.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Agents -->
+    <section class="section agents" id="agents">
+      <div class="container center">
+        <h2 class="display lines">
+          <span class="line"><span>Six agents.</span></span>
+          <span class="line"><span class="grad">One buddy.</span></span>
+        </h2>
+        <p class="lede fade-up">Badges show which agent is working, waiting, or done. Sessions from several agents combine into one state.</p>
+      </div>
+      <div class="orbit-stage">
+        <div class="orbit" id="orbit" aria-hidden="true"></div>
+        <div class="device device-md" data-state="working">
+          <div class="device-glow" aria-hidden="true"></div>
+          <div class="device-screen">
+            <video class="autoplay" src="assets/media/agents.mp4" poster="assets/media/agents.webp" muted loop playsinline preload="metadata" aria-label="Agent badges for several agents appear around the character"></video>
+          </div>
+          <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+          <div class="device-shine" aria-hidden="true"></div>
+        </div>
+      </div>
+      <ul class="agent-list" id="agent-list"></ul>
+    </section>
+
+    <!-- Little touches -->
+    <section class="section touches" id="touches">
+      <div class="container">
+        <h2 class="display lines left">
+          <span class="line"><span>Little</span></span>
+          <span class="line"><span class="grad">touches.</span></span>
+        </h2>
+        <div class="cards">
+          <article class="card rise">
+            <div class="device device-sm">
+              <div class="device-screen"><video class="autoplay" src="assets/media/tap.mp4" poster="assets/media/tap.webp" muted loop playsinline preload="none" aria-label="The character recoils when tapped"></video></div>
+              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+              <span class="tap-ripple" aria-hidden="true"></span>
+            </div>
+            <h3>Tap to say hi</h3>
+            <p>It reacts to your touch with a quick, spring-like recoil.</p>
+          </article>
+          <article class="card rise">
+            <div class="device device-sm">
+              <div class="device-screen"><video class="autoplay" src="assets/media/usage.mp4" poster="assets/media/usage.webp" muted loop playsinline preload="none" aria-label="The usage line at the bottom of the screen"></video></div>
+              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+              <div class="lens" aria-hidden="true"><video class="autoplay" src="assets/media/usage-lens.mp4" muted loop playsinline preload="none"></video></div>
+            </div>
+            <h3>Usage at a glance</h3>
+            <p>GitHub Copilot AI credits or agent tokens, at the bottom of the screen.</p>
+          </article>
+          <article class="card rise">
+            <div class="device device-sm">
+              <div class="device-screen"><video class="autoplay" src="assets/media/sleep.mp4" poster="assets/media/sleep.webp" muted loop playsinline preload="none" aria-label="The character falls asleep"></video></div>
+              <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+            </div>
+            <h3>Naps when idle</h3>
+            <p>Drowsy eyelids and drifting Zs after two quiet minutes.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Characters -->
+    <section class="section characters" id="characters">
+      <div class="container center">
+        <h2 class="display lines">
+          <span class="line"><span>Pick your</span></span>
+          <span class="line"><span class="grad">character.</span></span>
+        </h2>
+      </div>
+      <div class="picker-stage">
+        <div class="device device-lg" id="char-device" data-state="idle">
+          <div class="device-glow" aria-hidden="true"></div>
+          <div class="device-screen">
+            <video class="layer is-on" data-char="copilot" src="assets/media/copilot.mp4" poster="assets/media/copilot.webp" muted loop playsinline preload="metadata" aria-label="The Copilot character"></video>
+            <video class="layer" data-char="claude" src="assets/media/claude.mp4" poster="assets/media/claude.webp" muted loop playsinline preload="metadata" aria-label="The Claude character"></video>
+            <video class="layer" data-char="openclaw" src="assets/media/openclaw.mp4" poster="assets/media/openclaw.webp" muted loop playsinline preload="metadata" aria-label="The OpenClaw character"></video>
+            <div class="layer custom-pack" data-char="custom">
+              <span class="plus" aria-hidden="true">+</span>
+              <span>Your own pack</span>
+            </div>
+          </div>
+          <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+          <div class="device-shine" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="container center">
+        <div class="segmented" role="tablist" aria-label="Characters" id="char-picker">
+          <button role="tab" aria-selected="true" data-char="copilot">Copilot</button>
+          <button role="tab" aria-selected="false" data-char="claude">Claude</button>
+          <button role="tab" aria-selected="false" data-char="openclaw">OpenClaw</button>
+          <button role="tab" aria-selected="false" data-char="custom">Your own</button>
+        </div>
+        <p class="char-caption" id="char-caption">Built in. The device holds one character at a time, and you can switch over USB or Wi-Fi.</p>
+      </div>
+    </section>
+
+    <!-- Live demo -->
+    <section class="section try" id="try">
+      <div class="container center">
+        <p class="eyebrow">Live demo</p>
+        <h2 class="display lines">
+          <span class="line"><span>Try it.</span></span>
+          <span class="line"><span class="grad">Right here.</span></span>
+        </h2>
+        <p class="lede fade-up">This is not a video. It is the device's own animation engine, the firmware's code compiled to WebAssembly, running in your browser with the same character packs the device installs.</p>
+      </div>
+      <div class="try-grid">
+        <div class="try-stage">
+          <div class="device device-lg tilt" id="live-device" data-state="idle">
+            <div class="device-glow" aria-hidden="true"></div>
+            <div class="device-screen">
+              <video class="live-fallback" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="none" aria-label="A recording of the character"></video>
+              <canvas id="live-canvas" width="412" height="466" aria-label="The live character. Select it to tap it."></canvas>
+              <div class="live-loading" id="live-loading" aria-hidden="true">
+                <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle><circle class="arc" cx="50" cy="50" r="44"></circle></svg>
+              </div>
+            </div>
+            <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+            <div class="device-shine" aria-hidden="true"></div>
+            <button class="device-hit" id="live-tap" aria-label="Tap the character"></button>
+          </div>
+          <p class="live-status" id="live-status" role="status">Scroll here to wake the engine.</p>
+        </div>
+        <div class="console" id="console">
+          <fieldset>
+            <legend>State</legend>
+            <div class="chips" id="live-states">
+              <button class="chip is-on" data-mode="idle">Idle</button>
+              <button class="chip" data-mode="working"><i style="--c:var(--work)"></i>Working</button>
+              <button class="chip" data-mode="attention"><i style="--c:var(--attn)"></i>Needs attention</button>
+              <button class="chip" data-mode="complete"><i style="--c:var(--done)"></i>Complete</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Agents <span class="hint">up to four badges</span></legend>
+            <div class="chips" id="live-agents"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Character</legend>
+            <div class="chips" id="live-chars">
+              <button class="chip is-on" data-char="copilot">Copilot</button>
+              <button class="chip" data-char="claude">Claude</button>
+              <button class="chip" data-char="openclaw">OpenClaw</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Usage</legend>
+            <div class="chips" id="live-usage">
+              <button class="chip is-on" data-usage="">Off</button>
+              <button class="chip" data-usage="AIC: 1,248">AIC</button>
+              <button class="chip" data-usage="Tokens: 2.4M">Tokens</button>
+            </div>
+          </fieldset>
+          <p class="console-tip">Tip: tap the screen.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Desktop app -->
+    <section class="section desktop" id="desktop">
+      <div class="container center">
+        <p class="eyebrow">Desktop Agent Buddy</p>
+        <h2 class="display lines">
+          <span class="line"><span>No device?</span></span>
+          <span class="line"><span class="grad">Use your desktop.</span></span>
+        </h2>
+        <p class="lede fade-up">The same character, with the same animation, in a small transparent window. Put it beside your editor, your terminal, or on a second screen. Use it with the device, or on its own.</p>
+      </div>
+      <div class="window-stage">
+        <div class="window" id="desktop-window">
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <video class="autoplay" src="assets/media/desktop-app.mp4" poster="assets/media/desktop-app.webp" muted loop playsinline preload="none" aria-label="The desktop app shows the character in a window beside a code editor"></video>
+        </div>
+      </div>
+      <div class="container">
+        <ul class="facts">
+          <li class="fade-up"><strong>The device's own animation.</strong> Not a copy. The app runs the firmware's code, and a parity test checks every frame pixel for pixel.</li>
+          <li class="fade-up"><strong>Follows the device.</strong> The same state and agent badges, from the same companion service.</li>
+          <li class="fade-up"><strong>Your choice of look.</strong> Show the case around the character, or only the character, straight on your desktop.</li>
+          <li class="fade-up"><strong>Optional sounds.</strong> The device's sound cues, through your computer.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="section settings" id="settings">
+      <div class="container center">
+        <h2 class="display lines">
+          <span class="line"><span>Make it</span></span>
+          <span class="line"><span class="grad">yours.</span></span>
+        </h2>
+        <p class="lede fade-up">A local Settings page for characters, agents, badges, Wi-Fi, and the desktop app. Press the BOOT button on the device to open it.</p>
+        <div class="segmented" role="tablist" aria-label="Settings pages" id="settings-tabs">
+          <button role="tab" aria-selected="true" data-shot="characters">Characters</button>
+          <button role="tab" aria-selected="false" data-shot="agents">Agents</button>
+          <button role="tab" aria-selected="false" data-shot="device">Device</button>
+          <button role="tab" aria-selected="false" data-shot="desktop">Desktop</button>
+        </div>
+      </div>
+      <div class="shots" id="shots">
+        <img class="shot is-on" data-shot="characters" src="assets/img/settings-characters.webp" alt="The Characters tab: Claude, Copilot, and OpenClaw, with Copilot installed" width="1920" height="1080" loading="lazy">
+        <img class="shot" data-shot="agents" src="assets/img/settings-agents.webp" alt="The Agents tab: turn each agent on or off" width="1920" height="1080" loading="lazy">
+        <img class="shot" data-shot="device" src="assets/img/settings-device.webp" alt="The Device tab: firmware, Wi-Fi, and connection" width="1920" height="1080" loading="lazy">
+        <img class="shot" data-shot="desktop" src="assets/img/settings-desktop.webp" alt="The Desktop tab: the desktop app, sounds, and look" width="1920" height="1080" loading="lazy">
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section how" id="how">
+      <div class="container center">
+        <h2 class="display lines">
+          <span class="line"><span>How it works.</span></span>
+        </h2>
+        <p class="lede fade-up">Three small pieces, all on your computer and your desk.</p>
+      </div>
+      <div class="container">
+        <div class="flow" id="flow">
+          <svg class="flow-line" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden="true">
+            <path id="flow-path" d="M 40 20 L 960 20"></path>
+          </svg>
+          <div class="flow-node rise">
+            <div class="flow-icon badges-cluster" aria-hidden="true"></div>
+            <h3>Hooks</h3>
+            <p>Setup adds a hook to each agent you have. It reports events such as “started a tool”, “needs permission”, and “finished”.</p>
+          </div>
+          <div class="flow-node rise">
+            <div class="flow-icon"><img src="assets/icons/broadcast-24.svg" alt=""></div>
+            <h3>Companion service</h3>
+            <p>Runs in the background. It combines the events into one state, sends it to the device, and serves Settings.</p>
+          </div>
+          <div class="flow-node rise">
+            <div class="flow-icon"><img src="assets/icons/cpu-24.svg" alt=""></div>
+            <h3>Your buddy</h3>
+            <p>The device, over USB or local Wi-Fi, or the desktop app. Hooks only notify: your agents keep working if your buddy is off.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Values -->
+    <section class="section values" id="values">
+      <div class="container center">
+        <h2 class="values-words" id="values-words">
+          <span>Local.</span> <span>Private.</span> <span class="grad">Yours.</span>
+        </h2>
+        <ul class="pills">
+          <li class="fade-up"><img src="assets/icons/shield-check-24.svg" alt="">No cloud</li>
+          <li class="fade-up"><img src="assets/icons/person-24.svg" alt="">No account</li>
+          <li class="fade-up"><img src="assets/icons/heart-24.svg" alt="">No subscription</li>
+          <li class="fade-up"><img src="assets/icons/plug-24.svg" alt="">USB or Wi-Fi</li>
+          <li class="fade-up"><img src="assets/icons/mark-github-24.svg" alt="">Source on GitHub</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Film -->
+    <section class="section film" id="film">
+      <div class="container center">
+        <h2 class="display lines"><span class="line"><span>Watch the film.</span></span></h2>
+      </div>
+      <div class="container">
+        <button class="film-frame" id="film-play" aria-label="Play the Agent Buddy film">
+          <img src="assets/img/film-poster.webp" alt="" width="1600" height="900" loading="lazy">
+          <span class="play" aria-hidden="true"><img src="assets/icons/play-24.svg" alt=""></span>
+          <span class="soon" id="film-soon" hidden>Coming soon</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Get started -->
+    <section class="section start" id="start">
+      <div class="container center">
+        <h2 class="display lines">
+          <span class="line"><span>Get started.</span></span>
+        </h2>
+        <p class="lede fade-up">Everything you need is free and on GitHub. Pick the way that fits your desk.</p>
+      </div>
+      <div class="container">
+        <div class="paths">
+          <article class="path rise">
+            <div class="path-head">
+              <img src="assets/icons/cpu-24.svg" alt="">
+              <p class="eyebrow">With a device</p>
+            </div>
+            <h3>Waveshare ESP32-S3-Touch-AMOLED-1.75</h3>
+            <p class="path-sub">The B or C model. A 1.75-inch round AMOLED touch screen.</p>
+            <ol class="howto">
+              <li><span>Download the desktop app and open it.</span></li>
+              <li><span>Connect the device with a USB data cable.</span></li>
+              <li><span>In Settings, open <b>Device</b> and select <b>Install</b>.</span></li>
+              <li><span>Pick a character. Connect Wi-Fi to go untethered.</span></li>
+            </ol>
+            <div class="path-links">
+              <a class="btn btn-ghost" href="https://www.amazon.com/dp/B0FBWDL117" target="_blank" rel="noopener">Amazon</a>
+              <a class="btn btn-ghost" href="https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262" target="_blank" rel="noopener">Waveshare</a>
+            </div>
+          </article>
+          <article class="path rise">
+            <div class="path-head">
+              <img src="assets/icons/device-desktop-24.svg" alt="">
+              <p class="eyebrow">No device</p>
+            </div>
+            <h3>Desktop Agent Buddy</h3>
+            <p class="path-sub">macOS, Windows, and Linux. The app carries the companion service and sets up your agents' hooks on first run.</p>
+            <div class="downloads" id="downloads">
+              <a class="dl" data-os="mac" data-match="macos-universal.dmg" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>macOS</b><span>Universal · .dmg</span></a>
+              <a class="dl" data-os="win" data-match="windows-x64-setup.exe" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>Windows</b><span>x64 · .exe</span></a>
+              <a class="dl" data-os="win-arm" data-match="windows-arm64-setup.exe" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>Windows</b><span>Arm64 · .exe</span></a>
+              <a class="dl" data-os="linux" data-match="linux-x86_64.AppImage" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>Linux</b><span>x86_64 · AppImage</span></a>
+              <a class="dl" data-os="linux-deb" data-match="linux-amd64.deb" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>Linux</b><span>amd64 · .deb</span></a>
+            </div>
+            <p class="fine" id="release-note">The app is not code-signed. See <a href="https://github.com/DanWahlin/agent-buddy#run-the-desktop-app">the first-run step</a> for your OS.</p>
+          </article>
+        </div>
+        <div class="dev rise">
+          <div>
+            <p class="eyebrow">For developers</p>
+            <h3>Run it from source.</h3>
+            <p>Needs Node.js 24.11 or newer. Setup installs the agent hooks, starts the service, and opens Settings.</p>
+          </div>
+          <div class="code">
+            <pre><code id="dev-code">git clone https://github.com/DanWahlin/agent-buddy.git
+cd agent-buddy
+npm run setup</code></pre>
+            <button class="copy" id="copy-code" aria-label="Copy the commands">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Finale -->
+    <section class="finale" id="finale">
+      <div class="device device-md" data-state="complete">
+        <div class="device-glow" aria-hidden="true"></div>
+        <div class="device-screen">
+          <video class="autoplay" src="assets/media/complete.mp4" poster="assets/media/complete.webp" muted loop playsinline preload="none" aria-label="The character celebrates"></video>
+        </div>
+        <img class="device-case" src="assets/img/case.webp" alt="" width="1200" height="1200">
+        <div class="device-shine" aria-hidden="true"></div>
+      </div>
+      <h2 class="finale-title">Never miss a <span class="grad">done</span> again.</h2>
+      <a class="btn" href="https://github.com/DanWahlin/agent-buddy" target="_blank" rel="noopener"><img src="assets/icons/mark-github-24.svg" alt="">Get it on GitHub</a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="assets/img/logo.webp" alt="" width="36" height="36">
+        <div>
+          <p class="footer-title">Agent Buddy</p>
+          <p class="footer-sub">An animated desk companion for your AI coding agents.</p>
+        </div>
+      </div>
+      <nav class="footer-links" aria-label="Project links">
+        <a href="https://github.com/DanWahlin/agent-buddy">GitHub</a>
+        <a href="https://github.com/DanWahlin/agent-buddy/releases/latest">Releases</a>
+        <a href="https://github.com/DanWahlin/agent-buddy#contents">Documentation</a>
+        <a href="https://github.com/DanWahlin/agent-buddy/blob/main/CHANGELOG.md">Changelog</a>
+      </nav>
+    </div>
+    <div class="container credits">
+      <p>Supports GitHub Copilot, Claude Code, Codex CLI, Grok Build, Hermes Agent, and OpenClaw. Product names are trademarks of their owners.</p>
+      <p>Icons: <a href="https://primer.style/octicons/">Octicons</a> (MIT). Label font: <a href="https://www.jetbrains.com/lp/mono/">JetBrains Mono</a> (SIL OFL). Motion: <a href="https://gsap.com/">GSAP</a>.</p>
+    </div>
+  </footer>
+
+  <div class="modal" id="film-modal" role="dialog" aria-modal="true" aria-label="Agent Buddy film" hidden>
+    <button class="modal-close" id="film-close" aria-label="Close">×</button>
+    <div class="modal-body" id="film-body"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/ScrollTrigger.min.js" defer></script>
+  <script src="live.js" defer></script>
+  <script src="main.js" defer></script>
+</body>
+</html>
