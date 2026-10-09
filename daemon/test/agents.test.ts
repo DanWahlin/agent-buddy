@@ -7,8 +7,9 @@ import test from 'node:test';
 import {parseDocument} from 'yaml';
 import {claudeAdapter, claudeConfigPath} from '../src/agents/claude.js';
 import {codexAdapter} from '../src/agents/codex.js';
-import {codexQuote} from '../src/agents/commands.js';
+import {codexQuote, shellHookCommand} from '../src/agents/commands.js';
 import {copilotAdapter, copilotAppVersion, copilotVersions} from '../src/agents/copilot.js';
+import {cursorAdapter, cursorCliPath, cursorHookResponse, cursorHooksPath} from '../src/agents/cursor.js';
 import {grokAdapter, runsClaudeHooks} from '../src/agents/grok.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
 import {openclawAdapter} from '../src/agents/openclaw.js';
@@ -222,6 +223,75 @@ test('Hermes install preserves YAML comments and removes only companion commands
   }
 });
 
+test('Cursor install merges into hooks.json and leaves other hooks where they are', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    assert.equal(cursorAdapter.detect(ctx).installed, false);
+    assert.equal(cursorCliPath(ctx), undefined);
+    const bin = join(root, 'bin');
+    await mkdir(bin, {recursive: true});
+    await writeFile(join(bin, 'agent'), '#!/bin/sh\n');
+    assert.equal(cursorAdapter.detect({...ctx, env: {PATH: bin}}).installed, false);
+    await writeFile(join(bin, 'cursor-agent'), '#!/bin/sh\n');
+    assert.equal(cursorAdapter.detect({...ctx, env: {PATH: bin}}).installed, true);
+    await mkdir(join(home, '.local', 'bin'), {recursive: true});
+    await writeFile(join(home, '.local', 'bin', 'cursor-agent'), '#!/bin/sh\n');
+    assert.equal(cursorCliPath(ctx), join(home, '.local', 'bin', 'cursor-agent'));
+    const local = join(root, 'local');
+    await mkdir(join(local, 'cursor-agent'), {recursive: true});
+    await writeFile(join(local, 'cursor-agent', 'cursor-agent.cmd'), '');
+    assert.equal(cursorCliPath({...ctx, platform: 'win32', env: {PATH: '', LOCALAPPDATA: local}}),
+                 join(local, 'cursor-agent', 'cursor-agent.cmd'));
+
+    const hooksPath = cursorHooksPath(home);
+    await mkdir(dirname(hooksPath), {recursive: true});
+    await writeFile(hooksPath, JSON.stringify({
+      version: 1,
+      hooks: {
+        sessionStart: [{command: './hooks/audit.sh'}],
+        beforeShellExecution: [{command: './hooks/approve.sh', failClosed: true}],
+        workspaceOpen: [{command: './hooks/plugins.sh'}],
+      },
+    }, null, 2));
+    await cursorAdapter.install(ctx);
+    await cursorAdapter.install(ctx);
+    const installed = JSON.parse(await readFile(hooksPath, 'utf8'));
+    assert.equal(installed.version, 1);
+    assert.equal(installed.hooks.sessionStart[0].command, './hooks/audit.sh');
+    assert.equal(installed.hooks.sessionStart.length, 2);
+    assert.match(installed.hooks.sessionStart[1].command, /hook cursor sessionStart$/);
+    assert.equal(installed.hooks.beforeShellExecution[0].failClosed, true);
+    assert.match(installed.hooks.beforeShellExecution[1].command, /hook cursor beforeShellExecution$/);
+    assert.deepEqual(installed.hooks.workspaceOpen, [{command: './hooks/plugins.sh'}]);
+    assert.equal(cursorAdapter.hookStatus(ctx), 'installed');
+
+    const stale = {...ctx, cli: join(root, 'other', 'daemon', 'dist', 'src', 'cli.js')};
+    await touch(stale.cli);
+    installed.hooks.preCompact = [{command: shellHookCommand(stale, 'cursor', 'preCompact')}];
+    await writeFile(hooksPath, JSON.stringify(installed));
+    await cursorAdapter.install(ctx);
+    const replaced = JSON.parse(await readFile(hooksPath, 'utf8'));
+    assert.equal(replaced.hooks.preCompact, undefined);
+    assert.equal(replaced.hooks.sessionStart.filter((hook: {command: string}) => hook.command.includes('hook cursor')).length, 1);
+    assert.ok(replaced.hooks.sessionStart.at(-1).command.includes(ctx.cli));
+
+    await cursorAdapter.uninstall(ctx);
+    const removed = JSON.parse(await readFile(hooksPath, 'utf8'));
+    assert.deepEqual(removed.hooks.sessionStart, [{command: './hooks/audit.sh'}]);
+    assert.deepEqual(removed.hooks.beforeShellExecution, [{command: './hooks/approve.sh', failClosed: true}]);
+    assert.equal(removed.hooks.stop, undefined);
+    assert.equal(cursorAdapter.hookStatus(ctx), 'missing');
+
+    await writeFile(hooksPath, '{"hooks": []}\n');
+    await cursorAdapter.uninstall(ctx);
+    assert.equal(await readFile(hooksPath, 'utf8'), '{"hooks": []}\n');
+    await assert.rejects(cursorAdapter.install(ctx), /left unchanged/);
+    assert.equal(await readFile(hooksPath, 'utf8'), '{"hooks": []}\n');
+  } finally {
+    await cleanup();
+  }
+});
+
 test('Grok tells the user how to stop it from running the Claude hook', async () => {
   const {home, ctx, cleanup} = await fixture();
   try {
@@ -292,6 +362,23 @@ test('normalizers map attention, work, completion, and idle events per agent', (
     .map(hook => hook.event), ['notification']);
   assert.deepEqual(openclawAdapter.normalize('agent_end', {sessionId: 's', success: true}, 100)
     .map(hook => hook.event), ['agentStop']);
+  assert.deepEqual(cursorAdapter.normalize('beforeSubmitPrompt', {conversation_id: 'c'}, 100)
+    .map(hook => [hook.event, hook.payload.sessionId]), [['userPromptSubmitted', 'cursor:c']]);
+  assert.deepEqual(cursorAdapter.normalize('beforeShellExecution', {conversation_id: 'c', command: 'npm test'}, 100)
+    .map(hook => hook.event), ['preToolUse']);
+  assert.deepEqual(cursorAdapter.normalize('subagentStart',
+    {conversation_id: 'child', parent_conversation_id: 'parent', subagent_id: 'sub', subagent_type: 'explore'}, 100)
+    .map(hook => [hook.event, hook.payload.sessionId, hook.payload.parentSessionId, hook.payload.subagentId, hook.payload.agentName]),
+                   [['subagentStart', 'cursor:child', 'cursor:parent', 'cursor:sub', 'explore']]);
+  assert.deepEqual(cursorAdapter.normalize('stop', {conversation_id: 'c', status: 'completed'}, 100)
+    .map(hook => hook.event), ['agentStop']);
+  assert.deepEqual(cursorAdapter.normalize('stop', {conversation_id: 'c', status: 'aborted'}, 100)
+    .map(hook => hook.event), ['sessionEnd']);
+  assert.deepEqual(cursorAdapter.normalize('stop', {conversation_id: 'c', status: 'error'}, 100)
+    .map(hook => hook.event), ['errorOccurred']);
+  assert.equal(cursorHookResponse('beforeSubmitPrompt'), '{"continue":true}\n');
+  assert.equal(cursorHookResponse('beforeShellExecution'), '{"permission":"allow"}\n');
+  assert.equal(cursorHookResponse('stop'), '{}\n');
   assert.deepEqual(copilotAdapter.normalize('errorOccurred', {sessionId: 's', recoverable: true}, 100), []);
   assert.deepEqual(copilotAdapter.normalize('errorOccurred', {sessionId: 's', recoverable: false}, 100)
     .map(hook => hook.event), ['errorOccurred']);
@@ -492,7 +579,7 @@ async function withAgentsConfig<T>(path: string, run: () => Promise<T>): Promise
 test('hook status reads the hooks: stale, partial, or broken hooks are outdated, not installed', async () => {
   const {root, home, ctx, cleanup} = await fixture();
   try {
-    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, hermesAdapter]) {
+    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, cursorAdapter, hermesAdapter]) {
       assert.equal(adapter.hookStatus(ctx), 'missing', adapter.id);
       await adapter.install(ctx);
       assert.notEqual(adapter.hookStatus(ctx), 'missing', adapter.id);
@@ -502,7 +589,7 @@ test('hook status reads the hooks: stale, partial, or broken hooks are outdated,
     // Hooks that run another companion install.
     const other = {...ctx, cli: join(root, 'other', 'daemon', 'dist', 'src', 'cli.js')};
     await touch(other.cli);
-    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, hermesAdapter]) {
+    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, cursorAdapter, hermesAdapter]) {
       await adapter.install(other);
       assert.equal(adapter.hookStatus(ctx), 'outdated', adapter.id);
       await adapter.install(ctx);
@@ -510,7 +597,7 @@ test('hook status reads the hooks: stale, partial, or broken hooks are outdated,
 
     // The Node.js that the hooks run is gone (for example, after a Node.js upgrade).
     await rm(ctx.node);
-    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, hermesAdapter])
+    for (const adapter of [copilotAdapter, grokAdapter, claudeAdapter, codexAdapter, cursorAdapter, hermesAdapter])
       assert.equal(adapter.hookStatus(ctx), 'outdated', adapter.id);
     await touch(ctx.node);
 
@@ -560,8 +647,8 @@ test('hooks of another install show as installed-but-outdated and can be removed
 test('uninstall creates no file and changes no file that has none of our hooks', async () => {
   const {home, ctx, cleanup} = await fixture();
   try {
-    for (const adapter of [claudeAdapter, codexAdapter, hermesAdapter, copilotAdapter, grokAdapter]) await adapter.uninstall(ctx);
-    for (const path of ['.claude/settings.json', '.codex/hooks.json', '.hermes/config.yaml',
+    for (const adapter of [claudeAdapter, codexAdapter, cursorAdapter, hermesAdapter, copilotAdapter, grokAdapter]) await adapter.uninstall(ctx);
+    for (const path of ['.claude/settings.json', '.codex/hooks.json', '.cursor/hooks.json', '.hermes/config.yaml',
                         '.copilot/hooks/agent-companion.json', '.grok/hooks/agent-companion.json'])
       assert.equal(existsSync(join(home, path)), false, path);
 

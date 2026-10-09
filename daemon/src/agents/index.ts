@@ -8,6 +8,7 @@ import {claudeAdapter} from './claude.js';
 import {codexAdapter} from './codex.js';
 import {commandInvocation, findExecutable} from './commands.js';
 import {copilotAdapter} from './copilot.js';
+import {cursorAdapter} from './cursor.js';
 import {grokAdapter, grokHookPath} from './grok.js';
 import {hermesAdapter} from './hermes.js';
 import {openclawAdapter} from './openclaw.js';
@@ -29,6 +30,7 @@ export const adapters: readonly AgentAdapter[] = [
   copilotAdapter,
   claudeAdapter,
   codexAdapter,
+  cursorAdapter,
   grokAdapter,
   hermesAdapter,
   openclawAdapter,
@@ -161,6 +163,12 @@ function hostName(platform: NodeJS.Platform): string {
   return platform === 'win32' ? 'Windows' : platform === 'darwin' ? 'macOS' : 'Linux';
 }
 
+// The command a location's PATH reports. Cursor's launcher is `cursor-agent`; the short
+// `agent` name is other tools too, so the probe only reports `cursor-agent`.
+function agentCommands(id: AgentId): readonly string[] {
+  return id === 'cursor' ? ['cursor-agent'] : [id];
+}
+
 // Where each agent keeps its settings, so an agent that is not on the login shell's PATH (for
 // example, one that nvm loads in .bashrc) is found too.
 const agentHomes: Partial<Record<AgentId, (home: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform) => string>> = {
@@ -178,7 +186,8 @@ export function locationStatus(adapter: AgentAdapter, location: AgentLocation): 
     return last && {...last, running: location.running};
   }
   const home = agentHomes[adapter.id];
-  const detected = location.commands.includes(adapter.id) || Boolean(home && existsSync(home(ctx.home, ctx.env, ctx.platform)));
+  const detected = agentCommands(adapter.id).some(command => location.commands.includes(command))
+    || Boolean(home && existsSync(home(ctx.home, ctx.env, ctx.platform)));
   let status: AgentLocationStatus | undefined;
   if (adapter.id === 'openclaw') {
     status = detected ? {id: location.id, name: location.name, running: true, detected, hookStatus: 'unsupported',

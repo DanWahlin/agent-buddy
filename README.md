@@ -16,7 +16,7 @@
 ESP32 Agent Companion works with the
 [Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C](https://www.amazon.com/dp/B0FBWDL117)
 and turns it into a character that reacts to your AI coding agents. When GitHub Copilot,
-Claude Code, Codex CLI, Grok Build, Hermes Agent, or OpenClaw starts working,
+Claude Code, Codex CLI, Cursor Agent, Grok Build, Hermes Agent, or OpenClaw starts working,
 needs your approval, or finishes, the character shows it, along with a small
 badge for the agent involved.
 
@@ -61,8 +61,8 @@ desktop, with or without the device.
   just finished.
 - **Usage:** GitHub Copilot AI credits (`AIC`) and agent tokens, at the bottom
   of the screen.
-- **Six supported agents:** GitHub Copilot, Claude Code, Codex CLI, Grok Build,
-  Hermes Agent, and OpenClaw.
+- **Seven supported agents:** GitHub Copilot, Claude Code, Codex CLI, Cursor Agent,
+  Grok Build, Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
   ships with Copilot, and you can install OpenClaw, Claude, or your own pack over USB or Wi-Fi.
 - **Settings page:** a local web page for agents, badges, characters, Wi-Fi, the
@@ -81,7 +81,7 @@ desktop, with or without the device.
 
 ```mermaid
 flowchart LR
-    A["AI agents<br/>Copilot, Claude, Codex,<br/>Grok, Hermes, OpenClaw"] -- lifecycle hooks --> D["Companion daemon<br/>(background service)"]
+    A["AI agents<br/>Copilot, Claude, Codex, Cursor,<br/>Grok, Hermes, OpenClaw"] -- lifecycle hooks --> D["Companion daemon<br/>(background service)"]
     B["Settings page<br/>127.0.0.1:4667"] <--> D
     D -- USB serial or local Wi-Fi --> E["ESP32 companion<br/>(firmware + character pack)"]
 ```
@@ -420,6 +420,7 @@ if the daemon or device isn't running, your agents keep working normally.
 | GitHub Copilot (CLI and app) | `~/.copilot/hooks/agent-companion.json` | None |
 | Claude Code | `~/.claude/settings.json` | Accept Claude's folder-trust prompt if it asks |
 | Codex CLI | `~/.codex/hooks.json` | Approve the hooks in Codex with `/hooks` |
+| Cursor Agent | `~/.cursor/hooks.json` | Restart Cursor and Cursor Agent |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | None |
 | Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | Approve each hook the first time Hermes runs it |
 | OpenClaw | A plugin registered with the `openclaw` CLI | Restart the OpenClaw Gateway |
@@ -440,6 +441,14 @@ then skips all of your Claude hooks, not only this one:
 [compat.claude]
 hooks = false
 ```
+
+Cursor Agent and the Cursor IDE share `~/.cursor/hooks.json`. Setup adds its
+commands beside hooks you already have there, and leaves a repository's
+`.cursor/hooks.json` alone. The companion hook allows every permission prompt
+it sees, so it only reports what Cursor is doing. Cursor has no hook for its
+own approval dialog, so that dialog does not become Needs attention. A turn
+that stops with status `error` does. On Windows, Cursor runs the command in
+cmd.exe, so the command is quoted for that shell.
 
 On Windows, Codex and Grok run their hooks in PowerShell, so setup writes the
 Windows hook command in the PowerShell form
@@ -503,8 +512,8 @@ Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 - Active agent or subagent work maps to **Working**.
 - Permission and input prompts, and errors that end a turn, map to
   **Needs attention**, which takes priority over every other session. Prompts
-  from one-shot runs (`copilot -p`, `claude -p`, `codex exec`, `grok -p`, and
-  `hermes -z`) are ignored, because no one can answer them.
+  from one-shot runs (`copilot -p`, `claude -p`, `codex exec`, `grok -p`,
+  `cursor-agent -p`, and `hermes -z`) are ignored, because no one can answer them.
 - A finished turn that used tools maps to **Complete**.
 - Inactive sessions return to **Idle**.
 
