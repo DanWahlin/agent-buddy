@@ -34,6 +34,11 @@ test('one-shot agent runs are headless, interactive sessions are not', () => {
   assert.equal(runs('grok', ['grok', '--prompt-file', 'task.md']), true);
   assert.equal(runs('grok', ['grok', 'fix the bug']), false);
 
+  assert.equal(runs('cursor', ['cursor-agent', '-p', 'fix it']), true);
+  assert.equal(runs('cursor', ['agent', '--print', 'fix it']), true);
+  assert.equal(runs('cursor', ['agent']), false);
+  assert.equal(runs('cursor', ['agent', '-i', '-p', 'looks like a flag']), false);
+
   assert.equal(runs('hermes', ['python3', '/opt/hermes/bin/hermes', '-z', 'hi']), true);
   assert.equal(runs('hermes', ['hermes', 'chat', '-q', 'hi', '--oneshot']), true);
   assert.equal(runs('hermes', ['hermes', 'chat', '-q', 'hi', '-Q']), true);

@@ -8,6 +8,7 @@ import {codexAdapter, hasHookState} from '../src/agents/codex.js';
 import {codexQuote, commandInvocation, environmentValue, findExecutable, isCompanionCli, isCompanionHookCommand,
   powershellHookCommand, samePath, shellHookCommand} from '../src/agents/commands.js';
 import {grokAdapter} from '../src/agents/grok.js';
+import {cursorAdapter} from '../src/agents/cursor.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
 import {hermesHome} from '../src/agents/homes.js';
 import {defaultAgentContext} from '../src/agents/index.js';
@@ -78,7 +79,7 @@ test('reads Codex approvals whose Windows path TOML escaped', () => {
   assert.equal(hasHookState('[hooks.state."C:\\\\Users\\\\Dan\\\\.codex\\\\hooks.json:stop:0:0"]', key), false);
 });
 
-test('installs Windows forms of the Codex, Grok, and Hermes hooks', async () => {
+test('installs Windows forms of the Codex, Cursor, Grok, and Hermes hooks', async () => {
   const root = join(process.cwd(), '.test-output', `windows-${randomUUID()}`);
   const home = join(root, 'home');
   const node = join(root, 'node bin', 'node.exe');
@@ -137,6 +138,16 @@ test('installs Windows forms of the Codex, Grok, and Hermes hooks', async () => 
     const after = parseDocument(await readFile(join(local, 'hermes', 'config.yaml'), 'utf8')).toJS() as
       {hooks?: Record<string, unknown[]>} | null;
     assert.deepEqual(Object.values(after?.hooks ?? {}).flat(), []);
+
+    await cursorAdapter.install(ctx);
+    const cursor = JSON.parse(await readFile(join(home, '.cursor', 'hooks.json'), 'utf8')) as
+      {hooks: Record<string, Array<{command: string}>>};
+    const cursorCommands = Object.values(cursor.hooks).flat().map(entry => entry.command);
+    assert.ok(cursorCommands.length > 0);
+    assert.ok(cursorCommands.every(command => command.startsWith(`"${slash(node)}" "${slash(cli)}" hook cursor `)));
+    assert.equal(cursorAdapter.hookStatus(ctx), 'installed');
+    await cursorAdapter.uninstall(ctx);
+    assert.equal(cursorAdapter.hookStatus(ctx), 'missing');
   } finally {
     await rm(root, {recursive: true, force: true});
   }

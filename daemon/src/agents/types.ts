@@ -1,6 +1,6 @@
 import type {HookEvent, HookPayload} from '../protocol.js';
 
-export const agentIds = ['copilot', 'claude', 'codex', 'grok', 'hermes', 'openclaw'] as const;
+export const agentIds = ['copilot', 'claude', 'codex', 'cursor', 'grok', 'hermes', 'openclaw'] as const;
 export type AgentId = typeof agentIds[number];
 
 export type HookStatus = 'installed' | 'missing' | 'outdated' | 'needs-approval' | 'unsupported';

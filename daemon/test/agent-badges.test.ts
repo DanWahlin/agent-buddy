@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
+import {join} from 'node:path';
 import test from 'node:test';
-import {asciiMask, activePacket, iconPacket, shouldSendBadges} from '../src/agent-badges.js';
+import {asciiMask, activePacket, iconPacket, loadAgentBadgeIcons, shouldSendBadges} from '../src/agent-badges.js';
 import {pngToMask24} from '../src/png-mask.js';
 
 const blankArt = Array.from({length: 24}, (_, y) => y === 12 ? '########'.padEnd(24, '.') : '.'.repeat(24));
@@ -55,3 +56,10 @@ function chunk(type: string, data: Buffer): Buffer {
 function u32(value: number): number[] {
   return [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255];
 }
+
+test('every built-in badge is a 24 by 24 glyph', async () => {
+  const icons = await loadAgentBadgeIcons(join(process.cwd(), '.test-output', 'no-badge-icons'));
+  assert.equal(icons.length, 7);
+  assert.ok(icons.some(icon => icon.id === 'cursor' && icon.color === '#F4F4F5'));
+  for (const icon of icons) assert.equal(icon.mask.length, 72, icon.id);
+});
