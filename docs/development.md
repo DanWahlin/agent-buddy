@@ -457,7 +457,11 @@ The **Install over USB** row on the Device tab installs the release that matches
 the daemon's `VERSION` (`v<VERSION>`, not "latest"), so the firmware and the
 service always match. `POST /api/firmware/usb` starts it, and
 `status.firmware.usb` reports the release, the USB port, the stage, and the
-result.
+result. Its `releaseId` is the ID that the device reports when it runs the
+release firmware. The desktop build writes it to `RELEASE_FIRMWARE_ID` in the
+runtime (`bundle-daemon.mjs --release-firmware <zip>`), so Settings shows
+**Update available** before any download. A checkout has no such file, so
+`releaseId` comes from a release that an earlier install downloaded.
 
 1. `daemon/src/firmware-release.ts` downloads `SHA256SUMS` and
    `agent-buddy-v<VERSION>-firmware.zip` from the GitHub release

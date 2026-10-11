@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {deflateRawSync} from 'node:zlib';
-import {FirmwareReleases, firmwareAssetName, unzip} from '../src/firmware-release.js';
+import {FirmwareReleases, firmwareAssetName, releaseFirmwareId, unzip} from '../src/firmware-release.js';
 import {runUsbFlasher, usbFlashArguments} from '../src/usb-flasher.js';
 
 const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
@@ -110,6 +110,9 @@ test('downloads a release firmware, checks it, and keeps it', async () => {
     assert.equal((await releases.prepare('1.2.3')).id, firmware.id);
     assert.equal((await releases.saved('1.2.3'))?.id, firmware.id);
     assert.equal(requests.length, 2);
+    // The desktop build reads the same ID from the ZIP.
+    assert.equal(releaseFirmwareId(archive, '1.2.3'), firmware.id);
+    assert.throws(() => releaseFirmwareId(archive, '1.2.4'), /not agent-buddy v1.2.4/);
   } finally {
     await rm(directory, {recursive: true, force: true});
   }

@@ -647,8 +647,9 @@ Add-on packs are distributed separately and appear after you add them in Setting
 
 - Select **Install** to switch characters. A progress bar tracks the transfer,
   which takes about a minute, and the device restarts when it's done.
-- Select **Add character pack** to upload your own `.acpk` pack. Packs you've added
-  have a **Remove** button.
+- Select **Add character pack** to upload your own `.acpk` pack. To remove a pack
+  you've added, select the **×** in the upper-right corner of its card. The installed
+  character has no **×** until you install another one.
 
 Or switch from the command line:
 
@@ -662,7 +663,7 @@ npm run character copilot      # Switch back to Copilot
 You can also pass the path to any `.acpk` pack, such as one from a release's
 `agent-buddy-v<version>-characters.zip` asset. The daemon keeps a copy
 with the characters you added, as **Add character pack** does, so the desktop app can
-show it and the settings page lists it with a **Remove** button. The daemon remembers
+show it and the settings page lists it with a **×** remove button. The daemon remembers
 your choice. If an install is interrupted, the device shows **No character installed** until the daemon
 reinstalls your character, which it does as soon as the device reconnects.
 
@@ -754,9 +755,10 @@ service, and installs hooks for any agents you've added. New or updated
 characters show up on the settings page on their own.
 
 **Firmware.** Reflash only when a release's notes mention firmware changes. With
-the desktop app, update the app first. Then connect the device over USB, open the
-**Device** tab in Settings, and click **Install v<version>** in the
-**Install over USB** row. The button installs the firmware release that matches
+the desktop app, update the app first. When the device runs other firmware than
+the app's release, the **Device** tab shows a dot and **Device firmware** shows
+**Update available**. Connect the device over USB and click **Update to v<version>**,
+or click **Install v<version>** in the **Install over USB** row. The button installs the firmware release that matches
 the companion service's version. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
 with the new release's `agent-buddy-v<version>-firmware.zip`. Both
 ways keep the device's Wi-Fi settings but put the Copilot character back.

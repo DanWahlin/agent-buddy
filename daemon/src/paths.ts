@@ -7,18 +7,29 @@ export interface ServiceInfo {
   // The folder the daemon runs from: this repository, or the copy the desktop app installs.
   root: string;
   version: string | null;
+  // The ID of the release firmware for this version. The desktop build writes it
+  // (desktop/apps/desktop/scripts/bundle-daemon.mjs); a checkout has none.
+  releaseFirmwareId: string | null;
 }
 
 // This file runs from daemon/dist/src, so the root is three folders up.
 export function serviceInfo(root = fileURLToPath(new URL('../../../', import.meta.url))): ServiceInfo {
   const trimmed = root.length > 1 ? root.replace(/[\\/]+$/, '') : root;
-  let version: string | null = null;
+  const releaseFirmwareId = readTrimmed(join(trimmed, 'RELEASE_FIRMWARE_ID'));
+  return {
+    root: trimmed,
+    version: readTrimmed(join(trimmed, 'VERSION')),
+    releaseFirmwareId: releaseFirmwareId && /^[0-9a-f]{16}$/.test(releaseFirmwareId) ? releaseFirmwareId : null,
+  };
+}
+
+function readTrimmed(path: string): string | null {
   try {
-    version = readFileSync(join(trimmed, 'VERSION'), 'utf8').trim() || null;
+    return readFileSync(path, 'utf8').trim() || null;
   } catch {
-    // A checkout without VERSION still runs.
+    // A checkout has no VERSION and no RELEASE_FIRMWARE_ID, and it still runs.
+    return null;
   }
-  return {root: trimmed, version};
 }
 
 export function socketPath(): string {

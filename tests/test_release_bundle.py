@@ -116,6 +116,8 @@ class ReleaseBundleTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/build.yml").read_text()
         self.assertIn("tools/package_release.py", workflow)
         self.assertNotIn("--name", workflow)
+        # The desktop app records the release firmware ID, so Settings can show an update.
+        self.assertIn('--release-firmware "$RUNNER_TEMP"/release-bundles/*-firmware.zip', workflow)
 
     def test_custom_name_and_repository(self):
         firmware, characters = package_release.package(self.root, "0.0.0", name="new-name",

@@ -155,6 +155,7 @@ main {
 }
 
 .character {
+  position: relative;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -173,6 +174,13 @@ main {
   color: var(--muted);
 }
 .character img { width: 100%; height: 100%; object-fit: contain; }
+.character .remove-character {
+  position: absolute; top: .5rem; right: .5rem;
+  width: 2rem; height: 2rem; padding: 0; display: grid; place-items: center;
+  background: #000000a6; border-color: #ffffff33; color: #ffffffd9;
+}
+.character .remove-character svg { width: .9rem; height: .9rem; }
+.character .remove-character:hover:not(:disabled) { background: var(--bad); border-color: transparent; color: white; }
 .character .body { padding: .8rem 1rem 1rem; display: grid; gap: .6rem; }
 .character .name { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .5rem; min-width: 0; }
 .character .name strong { font-size: 1.05rem; min-width: 0; overflow-wrap: anywhere; }
@@ -328,6 +336,10 @@ input, select {
 }
 .tabs [role="tab"]:hover { color: var(--text); }
 .tabs [role="tab"][aria-selected="true"] { color: white; background: var(--button); }
+.update-dot {
+  display: inline-block; width: .5rem; height: .5rem; margin-left: .4rem; vertical-align: super;
+  border-radius: 50%; background: var(--warn);
+}
 .panel > :last-child { margin-bottom: 0; }
 
 .hint { color: var(--muted); font-size: .9rem; margin: .4rem 0 1rem; line-height: 1.45; }

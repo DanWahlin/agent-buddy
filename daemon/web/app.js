@@ -383,6 +383,9 @@ function renderStatus() {
   }
 }
 
+const closeIcon = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">'
+  + '<path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
 function renderCharacters() {
   const list = $('characters');
   list.replaceChildren();
@@ -433,17 +436,20 @@ function renderCharacters() {
       install.addEventListener('click', () => installCharacter(entry));
     }
     actions.append(install);
-    if (!entry.builtIn) {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'danger';
-      remove.textContent = 'Remove';
-      remove.disabled = entry.installed || Boolean(status?.installing);
-      remove.addEventListener('click', () => removeCharacter(entry));
-      actions.append(remove);
-    }
     body.append(name, actions);
     item.append(art, body);
+    // The installed character stays until another one replaces it.
+    if (!entry.builtIn && !entry.installed) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove-character';
+      remove.title = `Remove ${entry.name}`;
+      remove.setAttribute('aria-label', `Remove ${entry.name}`);
+      remove.innerHTML = closeIcon;
+      remove.disabled = Boolean(status?.installing);
+      remove.addEventListener('click', () => removeCharacter(entry));
+      item.append(remove);
+    }
     list.append(item);
   }
 }
@@ -934,23 +940,42 @@ function firmwareView(firmware) {
   const last = firmware.last;
   if (last?.ok && firmware.device !== last.id) {
     return Date.now() - last.at < firmwareRestartMs
-      ? {pill: 'Restarting…', kind: 'warning', hint: 'The device is restarting into the new firmware.'}
+      ? {pill: 'Restarting…', kind: 'warning', until: last.at + firmwareRestartMs,
+        hint: 'The device is restarting into the new firmware.'}
       : {pill: 'Went back', kind: 'warning', hint: 'The device went back to its old firmware, because the new '
         + 'firmware did not connect to Wi-Fi. Install the firmware over USB below.'};
   }
+  if (firmware.usb?.installing) return {pill: 'Installing…', kind: 'warning',
+    hint: 'Writing the release firmware over USB. Keep the USB cable connected until it finishes.'};
+  if (usbRestarting(firmware.usb)) return {pill: 'Restarting…', kind: 'warning',
+    until: firmware.usb.last.at + firmwareRestartMs, hint: 'The device is restarting into the new firmware.'};
   if (!status.connected) return {pill: 'Not connected', kind: 'offline', hint: 'Connect the device to see its firmware.'};
-  if (!firmware.device) return {pill: 'Old firmware', kind: 'warning', hint: 'This firmware is older and does not '
-    + 'report its version, so it cannot update over Wi-Fi. A newer release installs over USB below.'};
-  if (!firmware.built) return {pill: 'Installed', kind: 'usb', hint: `Firmware ${firmware.device}.`};
+  if (!firmware.device) return {pill: 'Old firmware', kind: 'warning', update: true, overUsb: Boolean(firmware.usb?.release),
+    hint: 'This firmware is older and does not report its version, so it cannot update over Wi-Fi. '
+      + 'A newer release installs over USB.'};
+  if (!firmware.built) return releaseFirmwareView(firmware);
   if (firmware.built === firmware.device)
     return {pill: 'Current build installed', kind: 'usb',
       hint: `The device runs the source build from this computer (${firmware.device}). No update is needed.`};
-  return {pill: 'Update available', kind: 'warning', hint: firmware.canUpdate
+  return {pill: 'Update available', kind: 'warning', update: true, hint: firmware.canUpdate
     ? `The device runs ${firmware.device}. Update sends the built firmware (${firmware.built}) over Wi-Fi. `
       + 'You press the BOOT button on the device to allow it. '
       + 'If the new firmware does not connect to Wi-Fi, the device goes back to the old firmware.'
     : `The built firmware (${firmware.built}) is different from the device's (${firmware.device}). `
       + 'Updates go over Wi-Fi: connect the device to Wi-Fi first.'};
+}
+
+// The desktop app has no firmware build of its own: it compares the device with the release
+// firmware for its version, which it installs over USB.
+function releaseFirmwareView(firmware) {
+  const {release, releaseId} = firmware.usb ?? {};
+  if (!release || !releaseId) return {pill: 'Installed', kind: 'usb', hint: `Firmware ${firmware.device}.`};
+  if (firmware.device === releaseId) return {pill: `v${release}`, kind: 'usb',
+    hint: `The device runs release v${release}, the firmware for this app. No update is needed.`};
+  return {pill: 'Update available', kind: 'warning', update: true, overUsb: true,
+    hint: `Firmware v${release} is available for this app. The device runs other firmware (ID ${firmware.device}). `
+      + 'Update installs it over USB: connect the device with a USB data cable. '
+      + 'Wi-Fi settings stay; the character goes back to Copilot.'};
 }
 
 function renderFirmware() {
@@ -960,18 +985,21 @@ function renderFirmware() {
   pill.textContent = view.pill;
   pill.className = `pill ${view.kind}`;
   $('firmware-hint').textContent = view.hint;
-  $('firmware-update').disabled = firmwarePending || !firmware?.canUpdate;
+  $('device-update-badge').hidden = !view.update;
   // Wi-Fi updates send firmware you built yourself; the release firmware goes over USB.
-  $('firmware-update').hidden = !firmware?.canUpdate && !firmwarePending;
-  // Show "Went back" on time, even when no new status arrives.
+  const button = $('firmware-update');
+  const overUsb = Boolean(view.overUsb) && !firmware?.canUpdate;
+  button.dataset.usb = String(overUsb);
+  button.textContent = overUsb ? `Update to v${firmware.usb.release}` : 'Update';
+  button.disabled = firmwarePending || (overUsb ? usbFirmwareBlocked(firmware.usb) : !firmware?.canUpdate);
+  button.hidden = !firmware?.canUpdate && !firmwarePending && !overUsb;
+  // Leave "Restarting…" on time, even when no new status arrives; the USB row follows this row.
   clearTimeout(firmwareTimer);
-  if (view.pill === 'Restarting…')
-    firmwareTimer = setTimeout(renderFirmware, firmware.last.at + firmwareRestartMs - Date.now() + 500);
+  if (view.until) firmwareTimer = setTimeout(renderFirmware, view.until - Date.now() + 500);
   renderUsbFirmware();
 }
 
 let usbFirmwarePending = false;
-let usbFirmwareTimer;
 const usbStages = {downloading: 'Downloading', checking: 'Checking', connecting: 'Connecting', writing: 'Writing'};
 
 function usbFirmwareView(usb) {
@@ -988,7 +1016,7 @@ function usbFirmwareView(usb) {
         : 'Writing the firmware over USB. Keep the USB cable connected until it finishes.'};
   }
   const last = usb.last;
-  if (last?.ok && status.firmware?.device !== last.id && Date.now() - last.at < firmwareRestartMs)
+  if (usbRestarting(usb))
     return {pill: 'Restarting…', kind: 'warning', hint: `Release v${last.version} is installed. The device is restarting.`};
   if (!release) return {pill: 'Unknown', kind: 'offline',
     hint: 'The companion service has no VERSION file, so it cannot choose a release.'};
@@ -1030,13 +1058,19 @@ function renderUsbFirmware() {
   const action = !status?.connected || usb?.unanswered ? 'Install'
     : usb?.releaseId && status.firmware?.device === usb.releaseId ? 'Reinstall' : 'Replace with';
   button.textContent = usb?.release ? `${action} v${usb.release}` : 'Install';
-  button.disabled = usbFirmwarePending || !usb?.flasher || !usb.release || Boolean(usb.installing)
-    || Boolean(status?.installing) || Boolean(status?.firmware?.updating);
+  button.disabled = usbFirmwareBlocked(usb);
   if (usb?.installing || usb?.unanswered || (status?.connected && !status.firmware?.device))
     $('usb-firmware-recovery').open = true;
-  clearTimeout(usbFirmwareTimer);
-  if (view.pill === 'Restarting…')
-    usbFirmwareTimer = setTimeout(renderUsbFirmware, usb.last.at + firmwareRestartMs - Date.now() + 500);
+}
+
+function usbRestarting(usb) {
+  const last = usb?.last;
+  return Boolean(last?.ok) && status.firmware?.device !== last.id && Date.now() - last.at < firmwareRestartMs;
+}
+
+function usbFirmwareBlocked(usb) {
+  return usbFirmwarePending || !usb?.flasher || !usb.release || Boolean(usb.installing)
+    || Boolean(status?.installing) || Boolean(status?.firmware?.updating);
 }
 
 async function detectSettingsDevices() {
@@ -1059,9 +1093,9 @@ $('usb-device-detect').addEventListener('click', () => {
   void detectSettingsDevices().catch(error => toast(error.message, 'error'));
 });
 
-$('usb-firmware-install').addEventListener('click', async () => {
+async function installReleaseOverUsb() {
   usbFirmwarePending = true;
-  renderUsbFirmware();
+  renderFirmware();
   try {
     const port = $('usb-firmware-port').value || await detectSettingsDevices();
     if (!port) throw new Error('Select your Waveshare device before installing firmware.');
@@ -1075,11 +1109,17 @@ $('usb-firmware-install').addEventListener('click', async () => {
     toast(error.message, 'error');
   } finally {
     usbFirmwarePending = false;
-    renderUsbFirmware();
+    renderFirmware();
   }
-});
+}
+
+$('usb-firmware-install').addEventListener('click', () => void installReleaseOverUsb());
 
 $('firmware-update').addEventListener('click', async () => {
+  if ($('firmware-update').dataset.usb === 'true') {
+    $('usb-firmware-recovery').open = true;
+    return installReleaseOverUsb();
+  }
   firmwarePending = true;
   renderFirmware();
   try {
