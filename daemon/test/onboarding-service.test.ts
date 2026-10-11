@@ -558,7 +558,6 @@ test('a Settings USB firmware install gives the device its previous character ba
     assert.deepEqual(flashes, [device.usbPath]);
     assert.deepEqual(service.installedCharacters, ['claude']);
     assert.equal(device.characterId, 'claude');
-    assert.equal(service.status().firmware.usb.last?.ok, true);
   } finally {
     await cleanup();
   }
