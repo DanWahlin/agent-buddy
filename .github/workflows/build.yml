@@ -192,7 +192,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-alsa
       - run: npm ci
-      - name: Download the character packs
+      - name: Download the release bundles
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-bundles
@@ -202,7 +202,8 @@ jobs:
         run: |
           mkdir -p build/characters
           unzip -o -j "$RUNNER_TEMP"/release-bundles/*-characters.zip '*.acpk' -d build/characters
-          node desktop/apps/desktop/scripts/bundle-daemon.mjs --target ${{ matrix.target }}
+          node desktop/apps/desktop/scripts/bundle-daemon.mjs --target ${{ matrix.target }} \
+            --release-firmware "$RUNNER_TEMP"/release-bundles/*-firmware.zip
       - name: Build the app
         working-directory: desktop/apps/desktop
         run: |

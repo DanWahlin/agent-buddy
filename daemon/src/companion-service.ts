@@ -98,7 +98,7 @@ export interface FirmwareStatus {
 // Installing the release firmware over USB, which the desktop app writes. It works on any ESP32-S3
 // board, also one that has no Agent Companion firmware yet.
 export interface UsbFirmwareStatus {
-  // The release with this service's version, and its firmware ID once it is downloaded.
+  // The release with this service's version, and its firmware ID: from the desktop build, or once it is downloaded.
   release: string | null;
   releaseId: string | null;
   // The desktop app that ran last can write firmware.
@@ -1072,7 +1072,7 @@ export class CompanionService extends EventEmitter {
     const unanswered = this.#transport.usbUnanswered;
     return {
       release: this.#service.version,
-      releaseId: this.#release?.id ?? null,
+      releaseId: this.#release?.id ?? this.#service.releaseFirmwareId,
       flasher: this.#desktopApp.flasher() !== null,
       port: this.#transport.transport === 'usb' ? this.#transport.address : unanswered?.path ?? null,
       unanswered: unanswered !== null,

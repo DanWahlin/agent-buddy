@@ -85,9 +85,7 @@ export class FirmwareReleases {
     if (!expected) throw new Error(`Release v${version} has no SHA256 for ${asset}.`);
     const zip = await this.#download(`v${version}/${asset}`, maxZipBytes, progress);
     if (sha256(zip) !== expected) throw new Error(`SHA256 mismatch: ${asset}.`);
-    const files = unzip(zip, new Set([...bundleNames, 'SHA256SUMS']));
-    checkInnerSums(files);
-    validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version);
+    const files = unpackBundle(zip, version);
 
     const staging = `${dir}.partial-${process.pid}`;
     await rm(staging, {recursive: true, force: true});
@@ -125,6 +123,19 @@ export class FirmwareReleases {
     }
     return Buffer.concat(chunks);
   }
+}
+
+// The ID the device reports when it runs the firmware in this release ZIP. The desktop build
+// records it, so the service knows the release firmware without a download.
+export function releaseFirmwareId(zip: Buffer, version: string): string {
+  return parseFirmwareImage(unpackBundle(zip, version).get('bin/application.bin')!).id;
+}
+
+function unpackBundle(zip: Buffer, version: string): Map<string, Buffer> {
+  const files = unzip(zip, new Set([...bundleNames, 'SHA256SUMS']));
+  checkInnerSums(files);
+  validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version);
+  return files;
 }
 
 async function readBundle(dir: string, version: string): Promise<ReleaseFirmware> {

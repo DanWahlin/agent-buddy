@@ -59,7 +59,9 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   its production dependencies, the packs from `build/characters`, `VERSION`, and
   the official Node.js binary, checked against its `SHASUMS256.txt`. Node.js is
   about 128 MB for each architecture, and the universal macOS build has two.
-  In CI, the packs come from the release's `-characters.zip`.
+  In CI, the packs come from the release's `-characters.zip`, and
+  `--release-firmware <firmware.zip>` records the release firmware ID in
+  `RELEASE_FIRMWARE_ID`, so Settings can show that a firmware update is available.
 - [`tauri.daemon.conf.json`](apps/desktop/src-tauri/tauri.daemon.conf.json)
   adds that folder to the app's resources. A build without it (`npm start`,
   `cargo run`) carries no service and never installs one.

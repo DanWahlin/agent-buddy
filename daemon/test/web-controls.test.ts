@@ -8,7 +8,7 @@ test('web alignment controls initialize once and send confirmed settings', async
   function makeElement() {
     return {
       value: '0', disabled: false, checked: false, hidden: false, open: false, className: '',
-      style: {setProperty() {}}, dataset: {},
+      style: {setProperty() {}}, dataset: {} as Record<string, string>,
       children: [] as string[],
       get textContent() { return this.text; },
       set textContent(value: string) { this.text = value; if (value === '') this.children = []; },
@@ -22,6 +22,7 @@ test('web alignment controls initialize once and send confirmed settings', async
         this.listeners.set(type, (this.listeners.get(type) ?? 0) + 1);
       },
       querySelector() { return {disabled: false, setAttribute() {}}; },
+      firstElementChild: {style: {}},
       setAttribute() {}, removeAttribute() {},
     };
   }
@@ -92,6 +93,23 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext('status.connected = false; status.firmware.usb.unanswered = true; renderUsbFirmware()', context);
   assert.equal(element('usb-firmware-recovery').open, true);
   assert.equal(element('usb-firmware-install').textContent, 'Install v0.9.0');
+  // The desktop app has no build of its own; it offers its release firmware as an update over USB.
+  runInContext('status.connected = true; status.firmware = {device: "aaaaaaaaaaaaaaaa", built: null, canUpdate: false, '
+    + 'usb: {release: "0.9.0", releaseId: "bbbbbbbbbbbbbbbb", flasher: true, port: "/dev/test"}}; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Update available');
+  assert.equal(element('device-update-badge').hidden, false);
+  assert.equal(element('firmware-update').hidden, false);
+  assert.equal(element('firmware-update').disabled, false);
+  assert.equal(element('firmware-update').textContent, 'Update to v0.9.0');
+  assert.equal(element('firmware-update').dataset.usb, 'true');
+  runInContext('status.firmware.usb.installing = {stage: "writing", percent: 5}; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Installing…');
+  assert.equal(element('firmware-update').hidden, true);
+  runInContext('status.firmware.usb.installing = null; status.firmware.device = "bbbbbbbbbbbbbbbb"; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'v0.9.0');
+  assert.equal(element('device-update-badge').hidden, true);
+  assert.equal(element('firmware-update').hidden, true);
+  runInContext('status.connected = false', context);
 
   const versions = () => element('fact-versions').children;
   runInContext('status.service = {version: "0.10.0"}; status.desktop = {app: {state: "running", version: "0.10.0"}}; '

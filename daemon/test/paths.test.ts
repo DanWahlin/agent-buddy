@@ -67,12 +67,15 @@ test('uses a per-user named pipe and LOCALAPPDATA on Windows', () => {
                'C:\\Users\\Dan\\AppData\\Local\\ESP32 Agent Companion');
 });
 
-test('reports the folder the daemon runs from and its version', () => {
+test('reports the folder the daemon runs from, its version and its release firmware', () => {
   const root = mkdtempSync(join(tmpdir(), 'companion-root-'));
   try {
-    assert.deepEqual(serviceInfo(`${root}/`), {root, version: null});
+    assert.deepEqual(serviceInfo(`${root}/`), {root, version: null, releaseFirmwareId: null});
     writeFileSync(join(root, 'VERSION'), '0.8.0\n');
-    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0'});
+    writeFileSync(join(root, 'RELEASE_FIRMWARE_ID'), 'not an id\n');
+    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0', releaseFirmwareId: null});
+    writeFileSync(join(root, 'RELEASE_FIRMWARE_ID'), '0123456789abcdef\n');
+    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0', releaseFirmwareId: '0123456789abcdef'});
   } finally {
     rmSync(root, {recursive: true, force: true});
   }
