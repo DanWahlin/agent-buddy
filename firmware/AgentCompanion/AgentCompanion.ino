@@ -28,13 +28,12 @@
 #include "src/OrientedDisplay.h"
 #include "src/OrientationSensor.h"
 #include "src/OrientationSettings.h"
+#include "src/boards/BoardDrivers.h"
 
 using namespace copilot;
 
 namespace {
-Arduino_ESP32QSPI displayBus(kDisplayCsPin, 38, 4, 5, 6, 7, true);
-Arduino_CO5300 panel(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
-OrientedDisplay display(&panel, &displayBus);
+OrientedDisplay display(&board::displayPanel(), &board::displayBus());
 QueueHandle_t freeFrames, readyFrames, commands;
 TaskHandle_t renderTask;
 SpriteRenderer* patchRenderer = nullptr;
@@ -1134,7 +1133,8 @@ void setup() {
   if (!serialBufferReady || !receiveBufferReady) fatal("USB buffer allocation failed.");
   Serial.setDebugOutput(true);
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
-  logMessage("\nAgent Companion character shell / Waveshare AMOLED 1.75-B\nPSRAM: %u bytes\n",
+  logMessage("\nAgent Companion character shell / %s (%s)\nPanel: %s, touch: %s\nPSRAM: %u bytes\n",
+             board::kName, board::kId, board::kDisplayPanelName, board::kTouchControllerName,
              ESP.getPsramSize());
   if (!display.begin(kSpiFrequency)) fatal(display.error());
   display.setBrightness(0);

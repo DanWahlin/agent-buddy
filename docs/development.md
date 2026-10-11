@@ -71,15 +71,63 @@ an oversized partition is rejected on the host rather than discovered on the
 device.
 
 The scripts use the existing Arduino IDE CLI, its configuration, and Waveshare's
-bundled GFX library. Overrides: `ARDUINO_CLI`, `ARDUINO_CONFIG`, `WAVESHARE_DIR`.
+bundled GFX library. Overrides: `ARDUINO_CLI`, `ARDUINO_CONFIG`, `WAVESHARE_DIR`,
+and `BOARD` (see [Boards](#boards)).
 Do not substitute a generic display library: the vendor version includes the
 CO5300 panel driver and QSPI path this board needs.
+
+### Boards
+
+One firmware binary works on one hardware model. The source code is shared, and
+a small board layer holds the parts that change from one model to a different model:
+
+| File | Contents |
+| --- | --- |
+| `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` and CI build. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | The display bus, display panel, and touch driver objects. Only the device build includes it. |
+| `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
+
+`tools/boards.py` reads `boards.json` for the scripts and CI. `tools/arduino.sh`
+passes the board define with `--build-property build.defines=-D<define>`.
+`build/firmware-bundle.json` records the board, so an upload for a different
+`BOARD` fails until you build again. The release manifest, `INSTALL.txt`,
+`flash.py`, the boot log, and the Wi-Fi status (`"board"`) also show the board ID.
+
+```bash
+python3 tools/boards.py list
+BOARD=waveshare-amoled-175 bash tools/arduino.sh build
+```
+
+Supported now: `waveshare-amoled-175` (Waveshare ESP32-S3-Touch-AMOLED-1.75-B and -C).
+
+#### Add a board
+
+1. Copy `src/boards/waveshare_amoled_175/` to a new folder. Change the pins,
+   addresses, and driver objects to agree with the vendor schematic.
+2. Add a branch for the new define to both selector headers.
+3. Add the board to `firmware/boards.json` with its FQBN and pinned vendor revision.
+4. Run `python3 -m unittest tests.test_boards`, then `BOARD=<id> bash tools/arduino.sh build`.
+
+Known limits for boards that are not similar to the current board:
+
+- The display path (`OrientedDisplay`, `DisplayDma`) is a QSPI backend for
+  CO5300-type panels. A parallel RGB panel (for example ST7701) needs a
+  different display backend.
+- Character packs and the renderer use 466 x 466 art. A different panel size
+  needs scaling in the renderer or different art.
+- Audio uses the ES8311 codec, and the IMU axis map is in `ScreenOrientation.h`.
+  A board without the codec or with a different IMU orientation needs changes there.
+- The partition layout and `flash.py` expect an ESP32-S3 with 16 MB flash.
+- Each board other than the default gets its own release ZIP
+  (`...-v<version>-<board>-firmware.zip`). The daemon's firmware update
+  downloads only the default board's ZIP.
 
 ### Reproduce the toolchain
 
 - Arduino ESP32 core **3.3.10**
-- Waveshare repository `https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75`
-- Vendor revision used: `e4344e70c2fa78a13e8a06566507f1ba8af6672a`
+- Vendor repository and revision: `vendor` in `firmware/boards.json`
+  (Waveshare `ESP32-S3-Touch-AMOLED-1.75` for the default board)
 - Libraries: `examples/arduino/libraries/GFX_Library_for_Arduino`, version 1.6.4,
   and `examples/arduino/libraries/SensorLib`, version 0.3.1 (CST9217 touch)
 
@@ -92,8 +140,7 @@ arduino-cli config add board_manager.additional_urls \
   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
 arduino-cli core update-index
 arduino-cli core install esp32:esp32@3.3.10
-git clone https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75.git .deps/waveshare
-git -C .deps/waveshare checkout e4344e70c2fa78a13e8a06566507f1ba8af6672a
+python3 tools/boards.py fetch-vendor .deps/waveshare
 ```
 
 Set the three path overrides before running the build script. `ARDUINO_CONFIG`

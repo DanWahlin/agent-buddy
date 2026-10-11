@@ -89,8 +89,8 @@ bool DisplayDma::submit(size_t bytes) {
   std::memset(&transaction, 0, sizeof(transaction));
   transaction.base.flags = SPI_TRANS_MODE_QIO;
   if (first_) {
-    transaction.base.cmd = 0x32;
-    transaction.base.addr = 0x003C00;
+    transaction.base.cmd = kDisplayQspiWriteCommand;
+    transaction.base.addr = kDisplayQspiPixelAddress;
   } else {
     transaction.base.flags |= SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR
                               | SPI_TRANS_VARIABLE_DUMMY;

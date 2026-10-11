@@ -142,19 +142,21 @@ void NetworkManager::configureRoutes() {
     }
     char ssid[48];
     encodedSsid(ssid, sizeof(ssid));
-    char response[480];
+    char response[544];
     char orientation[8] = "null";
     if (orientation_) snprintf(orientation, sizeof(orientation), "%d", orientation_->offset());
     snprintf(response, sizeof(response),
              "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
              "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
-             "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s}",
+             "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s,"
+             "\"board\":\"%s\"}",
              deviceId_, hostname_, connected_ ? "true" : "false",
              static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
              upload_ ? upload_->installedId() : "none", ssid, firmwareId_,
              static_cast<unsigned>(buttonPresses_),
              firmwareApproval() == FirmwareApproval::Waiting ? "waiting"
-                 : firmwareApproval() == FirmwareApproval::Allowed ? "allowed" : "none", orientation);
+                 : firmwareApproval() == FirmwareApproval::Allowed ? "allowed" : "none", orientation,
+             board::kId);
     server.send(200, "application/json", response);
   });
   server.onNotFound([] {

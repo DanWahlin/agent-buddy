@@ -63,7 +63,8 @@ function release(version: string, change: (manifest: Record<string, unknown>) =>
     ['bin/character-copilot.acpk', 0x210000, 0x100000, Buffer.alloc(300, 5)],
   ];
   const manifest: Record<string, unknown> = {
-    schema_version: 1, name: 'esp32-agent-companion', version, chip: 'esp32s3', flash_size: '16MB',
+    schema_version: 1, name: 'esp32-agent-companion', version, board: 'waveshare-amoled-175', chip: 'esp32s3',
+    flash_size: '16MB',
     asset_sha256: sha256(images[4]![3]),
     images: images.map(([file, offset, max_size, data]) =>
       ({file, offset, max_size, size: data.length, sha256: sha256(data)})),
@@ -128,6 +129,9 @@ test('refuses a damaged or unsafe release firmware', async () => {
       (manifest.images as Record<string, unknown>[])[3]!.offset = 0x20000;
     });
     await assert.rejects(attempt({'v1.2.3/SHA256SUMS': unsafe.sums, [asset]: unsafe.archive}), /Unsafe offset/);
+    const otherBoard = release('1.2.3', manifest => { manifest.board = 'other-board'; });
+    await assert.rejects(attempt({'v1.2.3/SHA256SUMS': otherBoard.sums, [asset]: otherBoard.archive}),
+                         /for board other-board, not waveshare-amoled-175/);
     const other = release('1.2.4');
     await assert.rejects(attempt({'v1.2.3/SHA256SUMS': `${createHash('sha256').update(other.archive).digest('hex')}  ${
       firmwareAssetName('1.2.3')}\n`, [asset]: other.archive}), /not esp32-agent-companion v1.2.3/);

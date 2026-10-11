@@ -7,7 +7,7 @@ namespace copilot {
 bool OrientationSensor::begin() {
   error_ = nullptr;
   available_ = false;
-  if (!sensor_.begin(Wire, QMI8658_L_SLAVE_ADDRESS)) {
+  if (!sensor_.begin(Wire, kImuI2cAddress)) {
     error_ = "QMI8658 orientation sensor initialization failed.";
     return false;
   }

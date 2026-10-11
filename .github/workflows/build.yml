@@ -18,7 +18,6 @@ env:
   # arduino/setup-arduino-cli's latest release (v2.0.0) still declares node20; run it on Node 24.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ARDUINO_CORE: esp32:esp32@3.3.10
-  WAVESHARE_REVISION: e4344e70c2fa78a13e8a06566507f1ba8af6672a
 
 jobs:
   build:
@@ -92,9 +91,8 @@ jobs:
           arduino-cli --config-file "$config" config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
           arduino-cli --config-file "$config" core update-index
           arduino-cli --config-file "$config" core install "$ARDUINO_CORE"
-          git clone --filter=blob:none --no-checkout https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75.git .deps/waveshare
-          git -C .deps/waveshare sparse-checkout set examples/arduino/libraries/GFX_Library_for_Arduino examples/arduino/libraries/SensorLib
-          git -C .deps/waveshare checkout --detach "$WAVESHARE_REVISION"
+          # Each board in firmware/boards.json pins its vendor libraries to one revision.
+          python3 tools/boards.py fetch-vendor .deps/waveshare
       - name: Build matched firmware
         run: |
           ARDUINO_CLI="$(command -v arduino-cli)" \
