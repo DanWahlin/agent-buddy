@@ -4,9 +4,12 @@ import argparse
 import csv
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+import boards  # noqa: E402
 INPUTS = Path("build/firmware-inputs.json")
 BUNDLE = Path("build/firmware-bundle.json")
 DEFAULT_PACK = Path("build/characters/copilot.acpk")
@@ -54,15 +57,21 @@ def layout(root):
     return app, assets
 
 
-def fingerprint(root):
+def selected_board():
+    return boards.board(boards.load())[0]
+
+
+def fingerprint(root, board=None):
     app, assets = layout(root)
     pack = root / DEFAULT_PACK
     if not 0 < pack.stat().st_size <= assets["size"]:
         raise ValueError("Default character pack is empty or exceeds the assets partition.")
     paths = sorted(path for path in (root / "firmware/AgentCompanion").rglob("*")
                    if path.is_file() and path.suffix in (".ino", ".h", ".cpp", ".S", ".csv"))
+    if (root / "firmware/boards.json").is_file():
+        paths.append(root / "firmware/boards.json")
     paths.append(pack)
-    return dict(app=app, assets=assets, files={path.relative_to(root).as_posix(): digest(path) for path in paths})
+    return dict(board=board or selected_board(), app=app, assets=assets, files={path.relative_to(root).as_posix(): digest(path) for path in paths})
 
 
 def write_json(path, value):
@@ -85,7 +94,10 @@ def record(root):
 
 def check(root):
     bundle = json.loads((root / BUNDLE).read_text())
-    if bundle["inputs"] != fingerprint(root):
+    built, wanted = bundle["inputs"].get("board"), selected_board()
+    if built != wanted:
+        raise ValueError(f"Firmware was built for board {built}, not {wanted}. Run BOARD={wanted} tools/arduino.sh build first.")
+    if bundle["inputs"] != fingerprint(root, wanted):
         raise ValueError("Firmware or the default character changed since compilation. Run tools/arduino.sh build first.")
     if bundle["binaries"] != {path.as_posix(): digest(root / path) for path in BINARIES}:
         raise ValueError("Compiled firmware artifacts changed. Build again before uploading.")

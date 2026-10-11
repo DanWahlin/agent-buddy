@@ -53,6 +53,10 @@ def validate_manifest(manifest, files):
         raise ValueError("Unsupported manifest schema.")
     if manifest.get("chip") != "esp32s3" or manifest.get("flash_size") != "16MB":
         raise ValueError("Unsupported chip or flash size; expected ESP32-S3 with 16MB.")
+    # Releases before the board layer have no board field; they are for waveshare-amoled-175.
+    board = manifest.get("board", "waveshare-amoled-175")
+    if not isinstance(board, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", board, flags=re.ASCII):
+        raise ValueError("Invalid board ID in the manifest.")
     images = manifest.get("images")
     if not isinstance(images, list) or len(images) != len(IMAGE_NAMES):
         raise ValueError("Manifest must contain exactly the five supported images.")
@@ -182,6 +186,7 @@ def main(argv=None, root=None):
             return 0
         manifest = verify_bundle(root)
         print(f"Verified {manifest['name']} v{manifest['version']} and all five images.")
+        print(f"Board: {manifest.get('board', 'waveshare-amoled-175')}. Flash it only to that board.")
         if args.verify_only:
             return 0
         if not args.port:

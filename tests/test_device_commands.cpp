@@ -36,7 +36,7 @@ int main() {
   assert(send(parser, "^--5\n") == DeviceCommand::ConfigureOrientation);
   assert(!parseOrientationOffset(parser.payload(), offset));
   assert(send(parser, "@TXkgV2ktRmk=:cGFzc3dvcmQ=\n") == DeviceCommand::ConfigureWifi);
-  assert(std::strcmp(parser.wifiPayload(), "TXkgV2ktRmk=:cGFzc3dvcmQ=") == 0);
+  assert(std::strcmp(parser.payload(), "TXkgV2ktRmk=:cGFzc3dvcmQ=") == 0);
   assert(send(parser, "@b3Blbg==:\n") == DeviceCommand::ConfigureWifi);
   const std::string mask(96, 'A');
   assert(send(parser, "%copilot:6F7CFF:" + mask + "\n") == DeviceCommand::DefineAgentIcon);

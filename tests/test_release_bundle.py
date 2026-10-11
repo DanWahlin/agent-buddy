@@ -95,6 +95,8 @@ class ReleaseBundleTests(unittest.TestCase):
         self.assertEqual((firmware.parent / "SHA256SUMS").read_bytes(),
                          package_release.checksum_file(dict(zip((firmware.name, characters.name), original))))
         manifest = flash_release.verify_bundle(extracted)
+        self.assertEqual(manifest["board"], "waveshare-amoled-175")
+        self.assertIn("(waveshare-amoled-175)", (extracted / "INSTALL.txt").read_text())
         self.assertEqual([image["offset"] for image in manifest["images"]],
                          [0, 0x8000, 0xe000, 0x10000, 0x410000])
         self.assertEqual(manifest["images"][2]["size"], 8192)
@@ -153,6 +155,8 @@ class ReleaseBundleTests(unittest.TestCase):
         original = (extracted / "manifest.json").read_bytes()
         changes = [
             lambda m: m.update(chip="esp32"),
+            lambda m: m.update(board="../other"),
+            lambda m: m.update(board=7),
             lambda m: m.update(schema_version=True),
             lambda m: m.update(flash_size="8MB"),
             lambda m: m.update(version="01.2.3"),

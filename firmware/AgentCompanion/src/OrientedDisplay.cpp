@@ -6,13 +6,13 @@
 #include <esp_memory_utils.h>
 
 namespace copilot {
-OrientedDisplay::OrientedDisplay(Arduino_CO5300* panel, Arduino_DataBus* bus)
+OrientedDisplay::OrientedDisplay(board::DisplayPanel* panel, Arduino_DataBus* bus)
     : Arduino_Canvas(kDisplaySize, kDisplaySize, nullptr), panel_(panel), bus_(bus) {}
 
 bool OrientedDisplay::begin(int32_t speed) {
   error_ = nullptr;
   if (!panel_->begin(speed)) {
-    error_ = "CO5300 initialization failed.";
+    error_ = "Display panel initialization failed.";
     return false;
   }
   if (!_framebuffer) {
@@ -39,8 +39,8 @@ bool OrientedDisplay::setTransferBuffer(uint8_t* buffer, size_t bytes) {
   return true;
 }
 
-bool OrientedDisplay::setAngle(float angle) {
-  if (!orientation_.update(angle)) return false;
+bool OrientedDisplay::setAngle(float radians) {
+  if (!orientation_.update(radians)) return false;
   frameMarginsDirty_ = true;
   return true;
 }

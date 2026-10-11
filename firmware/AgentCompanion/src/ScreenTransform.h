@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include "Rgb565.h"
 
 namespace copilot {
 enum class Rgb565Order { Native, Display };
@@ -70,7 +71,7 @@ class ScreenTransform {
   template<bool DisplayOrder>
   static uint16_t encode(uint16_t pixel) {
     if constexpr (DisplayOrder) return pixel;
-    return static_cast<uint16_t>((pixel >> 8) | (pixel << 8));
+    return swapBytes(pixel);
   }
 
   static int64_t ceilDivide(int64_t value, int32_t divisor) {

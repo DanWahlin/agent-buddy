@@ -25,6 +25,9 @@ export interface FirmwareReleaseOptions {
 }
 
 export const releaseRepository = 'DanWahlin/esp32-agent-companion';
+// The board that the release firmware ZIP is built for: the default board in firmware/boards.json.
+// Other boards get their own ZIP, which this updater does not download.
+export const releaseBoard = 'waveshare-amoled-175';
 const imageNames = ['bin/bootloader.bin', 'bin/partitions.bin', 'bin/boot_app0.bin', 'bin/application.bin',
   'bin/character-copilot.acpk'] as const;
 const bundleNames = ['manifest.json', ...imageNames];
@@ -160,6 +163,9 @@ export function validateManifest(manifest: unknown, files: Map<string, Buffer>, 
   if (value.schema_version !== 1) throw new Error('Unsupported manifest schema.');
   if (value.chip !== 'esp32s3' || value.flash_size !== '16MB')
     throw new Error('Unsupported chip or flash size; expected ESP32-S3 with 16MB.');
+  // Bundles from before the board layer have no board field; they are for the release board.
+  if (value.board !== undefined && value.board !== releaseBoard)
+    throw new Error(`The firmware is for board ${String(value.board)}, not ${releaseBoard}.`);
   const images = value.images;
   if (!Array.isArray(images) || images.length !== imageNames.length)
     throw new Error('Manifest must contain exactly the five supported images.');

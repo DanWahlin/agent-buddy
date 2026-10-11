@@ -46,17 +46,21 @@ class AgentBadges {
  public:
   bool setIconPacket(const char* payload);
   bool setActivePacket(const char* payload);
-  void clearActive();
   // Lines split by '|'; an empty packet clears them.
   bool setUsagePacket(const char* payload);
   AgentBadgesSnapshot snapshot() const;
   UsageLines usage() const;
   const char* error() const { return error_; }
   uint8_t activeCount() const { return activeCount_; }
+#if defined(ARDUINO)
+  using Lock = portMUX_TYPE;
+#else
+  struct Lock {};
+#endif
 
  private:
   int findIcon(const char* id) const;
-  void setError(const char* error) { error_ = error; }
+  void fail(const char* message) { error_ = message; }
 
   AgentBadgeIcon icons_[kMaxAgentIcons] = {};
   ActiveAgentBadge active_[kMaxActiveAgentBadges] = {};
@@ -65,7 +69,9 @@ class AgentBadges {
   uint32_t revision_ = 0;
   const char* error_ = nullptr;
 #if defined(ARDUINO)
-  mutable portMUX_TYPE lock_ = portMUX_INITIALIZER_UNLOCKED;
+  mutable Lock lock_ = portMUX_INITIALIZER_UNLOCKED;
+#else
+  mutable Lock lock_;
 #endif
 };
 }

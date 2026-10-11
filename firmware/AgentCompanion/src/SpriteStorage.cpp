@@ -23,13 +23,27 @@ struct Installation {
   bool active = false;
   uint8_t* firstSector = nullptr;
   uint32_t received = 0, total = 0, erasedEnd = 0;
-  PackHeader header;
+  PackHeader header{};
   mbedtls_sha256_context hash;
 } install;
 
 const esp_partition_t* assetsPartition() {
   return esp_partition_find_first(
       ESP_PARTITION_TYPE_DATA, static_cast<esp_partition_subtype_t>(0x40), "assets");
+}
+
+constexpr char kNoInstall[] = "No character installation is in progress.";
+constexpr char kPackTooLong[] = "Character pack is longer than its header declares.";
+constexpr char kEraseFailed[] = "Assets partition erase failed.";
+
+// Without its header sector, a partly written or rejected pack never looks valid.
+void eraseHeader(const esp_partition_t* partition) {
+  esp_partition_erase_range(partition, 0, kSectorBytes);
+}
+
+const char* rejectInstall(const esp_partition_t* partition, const char* reason) {
+  eraseHeader(partition);
+  return reason;
 }
 
 void unmap() {
@@ -80,6 +94,16 @@ const uint8_t* spriteBlock(const SpriteBlock& block) {
       || block.size > pack.header.dataBytes - block.offset)
     return nullptr;
   return pack.data + block.offset;
+}
+
+const char* inflateSpriteBlock(InflateSprite inflate, const SpriteBlock& block, uint16_t* output,
+                               size_t pixels, size_t width, size_t stride,
+                               const SpriteBlockErrors& errors) {
+  const uint8_t* source = spriteBlock(block);
+  if (!source) return errors.outside;
+  if (!inflate(reinterpret_cast<uint8_t*>(output), pixels * sizeof(uint16_t), source, block.size, width, stride))
+    return errors.inflate;
+  return nullptr;
 }
 
 bool loadCharacterPack(const uint8_t* bytes, size_t size) {
@@ -149,7 +173,7 @@ const char* beginCharacterInstall() {
   unmap();
   // Erasing the header first means an interrupted install never looks valid.
   if (esp_partition_erase_range(partition, 0, kEraseBytes) != ESP_OK)
-    return "Assets partition erase failed.";
+    return kEraseFailed;
   install.received = install.total = 0;
   install.erasedEnd = kEraseBytes;
   mbedtls_sha256_init(&install.hash);
@@ -163,11 +187,11 @@ const char* beginCharacterInstall() {
 
 const char* writeCharacterInstall(const uint8_t* data, size_t bytes) {
   const auto* partition = assetsPartition();
-  if (!install.active || !partition) return "No character installation is in progress.";
+  if (!install.active || !partition) return kNoInstall;
   while (bytes) {
     const uint32_t offset = install.received;
     if (install.total && offset >= install.total)
-      return "Character pack is longer than its header declares.";
+      return kPackTooLong;
     size_t count = bytes;
     if (offset < kSectorBytes) count = std::min<size_t>(count, kSectorBytes - offset);
     if (install.total) count = std::min<size_t>(count, install.total - offset);
@@ -178,7 +202,7 @@ const char* writeCharacterInstall(const uint8_t* data, size_t bytes) {
       while (install.erasedEnd < offset + count) {
         const uint32_t size = std::min<uint32_t>(kEraseBytes, partition->size - install.erasedEnd);
         if (!size || esp_partition_erase_range(partition, install.erasedEnd, size) != ESP_OK)
-          return "Assets partition erase failed.";
+          return kEraseFailed;
         install.erasedEnd += size;
       }
       if (esp_partition_write(partition, offset, data, count) != ESP_OK)
@@ -193,7 +217,7 @@ const char* writeCharacterInstall(const uint8_t* data, size_t bytes) {
         return invalid;
       install.total = install.header.totalBytes;
       if (install.received > install.total)
-        return "Character pack is longer than its header declares.";
+        return kPackTooLong;
     }
   }
   return nullptr;
@@ -201,27 +225,20 @@ const char* writeCharacterInstall(const uint8_t* data, size_t bytes) {
 
 const char* finishCharacterInstall() {
   const auto* partition = assetsPartition();
-  if (!install.active || !partition) return "No character installation is in progress.";
+  if (!install.active || !partition) return kNoInstall;
   if (!install.total || install.received != install.total)
     return "Character pack transfer is incomplete.";
   uint8_t digest[32];
   const bool finished = mbedtls_sha256_finish(&install.hash, digest) == 0;
   finishHash();
   install.active = false;
-  if (!finished || std::memcmp(digest, install.header.sha256, sizeof(digest)) != 0) {
-    esp_partition_erase_range(partition, 0, kSectorBytes);
-    return "Character pack SHA-256 mismatch.";
-  }
+  if (!finished || std::memcmp(digest, install.header.sha256, sizeof(digest)) != 0)
+    return rejectInstall(partition, "Character pack SHA-256 mismatch.");
   if (esp_partition_write(partition, 0, install.firstSector,
-                          std::min(kSectorBytes, install.total)) != ESP_OK) {
-    esp_partition_erase_range(partition, 0, kSectorBytes);
-    return "Assets partition header write failed.";
-  }
+                          std::min(kSectorBytes, install.total)) != ESP_OK)
+    return rejectInstall(partition, "Assets partition header write failed.");
   // Re-read from flash so the installed bytes, not the received stream, are verified.
-  if (!initializeSpriteStorage()) {
-    esp_partition_erase_range(partition, 0, kSectorBytes);
-    return error;
-  }
+  if (!initializeSpriteStorage()) return rejectInstall(partition, error);
   return nullptr;
 }
 
@@ -230,18 +247,17 @@ void abortCharacterInstall() {
   if (install.active) finishHash();
   install.active = false;
   unmap();
-  if (partition) esp_partition_erase_range(partition, 0, kSectorBytes);
+  if (partition) eraseHeader(partition);
 }
 
 uint32_t characterInstallReceived() { return install.received; }
 uint32_t characterInstallTotal() { return install.total; }
 const char* characterInstallName() { return install.total ? install.header.name : nullptr; }
 #else
-const char* beginCharacterInstall() { return "Character installation requires the device."; }
-const char* writeCharacterInstall(const uint8_t*, size_t) {
-  return "Character installation requires the device.";
-}
-const char* finishCharacterInstall() { return "Character installation requires the device."; }
+constexpr char kRequiresDevice[] = "Character installation requires the device.";
+const char* beginCharacterInstall() { return kRequiresDevice; }
+const char* writeCharacterInstall(const uint8_t*, size_t) { return kRequiresDevice; }
+const char* finishCharacterInstall() { return kRequiresDevice; }
 void abortCharacterInstall() {}
 uint32_t characterInstallReceived() { return 0; }
 uint32_t characterInstallTotal() { return 0; }

@@ -15,7 +15,7 @@ void stepCharacterMotion(CharacterMotion& motion, double seconds, const PackHead
   motion.update(seconds * pack.motionSpeed);
 }
 
-bool CharacterSprite::fullFrame() const {
+bool CharacterSprite::fullFrame() {
   const CharacterPack* pack = characterPack();
   return pack && pack->header.layout == PackLayout::FullFrame;
 }

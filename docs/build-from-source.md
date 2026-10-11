@@ -28,12 +28,16 @@ arduino-cli --config-file "$ARDUINO_CONFIG" config add board_manager.additional_
 arduino-cli --config-file "$ARDUINO_CONFIG" core update-index
 arduino-cli --config-file "$ARDUINO_CONFIG" core install esp32:esp32@3.3.10
 
-git clone https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75.git "$WAVESHARE_DIR"
-git -C "$WAVESHARE_DIR" checkout --detach e4344e70c2fa78a13e8a06566507f1ba8af6672a
+# Clones the vendor libraries at the revision pinned in firmware/boards.json.
+python3 tools/boards.py fetch-vendor "$WAVESHARE_DIR"
 
 bash tools/arduino.sh build
 .venv/bin/python tools/package_release.py --version "$(cat VERSION)"
 ```
+
+`tools/arduino.sh` builds the default board in `firmware/boards.json`. To select a
+board, set `BOARD` (`python3 tools/boards.py list` shows the IDs). See
+[Boards](development.md#boards) to add a board.
 
 The resulting ZIP files are in `build/release/`. Extract the firmware ZIP and
 follow the [flashing steps](../README.md#step-1-flash-the-firmware). Alternatively, from the same

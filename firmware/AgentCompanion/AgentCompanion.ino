@@ -20,6 +20,7 @@
 #include "src/AgentBadges.h"
 #include "src/CharacterEffects.h"
 #include "src/CharacterFrame.h"
+#include "src/Deadline.h"
 #include "src/DeviceCommands.h"
 #include "src/TouchInput.h"
 #include "src/ButtonInput.h"
@@ -28,13 +29,12 @@
 #include "src/OrientedDisplay.h"
 #include "src/OrientationSensor.h"
 #include "src/OrientationSettings.h"
+#include "src/boards/BoardDrivers.h"
 
 using namespace copilot;
 
 namespace {
-Arduino_ESP32QSPI displayBus(kDisplayCsPin, 38, 4, 5, 6, 7, true);
-Arduino_CO5300 panel(&displayBus, 39, 0, 466, 466, 6, 0, 0, 0);
-OrientedDisplay display(&panel, &displayBus);
+OrientedDisplay display(&board::displayPanel(), &board::displayBus());
 QueueHandle_t freeFrames, readyFrames, commands;
 TaskHandle_t renderTask;
 SpriteRenderer* patchRenderer = nullptr;
@@ -100,8 +100,9 @@ bool updateOrientation() {
 }
 
 struct Frame {
-  uint16_t* pixels;
-  uint32_t renderUs, motionUs, decodeUs, compositeUs, eyesUs, effectsUs, inflateUs, predictUs;
+  uint16_t* pixels = nullptr;
+  uint32_t renderUs = 0, motionUs = 0, decodeUs = 0, compositeUs = 0, eyesUs = 0, effectsUs = 0,
+      inflateUs = 0, predictUs = 0;
   CharacterState state;
 };
 Frame frames[2];
@@ -255,44 +256,67 @@ const char* modeName(CharacterMode mode) {
   return "invalid";
 }
 
+// The character mode a mode command requests; false for any other command.
+bool requestedMode(DeviceCommand command, CharacterMode& mode) {
+  switch (command) {
+    case DeviceCommand::Idle: mode = CharacterMode::Idle; return true;
+    case DeviceCommand::Surprise: mode = CharacterMode::Surprise; return true;
+    case DeviceCommand::Working: mode = CharacterMode::Working; return true;
+    case DeviceCommand::Complete: mode = CharacterMode::Complete; return true;
+    case DeviceCommand::Attention: mode = CharacterMode::Attention; return true;
+    default: return false;
+  }
+}
+
+// The mode command a settings button sends, or DeviceCommand::None.
+DeviceCommand settingsModeCommand(SettingsAction action) {
+  switch (action) {
+    case SettingsAction::Idle: return DeviceCommand::Idle;
+    case SettingsAction::Surprise: return DeviceCommand::Surprise;
+    case SettingsAction::Working: return DeviceCommand::Working;
+    case SettingsAction::Complete: return DeviceCommand::Complete;
+    case SettingsAction::Attention: return DeviceCommand::Attention;
+    default: return DeviceCommand::None;
+  }
+}
+
+bool sendModeRequest(CharacterMode mode) {
+  const ModeRequest request{mode};
+  if (xQueueSend(commands, &request, 0) == pdTRUE) return true;
+  logMessage("COMMAND_ERROR mode queue full\n");
+  return false;
+}
+
 void queueMode(DeviceCommand command) {
   if (!characterReady) {
     // The shell acknowledges states so the daemon stays connected until a pack is installed.
     logMessage("COMMAND accepted=%s\n", commandName(command));
     return;
   }
-  ModeRequest request;
-  switch (command) {
-    case DeviceCommand::Idle: request.mode = CharacterMode::Idle; break;
-    case DeviceCommand::Surprise: request.mode = CharacterMode::Surprise; break;
-    case DeviceCommand::Working: request.mode = CharacterMode::Working; break;
-    case DeviceCommand::Complete: request.mode = CharacterMode::Complete; break;
-    case DeviceCommand::Attention: request.mode = CharacterMode::Attention; break;
-    default: logMessage("COMMAND_ERROR unknown mode\n"); return;
-  }
-  if (xQueueSend(commands, &request, 0) != pdTRUE) {
-    logMessage("COMMAND_ERROR mode queue full\n");
+  CharacterMode mode;
+  if (!requestedMode(command, mode)) {
+    logMessage("COMMAND_ERROR unknown mode\n");
     return;
   }
-  logMessage("COMMAND accepted=%s\n", commandName(command));
+  if (sendModeRequest(mode)) logMessage("COMMAND accepted=%s\n", commandName(command));
 }
 
 void queueTouchSurprise() {
-  if (!characterReady) return;
-  const ModeRequest request{CharacterMode::Surprise};
-  if (xQueueSend(commands, &request, 0) != pdTRUE) {
-    logMessage("COMMAND_ERROR mode queue full\n");
-    return;
-  }
-  logMessage("COMMAND accepted=surprise source=touch\n");
+  if (characterReady && sendModeRequest(CharacterMode::Surprise))
+    logMessage("COMMAND accepted=surprise source=touch\n");
+}
+
+// Opens the settings namespace. On failure it logs failureLog and returns false.
+bool openPreferences(Preferences& preferences, const char* failureLog) {
+  if (preferences.begin(kPreferencesNamespace, false)) return true;
+  logMessage("%s", failureLog);
+  return false;
 }
 
 uint8_t loadSoundVolume() {
   Preferences preferences;
-  if (!preferences.begin(kPreferencesNamespace, false)) {
-    logMessage("SETTINGS_ERROR sound preference open failed\n");
+  if (!openPreferences(preferences, "SETTINGS_ERROR sound preference open failed\n"))
     return kDefaultSoundVolume;
-  }
   uint8_t stored;
   if (preferences.isKey(kSoundVolumePreference)) {
     stored = preferences.getUChar(kSoundVolumePreference, kDefaultSoundVolume);
@@ -312,10 +336,7 @@ uint8_t loadSoundVolume() {
 
 void saveSoundVolume(uint8_t volume) {
   Preferences preferences;
-  if (!preferences.begin(kPreferencesNamespace, false)) {
-    logMessage("SETTINGS_ERROR sound preference open failed\n");
-    return;
-  }
+  if (!openPreferences(preferences, "SETTINGS_ERROR sound preference open failed\n")) return;
   if (preferences.putUChar(kSoundVolumePreference, volume) != 1)
     logMessage("SETTINGS_ERROR sound preference write failed\n");
   preferences.end();
@@ -323,10 +344,8 @@ void saveSoundVolume(uint8_t volume) {
 
 int16_t loadOrientationOffset() {
   Preferences preferences;
-  if (!preferences.begin(kPreferencesNamespace, false)) {
-    logMessage("ORIENTATION_ERROR preference open failed; using zero trim\n");
+  if (!openPreferences(preferences, "ORIENTATION_ERROR preference open failed; using zero trim\n"))
     return 0;
-  }
   if (preferences.isKey(kOrientationPreference)
       && preferences.getType(kOrientationPreference) != PT_I16) {
     preferences.end();
@@ -351,10 +370,8 @@ const char* configureOrientation(int16_t tenths) {
     return "Wait for the current installation or firmware request to finish.";
   if (tenths == orientationOffsetTenths) return nullptr;
   Preferences preferences;
-  if (!preferences.begin(kPreferencesNamespace, false)) {
-    logMessage("ORIENTATION_ERROR preference open failed\n");
+  if (!openPreferences(preferences, "ORIENTATION_ERROR preference open failed\n"))
     return "Could not open orientation preferences.";
-  }
   const bool saved = preferences.putShort(kOrientationPreference, tenths) == sizeof(tenths);
   preferences.end();
   if (!saved) {
@@ -380,189 +397,153 @@ void queueModeCue(CharacterMode mode) {
   }
 }
 
-void drawSettingsButton(int x, int y, int width, const char* label, bool selected,
-                        uint8_t textSize = 2, int height = 48) {
-  constexpr uint16_t border = 0x5D19;
-  constexpr uint16_t normal = 0x18E7;
-  constexpr uint16_t active = 0x2372;
-  constexpr uint16_t text = 0xE73F;
-  display.fillRoundRect(x, y, width, height, 10, selected ? active : normal);
-  display.drawRoundRect(x, y, width, height, 10, selected ? 0x867F : border);
-  display.setTextColor(text);
-  display.setTextSize(textSize);
-  const int characterWidth = 6 * textSize;
-  display.setCursor(x + std::max(10, (width - static_cast<int>(std::strlen(label)) * characterWidth) / 2),
-                    y + (height - 8 * textSize) / 2);
-  display.print(label);
+// Native RGB565 UI colors. CharacterEffects colors are byte-swapped; do not mix them.
+namespace ui_color {
+constexpr uint16_t kText = 0xE73F;
+constexpr uint16_t kMuted = 0x8C71;
+constexpr uint16_t kAccent = 0x867F;
+constexpr uint16_t kSuccess = 0x47E9;
+constexpr uint16_t kWarning = 0xFD20;
+constexpr uint16_t kError = 0xF249;
+constexpr uint16_t kBackground = 0x0842;
+constexpr uint16_t kPanel = 0x10A5;
+constexpr uint16_t kPanelBorder = 0x31CC;
+constexpr uint16_t kButton = 0x18E7;
+constexpr uint16_t kButtonActive = 0x2372;
+constexpr uint16_t kButtonBorder = 0x5D19;
 }
 
-void drawCenteredText(const char* text, int y, uint8_t size, uint16_t color) {
+int textWidth(const char* text, uint8_t size) {
+  return static_cast<int>(std::strlen(text)) * 6 * size;
+}
+
+void drawText(const char* text, int x, int y, uint8_t size, uint16_t color) {
   display.setTextColor(color);
   display.setTextSize(size);
-  display.setCursor((kDisplaySize - static_cast<int>(std::strlen(text)) * 6 * size) / 2, y);
+  display.setCursor(x, y);
   display.print(text);
 }
 
-uint16_t wifiStatusColor() {
-  if (network.connected()) return 0x47E9;
-  if (network.setupActive()) return 0xFD20;
-  if (network.configured()) return 0xF249;
-  return 0x8C71;
+void drawCenteredText(const char* text, int y, uint8_t size, uint16_t color) {
+  drawText(text, (kDisplaySize - textWidth(text, size)) / 2, y, size, color);
 }
 
-const char* wifiStatusText() {
-  return network.connected() ? "Connected"
-      : network.setupActive() ? "Setup active"
-      : network.configured() ? "Disconnected"
-      : "Not configured";
+void drawSettingsButton(const SettingsRect& rect, const char* label, bool selected,
+                        uint8_t textSize = 2) {
+  using namespace ui_color;
+  display.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 10,
+                        selected ? kButtonActive : kButton);
+  display.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 10,
+                        selected ? kAccent : kButtonBorder);
+  drawText(label, rect.x + std::max(10, (rect.width - textWidth(label, textSize)) / 2),
+           rect.y + (rect.height - 8 * textSize) / 2, textSize, kText);
 }
 
-void fitText(char* output, size_t capacity, const char* prefix, const char* value,
-             size_t maxCharacters) {
-  const size_t prefixLength = std::strlen(prefix);
-  if (prefixLength + std::strlen(value) <= maxCharacters) {
-    snprintf(output, capacity, "%s%s", prefix, value);
-  } else {
-    snprintf(output, capacity, "%s%.*s...", prefix,
-             static_cast<int>(maxCharacters - prefixLength - 3), value);
-  }
+// A centered title above a "-" value "+" row. The value box fills the gap between the buttons.
+void drawStepper(const char* title, const SettingsRect& down, const SettingsRect& up,
+                 const char* value, int valueX) {
+  drawCenteredText(title, down.y - 20, 2, ui_color::kText);
+  drawSettingsButton(down, "-", false, 3);
+  drawSettingsButton(up, "+", false, 3);
+  const int boxX = down.x + down.width + 6;
+  display.fillRoundRect(boxX, down.y, up.x - 6 - boxX, down.height, 10, ui_color::kBackground);
+  drawText(value, valueX, down.y + 11, 2, ui_color::kText);
+}
+
+struct WifiStatus {
+  const char* label;
+  const char* headline;
+  uint16_t color;
+};
+
+WifiStatus wifiStatus() {
+  using namespace ui_color;
+  if (network.connected()) return {"Connected", "Wi-Fi connected", kSuccess};
+  if (network.setupActive()) return {"Setup active", "Wi-Fi setup active", kWarning};
+  if (network.configured()) return {"Disconnected", "Wi-Fi disconnected", kError};
+  return {"Not configured", "Wi-Fi not set up", kMuted};
+}
+
+// Copies value, or its first maxCharacters - 3 characters followed by "...".
+void fitText(char* output, size_t capacity, const char* value, size_t maxCharacters) {
+  if (std::strlen(value) <= maxCharacters) snprintf(output, capacity, "%s", value);
+  else snprintf(output, capacity, "%.*s...", static_cast<int>(maxCharacters - 3), value);
 }
 
 void drawWifiStatusButton() {
+  using namespace ui_color;
+  const WifiStatus status = wifiStatus();
+  constexpr SettingsRect area = settings_layout::kWifiStatus;
   // Two size-2 lines fit within the round display's visible width at the top.
-  display.fillRoundRect(kWifiStatusX, kWifiStatusY, kWifiStatusWidth, kWifiStatusHeight,
-                        14, 0x18E7);
-  display.drawRoundRect(kWifiStatusX, kWifiStatusY, kWifiStatusWidth, kWifiStatusHeight,
-                        14, wifiStatusColor());
-  char headline[24];
-  snprintf(headline, sizeof(headline), "Wi-Fi %s",
-           network.connected() ? "connected"
-           : network.setupActive() ? "setup active"
-           : network.configured() ? "disconnected"
-           : "not set up");
-  char detail[24];
-  if (network.configured()) fitText(detail, sizeof(detail), "", network.ssid(), 18);
-  else snprintf(detail, sizeof(detail), "Tap to set up");
-  drawCenteredText(headline, kWifiStatusY + 8, 2, wifiStatusColor());
-  drawCenteredText(detail, kWifiStatusY + 28, 2, network.connected() ? 0xE73F : 0x8C71);
+  display.fillRoundRect(area.x, area.y, area.width, area.height, 14, kButton);
+  display.drawRoundRect(area.x, area.y, area.width, area.height, 14, status.color);
+  char ssid[24];
+  const char* detail = "Tap to set up";
+  if (network.configured()) {
+    fitText(ssid, sizeof(ssid), network.ssid(), 18);
+    detail = ssid;
+  }
+  drawCenteredText(status.headline, area.y + 8, 2, status.color);
+  drawCenteredText(detail, area.y + 28, 2, network.connected() ? kText : kMuted);
 }
 
 void drawSettingsMenu(CharacterMode selected) {
-  constexpr uint16_t background = 0x0842;
-  constexpr uint16_t panel = 0x10A5;
-  constexpr uint16_t text = 0xE73F;
-  constexpr uint16_t muted = 0x8C71;
+  using namespace ui_color;
+  using namespace settings_layout;
   display.fillScreen(0);
   drawWifiStatusButton();
-  display.fillRoundRect(38, 92, 390, 336, 28, panel);
-  display.drawRoundRect(38, 92, 390, 336, 28, 0x31CC);
-  display.setTextColor(text);
-  display.setTextSize(2);
-  display.setCursor(173, 96);
-  display.print("Brightness");
-  drawSettingsButton(150, 116, 48, "-", false, 3, 38);
-  drawSettingsButton(268, 116, 48, "+", false, 3, 38);
-  display.fillRoundRect(204, 116, 58, 38, 10, background);
-  display.setTextColor(text);
-  display.setTextSize(2);
-  char brightness[8];
-  snprintf(brightness, sizeof(brightness), "%u%%",
+  display.fillRoundRect(38, 92, 390, 336, 28, kPanel);
+  display.drawRoundRect(38, 92, 390, 336, 28, kPanelBorder);
+  char value[8];
+  snprintf(value, sizeof(value), "%u%%",
            static_cast<unsigned>((settings.brightness() * 100 + 127) / 255));
-  display.setCursor(211, 127);
-  display.print(brightness);
-  display.setTextColor(text);
-  display.setTextSize(2);
-  display.setCursor(197, 160);
-  display.print("Volume");
-  drawSettingsButton(150, 180, 48, "-", false, 3, 38);
-  drawSettingsButton(268, 180, 48, "+", false, 3, 38);
-  display.fillRoundRect(204, 180, 58, 38, 10, background);
-  display.setTextColor(text);
-  display.setTextSize(2);
-  char volume[8];
-  if (settings.soundVolume() == 0) {
-    snprintf(volume, sizeof(volume), "Off");
-    display.setCursor(215, 191);
-  } else {
-    snprintf(volume, sizeof(volume), "%u%%",
-             static_cast<unsigned>(settings.soundVolume()));
-    display.setCursor(211, 191);
-  }
-  display.print(volume);
-  display.setTextColor(text);
-  display.setTextSize(2);
-  display.setCursor(185, 222);
-  display.print("Character");
+  drawStepper("Brightness", kBrightnessDown, kBrightnessUp, value, 211);
+  const bool soundOff = settings.soundVolume() == 0;
+  if (soundOff) snprintf(value, sizeof(value), "Off");
+  else snprintf(value, sizeof(value), "%u%%", static_cast<unsigned>(settings.soundVolume()));
+  drawStepper("Volume", kVolumeDown, kVolumeUp, value, soundOff ? 215 : 211);
+  drawText("Character", 185, 222, 2, kText);
   // Only the installed pack is on the device; the daemon installs a different one.
-  display.fillRoundRect(58, 244, 350, 34, 10, background);
-  drawCenteredText(characterPack() ? characterPack()->header.name : "None", 253, 2, text);
-  display.setTextColor(text);
-  display.setTextSize(2);
-  display.setCursor(143, 286);
-  display.print("Character state");
-  drawSettingsButton(58, 306, 165, "Idle", selected == CharacterMode::Idle, 2, 34);
-  drawSettingsButton(243, 306, 165, "Working", selected == CharacterMode::Working, 2, 34);
-  drawSettingsButton(58, 344, 165, "Complete", selected == CharacterMode::Complete, 2, 34);
-  drawSettingsButton(243, 344, 165, "Needs attention",
-                     selected == CharacterMode::Attention, 1, 34);
-  drawSettingsButton(58, 382, 165, "Surprise", selected == CharacterMode::Surprise, 2, 34);
-  drawSettingsButton(243, 382, 165, "Close", false, 2, 34);
+  display.fillRoundRect(58, 244, 350, 34, 10, kBackground);
+  drawCenteredText(characterPack() ? characterPack()->header.name : "None", 253, 2, kText);
+  drawCenteredText("Character state", 286, 2, kText);
+  for (const LabeledButton& button : kModeButtons) {
+    CharacterMode mode;
+    const bool active = requestedMode(settingsModeCommand(button.action), mode) && mode == selected;
+    drawSettingsButton(button.rect, button.label, active, button.textSize);
+  }
   flushDisplay();
 }
 
 void drawNetworkSettings() {
-  constexpr uint16_t panel = 0x10A5;
-  constexpr uint16_t text = 0xE73F;
-  constexpr uint16_t muted = 0x8C71;
+  using namespace ui_color;
+  const WifiStatus status = wifiStatus();
   display.fillScreen(0);
-  display.setTextColor(text);
-  display.setTextSize(3);
-  display.setCursor(153, 48);
-  display.print("Wi-Fi");
-  display.fillRoundRect(38, 92, 390, 350, 28, panel);
-  display.fillCircle(60, 125, 7, wifiStatusColor());
-  display.setTextColor(wifiStatusColor());
-  display.setTextSize(2);
-  display.setCursor(72, 116);
-  display.print(wifiStatusText());
+  drawText("Wi-Fi", 153, 48, 3, kText);
+  display.fillRoundRect(38, 92, 390, 350, 28, kPanel);
+  display.fillCircle(60, 125, 7, status.color);
+  drawText(status.label, 72, 116, 2, status.color);
   if (network.configured()) {
     char ssid[40];
-    fitText(ssid, sizeof(ssid), "", network.ssid(), 26);
-    display.setTextColor(network.connected() ? text : muted);
-    display.setTextSize(2);
-    display.setCursor(72, 146);
-    display.print(ssid);
+    fitText(ssid, sizeof(ssid), network.ssid(), 26);
+    drawText(ssid, 72, 146, 2, network.connected() ? kText : kMuted);
     char address[32];
     snprintf(address, sizeof(address), "IP %s",
              network.connected() ? network.address() : "not assigned");
-    display.setTextColor(muted);
-    display.setTextSize(1);
-    display.setCursor(72, 172);
-    display.print(address);
+    drawText(address, 72, 172, 1, kMuted);
   }
   if (network.setupActive()) {
-    display.setTextColor(text);
-    display.setTextSize(2);
-    display.setCursor(72, 202);
-    display.print(network.setupName());
-    display.setTextSize(1);
-    display.setCursor(72, 232);
-    display.print("Password and pairing code:");
-    display.setTextSize(3);
-    display.setCursor(162, 254);
-    display.print(network.pairingCode());
-    display.setTextSize(1);
-    display.setCursor(124, 294);
-    display.print("Open http://192.168.4.1");
+    drawText(network.setupName(), 72, 202, 2, kText);
+    drawText("Password and pairing code:", 72, 232, 1, kText);
+    drawText(network.pairingCode(), 162, 254, 3, kText);
+    drawText("Open http://192.168.4.1", 124, 294, 1, kText);
   } else {
-    display.setTextColor(muted);
-    display.setTextSize(1);
-    display.setCursor(86, 218);
-    display.print("Start setup to connect or reconfigure.");
+    drawText("Start setup to connect or reconfigure.", 86, 218, 1, kMuted);
   }
-  drawSettingsButton(88, 336, 290, network.setupActive() ? "Restart setup" : "Setup Wi-Fi",
-                     network.setupActive(), 2, 44);
-  drawSettingsButton(150, 394, 166, "Back", false, 2, 38);
+  drawSettingsButton(settings_layout::kWifiSetup,
+                     network.setupActive() ? "Restart setup" : "Setup Wi-Fi",
+                     network.setupActive());
+  drawSettingsButton(settings_layout::kBack, "Back", false);
   flushDisplay();
 }
 
@@ -652,15 +633,13 @@ void handleTouchGesture(const TouchGesture& gesture, const Frame& frame) {
       drawSettingsMenu(frame.state.requestedMode);
       break;
     case SettingsAction::Idle:
-      closeSettings("mode"); queueMode(DeviceCommand::Idle); break;
     case SettingsAction::Surprise:
-      closeSettings("mode"); queueMode(DeviceCommand::Surprise); break;
     case SettingsAction::Working:
-      closeSettings("mode"); queueMode(DeviceCommand::Working); break;
     case SettingsAction::Complete:
-      closeSettings("mode"); queueMode(DeviceCommand::Complete); break;
     case SettingsAction::Attention:
-      closeSettings("mode"); queueMode(DeviceCommand::Attention); break;
+      closeSettings("mode");
+      queueMode(settingsModeCommand(action));
+      break;
     case SettingsAction::Close:
       queueAudioCue(AudioCue::Settings);
       closeSettings("button");
@@ -692,9 +671,9 @@ void drawInstallScreen(const char* source) {
   updateOrientation();
   display.fillScreen(0);
   display.setBrightness(settings.brightness());
-  drawCenteredText("Installing character", 140, 2, 0xE73F);
-  drawCenteredText(source, 208, 2, 0x8C71);
-  display.drawRoundRect(83, 238, 300, 24, 8, 0x5D19);
+  drawCenteredText("Installing character", 140, 2, ui_color::kText);
+  drawCenteredText(source, 208, 2, ui_color::kMuted);
+  display.drawRoundRect(83, 238, 300, 24, 8, ui_color::kButtonBorder);
   flushDisplay();
 }
 
@@ -704,8 +683,8 @@ void drawInstallName() {
   const char* name = characterInstallName();
   if (drawn || !name) return;
   drawn = true;
-  const bool large = std::strlen(name) * 18 <= 340;
-  drawCenteredText(name, large ? 172 : 176, large ? 3 : 2, 0x867F);
+  const bool large = textWidth(name, 3) <= 340;
+  drawCenteredText(name, large ? 172 : 176, large ? 3 : 2, ui_color::kAccent);
 }
 
 void drawInstallProgress(uint32_t received, uint32_t total) {
@@ -715,11 +694,11 @@ void drawInstallProgress(uint32_t received, uint32_t total) {
   const int percent = total ? static_cast<int>(uint64_t(received) * 100 / total) : 0;
   if (percent == shown && !orientationChanged) return;
   shown = percent;
-  display.fillRoundRect(86, 241, std::max(1, 294 * percent / 100), 18, 6, 0x2372);
+  display.fillRoundRect(86, 241, std::max(1, 294 * percent / 100), 18, 6, ui_color::kButtonActive);
   char label[8];
   snprintf(label, sizeof(label), "%d%%", percent);
   display.fillRect(183, 276, 100, 16, 0);
-  drawCenteredText(label, 276, 2, 0xE73F);
+  drawCenteredText(label, 276, 2, ui_color::kText);
   flushDisplay();
 }
 
@@ -727,12 +706,12 @@ void drawInstallResult(const char* error) {
   updateOrientation();
   display.fillRect(40, 300, 386, 60, 0);
   if (error) {
-    drawCenteredText("Install failed", 306, 2, 0xF249);
+    drawCenteredText("Install failed", 306, 2, ui_color::kError);
     char detail[64];
-    fitText(detail, sizeof(detail), "", error, 50);
-    drawCenteredText(detail, 332, 1, 0x8C71);
+    fitText(detail, sizeof(detail), error, 50);
+    drawCenteredText(detail, 332, 1, ui_color::kMuted);
   } else {
-    drawCenteredText("Installed. Restarting...", 306, 2, 0x47E9);
+    drawCenteredText("Installed. Restarting...", 306, 2, ui_color::kSuccess);
   }
   flushDisplay();
 }
@@ -773,7 +752,6 @@ void installCharacterFromUsb() {
            static_cast<unsigned>(kCharacterUploadChunkBytes));
   sendUploadMessage(ready);
   Serial.setTimeout(100);
-  uint32_t progress = millis();
   unsigned kicks = 0;
   for (;;) {
     const uint32_t received = characterInstallReceived();
@@ -783,7 +761,7 @@ void installCharacterFromUsb() {
         ? std::min<size_t>(kCharacterUploadChunkBytes, total - received)
         : kCharacterUploadChunkBytes;
     size_t buffered = 0;
-    progress = millis();
+    uint32_t progress = millis();
     while (buffered < expected) {
       const size_t count = Serial.readBytes(
           reinterpret_cast<char*>(transferBuffer + buffered), expected - buffered);
@@ -851,7 +829,7 @@ const char* finishWifiInstall() {
   const char* error = finishCharacterInstall();
   if (error) abortCharacterInstall();
   drawInstallResult(error);
-  restartAt = millis() + (error ? 2000 : 750);
+  restartAt = deadlineAfter(millis(), error ? 2000 : 750);
   return error;
 }
 
@@ -861,7 +839,7 @@ void abortWifiInstall(const char* error) {
     abortCharacterInstall();
     drawInstallResult(error);
   }
-  if (installStarted) restartAt = millis() + 2000;
+  if (installStarted) restartAt = deadlineAfter(millis(), 2000);
 }
 
 const char* installedCharacterId() {
@@ -875,51 +853,41 @@ const NetworkManager::CharacterUpload kWifiUpload{
 void drawShellScreen() {
   display.fillScreen(0);
   drawWifiStatusButton();
-  drawCenteredText("No character installed", 196, 2, 0xE73F);
-  drawCenteredText("Connect USB or Wi-Fi and run", 236, 1, 0x8C71);
-  drawCenteredText("npm run character", 256, 2, 0x8C71);
-  drawCenteredText(spriteStorageError() ? spriteStorageError() : "", 300, 1, 0x8C71);
+  drawCenteredText("No character installed", 196, 2, ui_color::kText);
+  drawCenteredText("Connect USB or Wi-Fi and run", 236, 1, ui_color::kMuted);
+  drawCenteredText("npm run character", 256, 2, ui_color::kMuted);
+  drawCenteredText(spriteStorageError() ? spriteStorageError() : "", 300, 1, ui_color::kMuted);
   flushDisplay();
 }
 
 bool queueNetworkMode(const char* state) {
-  for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise,
-                                DeviceCommand::Working, DeviceCommand::Complete,
-                                DeviceCommand::Attention}) {
-    if (std::strcmp(state, commandName(command)) == 0) {
-      queueMode(command);
-      return true;
-    }
-  }
-  return false;
+  const DeviceCommand command = modeCommand(state);
+  if (command == DeviceCommand::Invalid) return false;
+  queueMode(command);
+  return true;
 }
 
 bool handleBadgePacket(const char* packet, char* response, size_t responseSize) {
   if (!packet || !response || responseSize == 0) return false;
   response[0] = '\0';
+  const auto reject = [&] {
+    snprintf(response, responseSize, "COMMAND_ERROR %s", agentBadges.error());
+    return false;
+  };
   if (packet[0] == '%') {
-    if (!agentBadges.setIconPacket(packet + 1)) {
-      snprintf(response, responseSize, "COMMAND_ERROR %s", agentBadges.error());
-      return false;
-    }
+    if (!agentBadges.setIconPacket(packet + 1)) return reject();
     const char* separator = std::strchr(packet + 1, ':');
     snprintf(response, responseSize, "ICON accepted=%.*s",
              separator ? static_cast<int>(separator - (packet + 1)) : 0, packet + 1);
     return true;
   }
   if (packet[0] == '&') {
-    if (!agentBadges.setActivePacket(packet + 1)) {
-      snprintf(response, responseSize, "COMMAND_ERROR %s", agentBadges.error());
-      return false;
-    }
+    if (!agentBadges.setActivePacket(packet + 1)) return reject();
     snprintf(response, responseSize, "AGENTS accepted=%u", static_cast<unsigned>(agentBadges.activeCount()));
     return true;
   }
   if (packet[0] == '$') {
-    if (!agentBadges.setUsagePacket(packet + 1)) {
-      snprintf(response, responseSize, "COMMAND_ERROR %s", agentBadges.error());
-      return false;
-    }
+    if (!agentBadges.setUsagePacket(packet + 1)) return reject();
     snprintf(response, responseSize, "USAGE accepted=%u", static_cast<unsigned>(agentBadges.usage().count));
     return true;
   }
@@ -1028,37 +996,33 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       installCharacterFromUsb();
       break;
     case DeviceCommand::ConfigureWifi:
-      configureWifi(parser.wifiPayload());
+      configureWifi(parser.payload());
       break;
     case DeviceCommand::ScanWifi:
       if (!network.startScan(reportWifiScanLine)) logMessage("WIFI_SCAN_ERROR scan unavailable\n");
       break;
-    case DeviceCommand::DefineAgentIcon: {
-      char response[96];
-      char packet[196];
-      snprintf(packet, sizeof(packet), "%%%s", parser.payload());
-      handleBadgePacket(packet, response, sizeof(response));
-      logMessage("%s\n", response);
-      break;
-    }
-    case DeviceCommand::SetAgentBadges: {
-      char response[96];
-      char packet[196];
-      snprintf(packet, sizeof(packet), "&%s", parser.payload());
-      handleBadgePacket(packet, response, sizeof(response));
-      logMessage("%s\n", response);
-      break;
-    }
+    case DeviceCommand::DefineAgentIcon:
+    case DeviceCommand::SetAgentBadges:
     case DeviceCommand::SetUsage: {
       char response[96];
       char packet[196];
-      snprintf(packet, sizeof(packet), "$%s", parser.payload());
+      snprintf(packet, sizeof(packet), "%c%s", badgePrefix(command), parser.payload());
       handleBadgePacket(packet, response, sizeof(response));
       logMessage("%s\n", response);
       break;
     }
     default: queueMode(command); break;
   }
+}
+
+// One parser for both loops: the device restarts between the shell and a character.
+DeviceCommands commandParser;
+
+void processSerialCommands(const Frame* frame, unsigned maxBytes) {
+  processCommand(commandParser.expire(esp_timer_get_time() / 1000), commandParser, frame);
+  for (unsigned read = 0; read < maxBytes && Serial.available(); ++read)
+    processCommand(commandParser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
+                   commandParser, frame);
 }
 }
 
@@ -1134,7 +1098,8 @@ void setup() {
   if (!serialBufferReady || !receiveBufferReady) fatal("USB buffer allocation failed.");
   Serial.setDebugOutput(true);
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
-  logMessage("\nAgent Companion character shell / Waveshare AMOLED 1.75-B\nPSRAM: %u bytes\n",
+  logMessage("\nAgent Companion character shell / %s (%s)\nPanel: %s, touch: %s\nPSRAM: %u bytes\n",
+             board::kName, board::kId, board::kDisplayPanelName, board::kTouchControllerName,
              ESP.getPsramSize());
   if (!display.begin(kSpiFrequency)) fatal(display.error());
   display.setBrightness(0);
@@ -1151,7 +1116,7 @@ void setup() {
   if (!orientationSensor.begin()) {
     logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
   } else {
-    logMessage("ORIENTATION sensor=QMI8658 mode=continuous\n");
+    logMessage("ORIENTATION sensor=%s mode=continuous\n", board::kImuName);
   }
   const uint8_t storedSoundVolume = loadSoundVolume();
   settings.setSoundVolume(storedSoundVolume);
@@ -1207,15 +1172,15 @@ bool showFirmwarePrompt(bool shell) {
   if (settings.isOpen()) closeSettings("firmware");
   display.fillScreen(0);
   display.setBrightness(settings.brightness());
-  drawCenteredText("Firmware update", 150, 3, 0xE73F);
+  drawCenteredText("Firmware update", 150, 3, ui_color::kText);
   if (prompt == Prompt::Waiting) {
-    drawCenteredText("Press BOOT to allow it", 206, 2, 0x867F);
-    drawCenteredText("Did not start an update? Do nothing.", 246, 1, 0x8C71);
-    drawCenteredText("The request stops in 60 seconds.", 266, 1, 0x8C71);
+    drawCenteredText("Press BOOT to allow it", 206, 2, ui_color::kAccent);
+    drawCenteredText("Did not start an update? Do nothing.", 246, 1, ui_color::kMuted);
+    drawCenteredText("The request stops in 60 seconds.", 266, 1, ui_color::kMuted);
   } else if (prompt == Prompt::Allowed) {
-    drawCenteredText("Allowed. Receiving...", 206, 2, 0x47E9);
+    drawCenteredText("Allowed. Receiving...", 206, 2, ui_color::kSuccess);
   } else {
-    drawCenteredText("Installed. Restarting...", 206, 2, 0x47E9);
+    drawCenteredText("Installed. Restarting...", 206, 2, ui_color::kSuccess);
   }
   flushDisplay();
   return true;
@@ -1223,7 +1188,6 @@ bool showFirmwarePrompt(bool shell) {
 
 // Without a pack the shell keeps USB, Wi-Fi setup, and installation available.
 void shellLoop() {
-  static DeviceCommands parser;
   static uint32_t networkRevision = UINT32_MAX;
   network.update();
   const bool orientationChanged = updateOrientation();
@@ -1235,10 +1199,7 @@ void shellLoop() {
   }
   if (orientationChanged) flushDisplay();
   pollBootButton();
-  processCommand(parser.expire(esp_timer_get_time() / 1000), parser, nullptr);
-  for (unsigned read = 0; read < 64 && Serial.available(); ++read)
-    processCommand(parser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
-                   parser, nullptr);
+  processSerialCommands(nullptr, 64);
   delay(5);
 }
 
@@ -1248,13 +1209,12 @@ void loop() {
   static uint32_t frameCount = 0, maxRender = 0, fadeFrame = 0;
   static int64_t nextPresentation = 0, previousPresentation = 0;
   static uint32_t minGap = UINT32_MAX, maxGap = 0;
-  static DeviceCommands commandParser;
   static uint32_t previousEvent = UINT32_MAX;
   static CharacterMode previousMode = CharacterMode::Idle;
   static uint32_t networkRevision = UINT32_MAX;
   if (restartAt) {
     network.update();
-    if (static_cast<int32_t>(millis() - restartAt) >= 0) ESP.restart();
+    if (elapsed(millis(), restartAt)) ESP.restart();
     delay(5);
     return;
   }
@@ -1302,11 +1262,7 @@ void loop() {
   if (touchInputError()) fatal(touchInputError());
   pollBootButton();
   closeIdleSettings();
-  processCommand(commandParser.expire(esp_timer_get_time() / 1000), commandParser, frame);
-  for (unsigned read = 0; read < 8 && Serial.available(); ++read) {
-    processCommand(commandParser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
-                   commandParser, frame);
-  }
+  processSerialCommands(frame, 8);
   if (frame->state.eventId != previousEvent || frame->state.mode != previousMode) {
     logMessage("STATE mode=%s requested=%s event=%u\n", modeName(frame->state.mode),
                   modeName(frame->state.requestedMode), frame->state.eventId);

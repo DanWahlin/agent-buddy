@@ -3,6 +3,7 @@ import {
   isOrientationOffset, isOrientationTenths, orientationFromTenths, orientationProtocol,
   type DeviceOrientation,
 } from './orientation-settings.js';
+import {releaseBoard} from './firmware-release.js';
 import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
 import {
   activePacket,
@@ -30,6 +31,18 @@ export function needsFirmwareApproval(protocol: number): boolean {
 
 // Polls the device until the person presses BOOT. `null` is a failed read, which is tried again;
 // `none` means the device stopped waiting.
+// The board in the device status. Firmware before the board layer does not send one.
+export function deviceBoard(value: unknown): string {
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value) ? value : releaseBoard;
+}
+
+// The release firmware is for one board only. Firmware for a different board can stop the device.
+export function assertReleaseBoard(board: string): void {
+  if (board !== releaseBoard)
+    throw new Error(`This device is a ${board} board. The release firmware is for ${releaseBoard}; `
+      + `build and upload with: BOARD=${board} bash tools/arduino.sh upload-code`);
+}
+
 export async function waitForFirmwareApproval(
     read: () => Promise<FirmwareApproval | null>, timeoutMs = firmwareApprovalMs,
     intervalMs = firmwareApprovalPollMs): Promise<void> {
@@ -61,6 +74,7 @@ export class WifiTransport {
   #character: string | null = null;
   #adaptivePatchRam = false;
   #firmware: string | null = null;
+  #board: string = releaseBoard;
   #orientation: DeviceOrientation | null = null;
   #ssidBase64: string | undefined;
   #installing = false;
@@ -182,7 +196,8 @@ export class WifiTransport {
       if (!response.ok) return false;
       const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
                                                patchRam?: string; ssidBase64?: string; firmware?: string;
-                                               buttonPresses?: number; orientationOffsetTenths?: unknown};
+                                               buttonPresses?: number; orientationOffsetTenths?: unknown;
+                                               board?: unknown};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
       const protocol = Number.isInteger(status.protocol) ? Number(status.protocol) : 0;
@@ -201,6 +216,7 @@ export class WifiTransport {
       this.#firmware = typeof status.firmware === 'string' && /^[0-9a-f]{16}$/.test(status.firmware)
         ? status.firmware : null;
       this.#ssidBase64 = typeof status.ssidBase64 === 'string' ? status.ssidBase64 : undefined;
+      this.#board = deviceBoard(status.board);
       const needsSync = !this.#connected || endpoint !== this.#endpoint || status.boot !== this.#boot;
       // Protocol 10 and later count BOOT button presses.
       if (Number.isInteger(status.buttonPresses) && Number(status.buttonPresses) >= 0) {
@@ -256,6 +272,7 @@ export class WifiTransport {
   // back to the old firmware if the new one cannot reach Wi-Fi.
   async installFirmware(image: Buffer, md5: string, progress: InstallProgress = () => undefined,
                         waitingForButton: () => void = () => undefined): Promise<void> {
+    assertReleaseBoard(this.#board);
     if (needsFirmwareApproval(this.#protocol)) {
       if (!this.#config || !this.#endpoint || !this.#connected)
         throw new Error('The Agent Companion is not reachable over Wi-Fi.');

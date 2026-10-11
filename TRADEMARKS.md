@@ -51,7 +51,7 @@ These are not part of the MIT License. They belong to their owners:
 
 These keep their own licenses:
 
-- `firmware/AgentCompanion/src/audio/es8311.*`: Espressif's ES8311 driver,
+- `firmware/AgentCompanion/src/boards/drivers/es8311/es8311.*`: Espressif's ES8311 driver,
   Apache-2.0 (see the SPDX headers and that folder's README).
 - `website/assets/icons`: [Octicons](https://primer.style/octicons/), MIT.
 - `website/assets/fonts`: JetBrains Mono, SIL Open Font License 1.1.

@@ -33,7 +33,8 @@ class CharacterSprite {
       : patch_(patch), fullFrame_(fullFrame) {}
   bool render(const CharacterState& state, uint16_t* frame);
   void invalidate();
-  bool fullFrame() const;
+  // True when the installed pack uses the full-frame layout.
+  static bool fullFrame();
   const char* error() const;
 
  private:

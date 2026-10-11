@@ -1,5 +1,6 @@
 #include "NetworkManager.h"
 #include "Config.h"
+#include "Deadline.h"
 #include "DeviceCommands.h"
 #include "OrientationSettings.h"
 
@@ -50,8 +51,22 @@ button{background:#087f74;color:white;font-weight:700}small{color:#b8c0cc}
 <p><small>Credentials stay on this device. After it connects, return your computer to the same network and run the pairing command shown in the project README.</small></p>
 </body></html>)HTML";
 
-bool elapsed(uint32_t now, uint32_t deadline) {
-  return deadline && static_cast<int32_t>(now - deadline) >= 0;
+void sendUnauthorized() {
+  server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+}
+
+// Writes text as NUL-terminated base64. Returns false, with output empty, when it does not fit.
+bool encodeBase64(const char* text, size_t length, char* output, size_t capacity) {
+  size_t written = 0;
+  const bool encoded = mbedtls_base64_encode(reinterpret_cast<unsigned char*>(output), capacity, &written,
+                                             reinterpret_cast<const unsigned char*>(text), length) == 0;
+  output[encoded ? written : 0] = '\0';
+  return encoded;
+}
+
+bool validCredentials(size_t ssidLength, size_t passwordLength) {
+  return ssidLength > 0 && ssidLength <= 32 && passwordLength <= 63
+      && (passwordLength == 0 || passwordLength >= 8);
 }
 
 void copyText(char* destination, size_t capacity, const String& source) {
@@ -91,11 +106,7 @@ void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload*
 }
 
 void NetworkManager::encodedSsid(char* output, size_t capacity) const {
-  size_t written = 0;
-  if (mbedtls_base64_encode(reinterpret_cast<unsigned char*>(output), capacity, &written,
-                            reinterpret_cast<const unsigned char*>(ssid_), std::strlen(ssid_)) != 0)
-    written = 0;
-  output[written] = '\0';
+  encodeBase64(ssid_, std::strlen(ssid_), output, capacity);
 }
 
 void NetworkManager::ensureIdentity() {
@@ -126,7 +137,7 @@ void NetworkManager::configureRoutes() {
   server.on("/configure", HTTP_POST, [this] { handleConfigure(); });
   server.on("/pair", HTTP_POST, [this] { handlePair(); });
   server.on("/state", HTTP_POST, [this] { handleState(); });
-  server.on("/icon", HTTP_POST, [this] { handleIcon(); });
+  server.on("/icon", HTTP_POST, [this] { handleBadge("Invalid icon"); });
   server.on("/agents", HTTP_POST, [this] { handleBadge("Invalid agents"); });
   server.on("/usage", HTTP_POST, [this] { handleBadge("Invalid usage"); });
   server.on("/orientation", HTTP_POST, [this] { handleOrientation(); });
@@ -135,39 +146,38 @@ void NetworkManager::configureRoutes() {
   server.on("/firmware/approval", HTTP_POST, [this] { handleFirmwareApproval(); });
   server.on("/firmware", HTTP_POST, [this] { handleFirmwareResponse(); },
             [this] { handleFirmwareBody(); });
-  server.on("/status", HTTP_GET, [this] {
-    if (!authorized()) {
-      server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
-      return;
-    }
-    char ssid[48];
-    encodedSsid(ssid, sizeof(ssid));
-    char response[480];
-    char orientation[8] = "null";
-    if (orientation_) snprintf(orientation, sizeof(orientation), "%d", orientation_->offset());
-    snprintf(response, sizeof(response),
-             "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
-             "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
-             "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s}",
-             deviceId_, hostname_, connected_ ? "true" : "false",
-             static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
-             upload_ ? upload_->installedId() : "none", ssid, firmwareId_,
-             static_cast<unsigned>(buttonPresses_),
-             firmwareApproval() == FirmwareApproval::Waiting ? "waiting"
-                 : firmwareApproval() == FirmwareApproval::Allowed ? "allowed" : "none", orientation);
-    server.send(200, "application/json", response);
-  });
+  server.on("/status", HTTP_GET, [this] { handleStatus(); });
   server.onNotFound([] {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
   });
 }
 
+void NetworkManager::handleStatus() {
+  if (!requireAuthorized()) return;
+  char encodedName[48];
+  encodedSsid(encodedName, sizeof(encodedName));
+  char orientation[8] = "null";
+  if (orientation_) snprintf(orientation, sizeof(orientation), "%d", orientation_->offset());
+  const FirmwareApproval approval = firmwareApproval();
+  char response[544];
+  snprintf(response, sizeof(response),
+           "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
+           "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
+           "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s,"
+           "\"board\":\"%s\"}",
+           deviceId_, hostname_, connected_ ? "true" : "false",
+           static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
+           upload_ ? upload_->installedId() : "none", encodedName, firmwareId_,
+           static_cast<unsigned>(buttonPresses_),
+           approval == FirmwareApproval::Waiting ? "waiting"
+               : approval == FirmwareApproval::Allowed ? "allowed" : "none", orientation,
+           board::kId);
+  server.send(200, "application/json", response);
+}
+
 void NetworkManager::handleOrientation() {
-  if (!authorized()) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
-    return;
-  }
+  if (!requireAuthorized()) return;
   if (!orientation_) {
     server.send(501, "application/json", "{\"error\":\"Orientation settings are unavailable\"}");
     return;
@@ -191,21 +201,20 @@ void NetworkManager::connect() {
   WiFi.mode(setupActive_ ? WIFI_AP_STA : WIFI_STA);
   WiFi.setHostname(hostname_);
   WiFi.begin(ssid_, password_);
-  reconnectAt_ = millis() + kReconnectDelayMs;
+  reconnectAt_ = deadlineAfter(millis(), kReconnectDelayMs);
 }
 
-bool NetworkManager::configure(const char* ssid, const char* password) {
-  const size_t ssidLength = std::strlen(ssid);
+bool NetworkManager::configure(const char* name, const char* password) {
+  const size_t ssidLength = std::strlen(name);
   const size_t passwordLength = std::strlen(password);
-  if (!identityReady_ || ssidLength == 0 || ssidLength > 32 || passwordLength > 63
-      || (passwordLength > 0 && passwordLength < 8)) return false;
+  if (!identityReady_ || !validCredentials(ssidLength, passwordLength)) return false;
   Preferences preferences;
   if (!preferences.begin(kPreferencesNamespace, false)) return false;
-  const bool saved = preferences.putString("ssid", ssid) == ssidLength
+  const bool saved = preferences.putString("ssid", name) == ssidLength
       && preferences.putString("password", password) == passwordLength;
   preferences.end();
   if (!saved) return false;
-  copyText(ssid_, sizeof(ssid_), ssid);
+  copyText(ssid_, sizeof(ssid_), name);
   copyText(password_, sizeof(password_), password);
   configured_ = true;
   connected_ = false;
@@ -224,16 +233,9 @@ bool NetworkManager::startSetup() {
   WiFi.mode(WIFI_AP_STA);
   if (!WiFi.softAP(setupName_, pairingCode_)) return false;
   dns.start(53, "*", WiFi.softAPIP());
-  if (!serverStarted_) {
-    server.begin();
-    serverStarted_ = true;
-  }
-  if (!discoveryStarted_) {
-    discovery.begin(kNetworkDiscoveryPort);
-    discoveryStarted_ = true;
-  }
+  startServices();
   setupActive_ = true;
-  setupDeadline_ = millis() + kSetupDurationMs;
+  setupDeadline_ = deadlineAfter(millis(), kSetupDurationMs);
   stopSetupAt_ = 0;
   setChanged();
   return true;
@@ -246,9 +248,7 @@ void NetworkManager::handleConfigure() {
   }
   const String requestedSsid = server.arg("ssid");
   const String requestedPassword = server.arg("password");
-  if (requestedSsid.isEmpty() || requestedSsid.length() > 32
-      || requestedPassword.length() > 63
-      || (!requestedPassword.isEmpty() && requestedPassword.length() < 8)) {
+  if (!validCredentials(requestedSsid.length(), requestedPassword.length())) {
     server.send(400, "text/plain", "Invalid Wi-Fi network name or password.");
     return;
   }
@@ -272,7 +272,24 @@ void NetworkManager::handlePair() {
   snprintf(response, sizeof(response), "{\"deviceId\":\"%s\",\"token\":\"%s\"}",
            deviceId_, token_);
   server.send(200, "application/json", response);
-  stopSetupAt_ = millis() + 1000;
+  stopSetupAt_ = deadlineAfter(millis(), 1000);
+}
+
+bool NetworkManager::requireAuthorized() const {
+  if (authorized()) return true;
+  sendUnauthorized();
+  return false;
+}
+
+void NetworkManager::startServices() {
+  if (!serverStarted_) {
+    server.begin();
+    serverStarted_ = true;
+  }
+  if (!discoveryStarted_) {
+    discovery.begin(kNetworkDiscoveryPort);
+    discoveryStarted_ = true;
+  }
 }
 
 bool NetworkManager::authorized() const {
@@ -290,10 +307,7 @@ bool NetworkManager::setupClient() const {
 }
 
 void NetworkManager::handleState() {
-  if (!authorized()) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
-    return;
-  }
+  if (!requireAuthorized()) return;
   const String state = server.arg("plain");
   if (!commandHandler_ || !commandHandler_(state.c_str())) {
     server.send(400, "application/json", "{\"error\":\"Invalid state\"}");
@@ -302,30 +316,8 @@ void NetworkManager::handleState() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
-void NetworkManager::handleIcon() {
-  if (!authorized()) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
-    return;
-  }
-  char response[96];
-  String body = server.arg("plain");
-  body.trim();
-  if (!badgeHandler_ || !badgeHandler_(body.c_str(), response, sizeof(response))) {
-    char error[144];
-    snprintf(error, sizeof(error), "{\"error\":\"%s\"}", response[0] ? response : "Invalid icon");
-    server.send(400, "application/json", error);
-    return;
-  }
-  char json[144];
-  snprintf(json, sizeof(json), "{\"ok\":true,\"message\":\"%s\"}", response);
-  server.send(200, "application/json", json);
-}
-
 void NetworkManager::handleBadge(const char* fallback) {
-  if (!authorized()) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
-    return;
-  }
+  if (!requireAuthorized()) return;
   char response[96];
   String body = server.arg("plain");
   body.trim();
@@ -368,7 +360,7 @@ void NetworkManager::handleCharacterResponse() {
   const bool authorizedUpload = uploadAuthorized_;
   uploadAuthorized_ = false;
   if (!authorizedUpload) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    sendUnauthorized();
     return;
   }
   if (!uploadStarted_) {
@@ -432,7 +424,7 @@ void NetworkManager::handleFirmwareResponse() {
   const bool authorizedUpload = firmwareAuthorized_;
   firmwareAuthorized_ = false;
   if (!authorizedUpload) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    sendUnauthorized();
     return;
   }
   if (!firmwareStarted_) {
@@ -447,19 +439,14 @@ void NetworkManager::handleFirmwareResponse() {
     return;
   }
   server.send(200, "application/json", "{\"ok\":true,\"restarting\":true}");
-  restartAt_ = millis() + kRestartDelayMs;
-  if (!restartAt_) restartAt_ = 1;
+  restartAt_ = deadlineAfter(millis(), kRestartDelayMs);
 }
 
 // Starts the wait for a BOOT press. The device shows a prompt until the press or the timeout.
 void NetworkManager::handleFirmwareApproval() {
-  if (!authorized()) {
-    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
-    return;
-  }
+  if (!requireAuthorized()) return;
   firmwareApproval_ = FirmwareApproval::Waiting;
-  firmwareApprovalUntil_ = millis() + kFirmwareApprovalMs;
-  if (!firmwareApprovalUntil_) firmwareApprovalUntil_ = 1;
+  firmwareApprovalUntil_ = deadlineAfter(millis(), kFirmwareApprovalMs);
   server.send(200, "application/json", "{\"ok\":true,\"firmwareApproval\":\"waiting\"}");
 }
 
@@ -470,8 +457,7 @@ NetworkManager::FirmwareApproval NetworkManager::firmwareApproval() const {
 bool NetworkManager::approveFirmware() {
   if (firmwareApproval() != FirmwareApproval::Waiting) return false;
   firmwareApproval_ = FirmwareApproval::Allowed;
-  firmwareApprovalUntil_ = millis() + kFirmwareApprovalMs;
-  if (!firmwareApprovalUntil_) firmwareApprovalUntil_ = 1;
+  firmwareApprovalUntil_ = deadlineAfter(millis(), kFirmwareApprovalMs);
   return true;
 }
 
@@ -509,14 +495,7 @@ void NetworkManager::updateConnection() {
                            static_cast<const char*>(deviceId_));
         MDNS.addServiceTxt("agent-companion", "tcp", "protocol", "1");
       }
-      if (!serverStarted_) {
-        server.begin();
-        serverStarted_ = true;
-      }
-      if (!discoveryStarted_) {
-        discovery.begin(kNetworkDiscoveryPort);
-        discoveryStarted_ = true;
-      }
+      startServices();
     } else {
       address_[0] = '\0';
       MDNS.end();
@@ -544,7 +523,7 @@ bool NetworkManager::startScan(void (*report)(const char* line)) {
   // A join attempt in progress blocks scanning, so pause it; updateScan() retries right after.
   if (!connected_) WiFi.disconnect(false, false);
   if (WiFi.scanNetworks(true, false) != WIFI_SCAN_RUNNING) {
-    reconnectAt_ = millis();
+    reconnectAt_ = deadlineAfter(millis(), 0);
     return false;
   }
   scanReport_ = report;
@@ -557,21 +536,17 @@ void NetworkManager::updateScan() {
   const int16_t found = WiFi.scanComplete();
   if (found == WIFI_SCAN_RUNNING) return;
   scanning_ = false;
-  char line[128];
   if (found < 0) {
     scanReport_("WIFI_SCAN_ERROR scan failed");
   } else {
+    char line[128];
     constexpr int16_t kMaxReported = 30;
     int16_t reported = 0;
     for (int16_t i = 0; i < found && reported < kMaxReported; ++i) {
       const String name = WiFi.SSID(i);
       if (name.length() == 0 || name.length() > 32) continue;
       char encoded[48];
-      size_t written = 0;
-      if (mbedtls_base64_encode(reinterpret_cast<unsigned char*>(encoded), sizeof(encoded), &written,
-                                reinterpret_cast<const unsigned char*>(name.c_str()), name.length()) != 0)
-        continue;
-      encoded[written] = '\0';
+      if (!encodeBase64(name.c_str(), name.length(), encoded, sizeof(encoded))) continue;
       snprintf(line, sizeof(line), "WIFI_NETWORK rssi=%d secure=%u ssid_b64=%s",
                static_cast<int>(WiFi.RSSI(i)),
                static_cast<unsigned>(WiFi.encryptionType(i) != WIFI_AUTH_OPEN), encoded);
@@ -582,7 +557,7 @@ void NetworkManager::updateScan() {
     scanReport_(line);
   }
   WiFi.scanDelete();
-  reconnectAt_ = millis();
+  reconnectAt_ = deadlineAfter(millis(), 0);
   if (!configured_ && !setupActive_) WiFi.mode(WIFI_OFF);
 }
 
