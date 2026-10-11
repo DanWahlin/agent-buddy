@@ -761,8 +761,9 @@ the app's release, the **Device** tab shows a dot and **Device firmware** shows
 or click **Install v<version>** in the **Install over USB** row. The button installs the firmware release that matches
 the companion service's version. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
 with the new release's `agent-buddy-v<version>-firmware.zip`. Both
-ways keep the device's Wi-Fi settings but put the Copilot character back.
-Reinstall your character afterward from the settings page or with `npm run character <name>`.
+ways keep the device's Wi-Fi settings and write the Copilot character. When the
+desktop app installs the firmware, it then installs your previous character again.
+If you flash without the desktop app, reinstall your character afterward from the settings page or with `npm run character <name>`.
 
 **Firmware over Wi-Fi.** When the device is on Wi-Fi and has firmware with
 protocol 9 or later, open the settings page's **Device** tab. The **Device

@@ -777,7 +777,8 @@ export class CompanionService extends EventEmitter {
     await this.#applySetupDisplay(state);
     if (flash) {
       if (!target) throw new Error('The selected USB device disconnected.');
-      await this.installFirmwareOverUsb(state.port);
+      // Setup installs its selected character itself, below.
+      await this.#installFirmwareOverUsb(state.port);
       this.#onboardingPhase = 'Waiting for the device to restart';
       this.emit('change');
       const firmware = this.#lastUsbFirmware?.id;
@@ -1082,9 +1083,28 @@ export class CompanionService extends EventEmitter {
   }
 
   // Downloads this service's release firmware from GitHub and has the desktop app write it over
-  // USB: bootloader, partition table, app and the Copilot character. Wi-Fi settings stay.
+  // USB: bootloader, partition table, app and the Copilot character. Wi-Fi settings stay. The
+  // device then gets its previous character back, so an update does not reset the character.
   installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
-    return this.#mutate(() => this.#installFirmwareOverUsb(selectedPort));
+    return this.#mutate(async () => {
+      const character = this.#transport.character ?? this.#characterPreference;
+      await this.#installFirmwareOverUsb(selectedPort);
+      await this.#restoreCharacterAfterFirmware(character);
+    });
+  }
+
+  async #restoreCharacterAfterFirmware(character: string): Promise<void> {
+    const firmware = this.#lastUsbFirmware?.id;
+    try {
+      await this.#waitForDevice(() => this.#transport.firmware === firmware);
+    } catch {
+      console.error(`[character] the device did not restart after the firmware install; ${character} was not installed`);
+      return;
+    }
+    if (this.#transport.character === character) return;
+    console.log(`[character] installing ${character} again after the firmware install`);
+    await this.installCharacter(character).catch(error => console.error(
+      `[character] install after the firmware install failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 
   async #installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
