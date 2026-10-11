@@ -1,6 +1,5 @@
 #include "FullFrameRenderer.h"
 #include "Config.h"
-#include "SpriteStorage.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -16,18 +15,12 @@ bool FullFrameRenderer::decode(const CharacterPack& pack, unsigned blockIndex, u
     error_ = "Full-frame sprite block index is invalid.";
     return false;
   }
-  const SpriteBlock& block = pack.blocks[blockIndex];
-  const uint8_t* source = spriteBlock(block);
-  if (!source) {
-    error_ = "Full-frame sprite block lies outside the installed character pack.";
-    return false;
-  }
-  if (!inflate_(reinterpret_cast<uint8_t*>(output), kPixels * sizeof(uint16_t),
-                source, block.size, kCharacterFrameWidth, kCharacterFrameWidth)) {
-    error_ = "Full-frame sprite decompression failed.";
-    return false;
-  }
-  return true;
+  constexpr SpriteBlockErrors kErrors{
+      "Full-frame sprite block lies outside the installed character pack.",
+      "Full-frame sprite decompression failed."};
+  error_ = inflateSpriteBlock(inflate_, pack.blocks[blockIndex], output, kPixels,
+                              kCharacterFrameWidth, kCharacterFrameWidth, kErrors);
+  return !error_;
 }
 
 bool FullFrameRenderer::render(const SpritePose& pose, float effectSeconds, uint16_t* frame) {
@@ -79,9 +72,7 @@ bool FullFrameRenderer::render(const SpritePose& pose, float effectSeconds, uint
     }
     if (last >= first) {
       const int height = last - first + 1;
-      const int revealHalfHeight = std::max(
-          1, static_cast<int>((static_cast<unsigned>(pose.blinkBlend)
-              * (height + 1) / 2 + 254) / 255));
+      const int revealHalfHeight = blinkRevealHalfHeight(pose.blinkBlend, height);
       const int center = (first + last) / 2;
       for (int y = first; y <= last; ++y) {
         if (std::abs(y - center) >= revealHalfHeight)

@@ -14,7 +14,6 @@ constexpr int kCharacterFrameWidth = 412;
 constexpr int kCharacterFrameX = (kDisplaySize - kCharacterFrameWidth) / 2;
 constexpr int kCharacterArtX = (kCharacterFrameWidth - kFrameWidth) / 2;
 constexpr int kTargetFps = 30;
-constexpr int kSpriteDrawWidth = 396;
 constexpr unsigned kAudioSampleRate = 24000;
 constexpr uint8_t kDefaultSoundVolume = 50;
 constexpr int kAudioMinimumCodecVolume = 68;

@@ -39,8 +39,8 @@ bool OrientedDisplay::setTransferBuffer(uint8_t* buffer, size_t bytes) {
   return true;
 }
 
-bool OrientedDisplay::setAngle(float angle) {
-  if (!orientation_.update(angle)) return false;
+bool OrientedDisplay::setAngle(float radians) {
+  if (!orientation_.update(radians)) return false;
   frameMarginsDirty_ = true;
   return true;
 }

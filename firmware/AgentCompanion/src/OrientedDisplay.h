@@ -13,7 +13,7 @@ class OrientedDisplay : public Arduino_Canvas {
   bool begin(int32_t speed = GFX_NOT_DEFINED) override;
   void flush(bool forceFlush = false) override;
   bool flushFrame(const uint16_t* pixels, int x, int y, int width, int height);
-  bool setAngle(float angle);
+  bool setAngle(float radians);
   bool setTrim(float radians);
   float angle() const { return ScreenOrientation::shortestAngle(orientation_.angle() + trim_); }
   bool setTransferBuffer(uint8_t* buffer, size_t bytes);

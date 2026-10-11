@@ -2,11 +2,6 @@
 #include <cstdint>
 
 namespace copilot {
-constexpr int kWifiStatusX = 113;
-constexpr int kWifiStatusY = 36;
-constexpr int kWifiStatusWidth = 240;
-constexpr int kWifiStatusHeight = 52;
-
 enum class SettingsAction : uint8_t {
   None,
   BrightnessDown,
@@ -24,6 +19,39 @@ enum class SettingsAction : uint8_t {
   Close
 };
 
+struct SettingsRect {
+  int x, y, width, height;
+  constexpr bool contains(int16_t px, int16_t py) const {
+    return px >= x && px < x + width && py >= y && py < y + height;
+  }
+};
+
+// The one settings layout: AgentCompanion.ino draws these rectangles and tap() tests them.
+namespace settings_layout {
+constexpr SettingsRect kWifiStatus{113, 36, 240, 52};
+constexpr SettingsRect kBrightnessDown{150, 116, 48, 38};
+constexpr SettingsRect kBrightnessUp{268, 116, 48, 38};
+constexpr SettingsRect kVolumeDown{150, 180, 48, 38};
+constexpr SettingsRect kVolumeUp{268, 180, 48, 38};
+constexpr SettingsRect kWifiSetup{88, 336, 290, 44};
+constexpr SettingsRect kBack{150, 394, 166, 38};
+
+struct LabeledButton {
+  SettingsRect rect;
+  SettingsAction action;
+  const char* label;
+  uint8_t textSize;
+};
+constexpr LabeledButton kModeButtons[] = {
+  {{58, 306, 165, 34}, SettingsAction::Idle, "Idle", 2},
+  {{243, 306, 165, 34}, SettingsAction::Working, "Working", 2},
+  {{58, 344, 165, 34}, SettingsAction::Complete, "Complete", 2},
+  {{243, 344, 165, 34}, SettingsAction::Attention, "Needs attention", 1},
+  {{58, 382, 165, 34}, SettingsAction::Surprise, "Surprise", 2},
+  {{243, 382, 165, 34}, SettingsAction::Close, "Close", 2},
+};
+}
+
 class SettingsMenu {
  public:
   explicit SettingsMenu(uint8_t brightness, uint8_t soundVolume = 50)
@@ -37,49 +65,39 @@ class SettingsMenu {
   void back() { networkPage_ = false; }
   uint8_t brightness() const { return brightness_; }
   uint8_t soundVolume() const { return soundVolume_; }
-  void setSoundVolume(uint8_t soundVolume) {
-    soundVolume_ = soundVolume > 100 ? 100 : soundVolume;
-  }
+  void setSoundVolume(uint8_t volume) { soundVolume_ = volume > 100 ? 100 : volume; }
 
   SettingsAction tap(int16_t x, int16_t y) {
+    using namespace settings_layout;
     if (!open_) return SettingsAction::None;
     if (networkPage_) {
-      if (inside(x, y, 88, 336, 290, 44)) return SettingsAction::WifiSetup;
-      if (inside(x, y, 150, 394, 166, 38)) return SettingsAction::Back;
+      if (kWifiSetup.contains(x, y)) return SettingsAction::WifiSetup;
+      if (kBack.contains(x, y)) return SettingsAction::Back;
       return SettingsAction::None;
     }
-    if (inside(x, y, kWifiStatusX, kWifiStatusY, kWifiStatusWidth, kWifiStatusHeight))
-      return SettingsAction::Wifi;
-    if (inside(x, y, 150, 116, 48, 38)) {
+    if (kWifiStatus.contains(x, y)) return SettingsAction::Wifi;
+    if (kBrightnessDown.contains(x, y)) {
       brightness_ = brightness_ > 55 ? brightness_ - 25 : 30;
       return SettingsAction::BrightnessDown;
     }
-    if (inside(x, y, 268, 116, 48, 38)) {
+    if (kBrightnessUp.contains(x, y)) {
       brightness_ = brightness_ < 230 ? brightness_ + 25 : 255;
       return SettingsAction::BrightnessUp;
     }
-    if (inside(x, y, 150, 180, 48, 38)) {
+    if (kVolumeDown.contains(x, y)) {
       soundVolume_ = soundVolume_ > 25 ? soundVolume_ - 25 : 0;
       return SettingsAction::SoundDown;
     }
-    if (inside(x, y, 268, 180, 48, 38)) {
+    if (kVolumeUp.contains(x, y)) {
       soundVolume_ = soundVolume_ < 75 ? soundVolume_ + 25 : 100;
       return SettingsAction::SoundUp;
     }
-    if (inside(x, y, 58, 306, 165, 34)) return SettingsAction::Idle;
-    if (inside(x, y, 243, 306, 165, 34)) return SettingsAction::Working;
-    if (inside(x, y, 58, 344, 165, 34)) return SettingsAction::Complete;
-    if (inside(x, y, 243, 344, 165, 34)) return SettingsAction::Attention;
-    if (inside(x, y, 58, 382, 165, 34)) return SettingsAction::Surprise;
-    if (inside(x, y, 243, 382, 165, 34)) return SettingsAction::Close;
+    for (const LabeledButton& button : kModeButtons)
+      if (button.rect.contains(x, y)) return button.action;
     return SettingsAction::None;
   }
 
  private:
-  static bool inside(int16_t x, int16_t y, int left, int top, int width, int height) {
-    return x >= left && x < left + width && y >= top && y < top + height;
-  }
-
   uint8_t brightness_;
   uint8_t soundVolume_;
   bool open_ = false;

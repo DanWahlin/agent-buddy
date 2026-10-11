@@ -6,6 +6,8 @@
 namespace copilot {
 class OrientationSensor {
  public:
+  static constexpr const char* kModel = "QMI8658";
+
   bool begin();
   bool update();
   bool available() const { return available_; }

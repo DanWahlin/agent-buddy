@@ -1,23 +1,11 @@
 #include "CharacterMotion.h"
 #include "CharacterModel.h"
+#include "MotionMath.h"
 #include <algorithm>
 #include <cmath>
 
 namespace copilot {
 namespace {
-double inverse(double value) {
-  if (value <= 0 || value >= 1) return value;
-  double low = 0, high = 1;
-  for (int i = 0; i < 30; ++i) {
-    const double t = (low + high) / 2;
-    if (t * t * t * (t * (6 * t - 15) + 10) < value) low = t;
-    else high = t;
-  }
-  return (low + high) / 2;
-}
-double smooth(double value) {
-  return value * value * value * (value * (value * 6 - 15) + 10);
-}
 bool latched(CharacterMode mode) {
   return mode == CharacterMode::Working || mode == CharacterMode::Attention;
 }
@@ -39,10 +27,7 @@ CharacterMotion::CharacterMotion(uint32_t seed, uint8_t availableDirections)
 }
 
 double CharacterMotion::range(double low, double high) {
-  random_ ^= random_ << 13;
-  random_ ^= random_ >> 17;
-  random_ ^= random_ << 5;
-  return low + double(random_) / 4294967296.0 * (high - low);
+  return low + double(xorshift32(random_)) / 4294967296.0 * (high - low);
 }
 
 bool CharacterMotion::setMode(CharacterMode mode) {
@@ -111,9 +96,9 @@ CharacterState CharacterMotion::state() const {
       const double sleepy = std::fmod(sleepSeconds_, 10.0);
       if (sleepy < 4) {
         double openness;
-        if (sleepy < 1.5) openness = smooth(sleepy / 1.5);
+        if (sleepy < 1.5) openness = quintic(sleepy / 1.5);
         else if (sleepy < 2.5) openness = 1;
-        else openness = smooth((4 - sleepy) / 1.5);
+        else openness = quintic((4 - sleepy) / 1.5);
         if (openness > 0) {
           pose.blinkLevel = 3;
           pose.blinkBlend = static_cast<uint8_t>(
@@ -184,7 +169,7 @@ double CharacterMotion::edgeInterval() {
   const int travelled = std::abs(int(pose_.index) - from_);
   // Physics is baked into equally spaced spring samples, not a second easing curve.
   cachedInterval_ = phase_ == Phase::SurpriseReaction ? duration_ / steps
-      : duration_ * (inverse(double(travelled + 1) / steps) - inverse(double(travelled) / steps));
+      : duration_ * (inverseQuintic(double(travelled + 1) / steps) - inverseQuintic(double(travelled) / steps));
   cachedIndex_ = pose_.index;
   return cachedInterval_;
 }

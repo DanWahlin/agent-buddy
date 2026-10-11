@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <cstring>
-#include <initializer_list>
 
 namespace copilot {
 enum class DeviceCommand {
@@ -22,64 +21,43 @@ inline const char* commandName(DeviceCommand command) {
   }
 }
 
+constexpr DeviceCommand kModeCommands[] = {
+  DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
+  DeviceCommand::Complete, DeviceCommand::Attention,
+};
+
+// The mode command with this name, or DeviceCommand::Invalid.
+inline DeviceCommand modeCommand(const char* name) {
+  for (DeviceCommand command : kModeCommands)
+    if (std::strcmp(name, commandName(command)) == 0) return command;
+  return DeviceCommand::Invalid;
+}
+
+// The serial prefix of a badge packet ('%' icon, '&' agents, '$' usage), or '\0'.
+inline char badgePrefix(DeviceCommand command) {
+  switch (command) {
+    case DeviceCommand::DefineAgentIcon: return '%';
+    case DeviceCommand::SetAgentBadges: return '&';
+    case DeviceCommand::SetUsage: return '$';
+    default: return '\0';
+  }
+}
+
 class DeviceCommands {
  public:
   DeviceCommand feed(char byte, uint64_t milliseconds) {
     if (!receiving_) {
-      if (byte == '!') {
+      for (const PacketStart& start : kPacketStarts) {
+        if (byte != start.prefix) continue;
         receiving_ = true;
-        packet_ = Packet::Mode;
+        packet_ = start.packet;
         length_ = 0;
         invalid_ = false;
         previous_ = milliseconds;
         return DeviceCommand::None;
       }
-      if (byte == '@') {
-        receiving_ = true;
-        packet_ = Packet::Wifi;
-        length_ = 0;
-        invalid_ = false;
-        previous_ = milliseconds;
-        return DeviceCommand::None;
-      }
-      if (byte == '%') {
-        receiving_ = true;
-        packet_ = Packet::Icon;
-        length_ = 0;
-        invalid_ = false;
-        previous_ = milliseconds;
-        return DeviceCommand::None;
-      }
-      if (byte == '&') {
-        receiving_ = true;
-        packet_ = Packet::Agents;
-        length_ = 0;
-        invalid_ = false;
-        previous_ = milliseconds;
-        return DeviceCommand::None;
-      }
-      if (byte == '$') {
-        receiving_ = true;
-        packet_ = Packet::Usage;
-        length_ = 0;
-        invalid_ = false;
-        previous_ = milliseconds;
-        return DeviceCommand::None;
-      }
-      if (byte == '^') {
-        receiving_ = true;
-        packet_ = Packet::Orientation;
-        length_ = 0;
-        invalid_ = false;
-        previous_ = milliseconds;
-        return DeviceCommand::None;
-      }
-      if (byte == 'o') return DeviceCommand::GetOrientation;
-      if (byte == 's') return DeviceCommand::Capture;
-      if (byte == 'h') return DeviceCommand::Heap;
-      if (byte == 'i') return DeviceCommand::Info;
-      if (byte == 'u') return DeviceCommand::UploadCharacter;
-      if (byte == 'w') return DeviceCommand::ScanWifi;
+      for (const ByteCommand& entry : kByteCommands)
+        if (byte == entry.byte) return entry.command;
       return byte == '\r' || byte == '\n' ? DeviceCommand::None : DeviceCommand::Invalid;
     }
     previous_ = milliseconds;
@@ -87,16 +65,9 @@ class DeviceCommands {
       receiving_ = false;
       if (invalid_) return DeviceCommand::Invalid;
       text_[length_] = '\0';
-      if (packet_ == Packet::Wifi) return DeviceCommand::ConfigureWifi;
-      if (packet_ == Packet::Icon) return DeviceCommand::DefineAgentIcon;
-      if (packet_ == Packet::Agents) return DeviceCommand::SetAgentBadges;
-      if (packet_ == Packet::Usage) return DeviceCommand::SetUsage;
-      if (packet_ == Packet::Orientation) return DeviceCommand::ConfigureOrientation;
-      for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
-                                     DeviceCommand::Complete, DeviceCommand::Attention}) {
-        if (std::strcmp(text_, commandName(command)) == 0) return command;
-      }
-      return DeviceCommand::Invalid;
+      for (const PacketStart& start : kPacketStarts)
+        if (start.packet == packet_ && start.packet != Packet::Mode) return start.command;
+      return modeCommand(text_);
     }
     if (byte == '\r') return DeviceCommand::None;
     const bool alphaNum = (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z')
@@ -123,10 +94,32 @@ class DeviceCommands {
   }
 
   const char* payload() const { return text_; }
-  const char* wifiPayload() const { return text_; }
 
  private:
   enum class Packet : uint8_t { Mode, Wifi, Icon, Agents, Usage, Orientation };
+  // A packet starts with its prefix and ends at '\n'; a mode packet ends with a mode name.
+  struct PacketStart {
+    char prefix;
+    Packet packet;
+    DeviceCommand command;
+  };
+  static constexpr PacketStart kPacketStarts[] = {
+    {'!', Packet::Mode, DeviceCommand::Invalid},
+    {'@', Packet::Wifi, DeviceCommand::ConfigureWifi},
+    {'%', Packet::Icon, DeviceCommand::DefineAgentIcon},
+    {'&', Packet::Agents, DeviceCommand::SetAgentBadges},
+    {'$', Packet::Usage, DeviceCommand::SetUsage},
+    {'^', Packet::Orientation, DeviceCommand::ConfigureOrientation},
+  };
+  struct ByteCommand {
+    char byte;
+    DeviceCommand command;
+  };
+  static constexpr ByteCommand kByteCommands[] = {
+    {'o', DeviceCommand::GetOrientation}, {'s', DeviceCommand::Capture},
+    {'h', DeviceCommand::Heap}, {'i', DeviceCommand::Info},
+    {'u', DeviceCommand::UploadCharacter}, {'w', DeviceCommand::ScanWifi},
+  };
   char text_[192] = {};
   unsigned length_ = 0;
   uint64_t previous_ = 0;
