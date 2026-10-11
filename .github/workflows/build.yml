@@ -102,7 +102,7 @@ jobs:
       - name: Package firmware and character packs
         run: |
           python tools/package_release.py --version "$(cat VERSION)" \
-            --name "${GITHUB_REPOSITORY#*/}" --repository "$GITHUB_REPOSITORY"
+            --repository "$GITHUB_REPOSITORY"
       - name: Upload release bundles
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

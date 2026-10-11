@@ -82,8 +82,8 @@ class ReleaseBundleTests(unittest.TestCase):
         original = [firmware.read_bytes(), characters.read_bytes()]
         package_release.package(self.root, "1.2.3")
         self.assertEqual(original, [firmware.read_bytes(), characters.read_bytes()])
-        self.assertEqual(firmware.name, "esp32-agent-companion-v1.2.3-firmware.zip")
-        self.assertEqual(characters.name, "esp32-agent-companion-v1.2.3-characters.zip")
+        self.assertEqual(firmware.name, "agent-buddy-v1.2.3-firmware.zip")
+        self.assertEqual(characters.name, "agent-buddy-v1.2.3-characters.zip")
         with zipfile.ZipFile(firmware) as archive:
             self.assertEqual(set(archive.namelist()), {*flash_release.PAYLOAD_NAMES, "SHA256SUMS"})
             self.assertTrue(all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()))
@@ -107,6 +107,15 @@ class ReleaseBundleTests(unittest.TestCase):
         result = subprocess.run([sys.executable, "-S", str(extracted / "flash.py"), "--verify-only"],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_identity_matches_daemon_download(self):
+        daemon = (ROOT / "daemon/src/firmware-release.ts").read_text()
+        self.assertIn(f"export const releaseName = '{package_release.RELEASE_NAME}';", daemon)
+        self.assertIn(f"export const releaseRepository = '{package_release.RELEASE_REPOSITORY}';", daemon)
+        # The workflow must not rename the assets that the daemon downloads.
+        workflow = (ROOT / ".github/workflows/build.yml").read_text()
+        self.assertIn("tools/package_release.py", workflow)
+        self.assertNotIn("--name", workflow)
 
     def test_custom_name_and_repository(self):
         firmware, characters = package_release.package(self.root, "0.0.0", name="new-name",

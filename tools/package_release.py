@@ -16,7 +16,10 @@ else:
     from flash_release import IMAGE_NAMES, REQUIREMENTS, WARNING, sha256, validate_identity, validate_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
-
+# The desktop daemon downloads <RELEASE_NAME>-v<version>-firmware.zip from RELEASE_REPOSITORY.
+# Keep these the same as releaseName and releaseRepository in daemon/src/firmware-release.ts.
+RELEASE_NAME = "agent-buddy"
+RELEASE_REPOSITORY = "DanWahlin/agent-buddy"
 
 def checksum_file(files):
     return "".join(f"{sha256(data)}  {name}\n" for name, data in sorted(files.items())).encode("ascii")
@@ -32,8 +35,7 @@ def write_zip(path, files):
             archive.writestr(info, data)
 
 
-def package(root, version, name="esp32-agent-companion", output=None,
-            repository="DanWahlin/esp32-agent-companion"):
+def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_REPOSITORY):
     root = Path(root)
     validate_identity(name, version)
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository, flags=re.ASCII):
@@ -135,10 +137,10 @@ def package(root, version, name="esp32-agent-companion", output=None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--name", default="esp32-agent-companion", help="Lowercase ASCII release slug")
+    parser.add_argument("--name", default=RELEASE_NAME, help="Lowercase ASCII release slug")
     parser.add_argument("--version", required=True, help="Stable SemVer without a v prefix")
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
-    parser.add_argument("--repository", default="DanWahlin/esp32-agent-companion",
+    parser.add_argument("--repository", default=RELEASE_REPOSITORY,
                         help="Owner/repository for INSTALL links")
     args = parser.parse_args(argv)
     try:
