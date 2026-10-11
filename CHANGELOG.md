@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.1]
+
+### Fixes
+
+- Fix release firmware downloads after the agent-buddy rename (#17)
+
 ## [v0.14.0]
 
 ### Features and improvements
