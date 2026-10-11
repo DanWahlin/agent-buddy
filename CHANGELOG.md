@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.3]
+
+### Other changes
+
+- Keep the device's character after a USB firmware update (#19)
+
 ## [v0.14.2]
 
 ### Other changes
