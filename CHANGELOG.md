@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.2]
+
+### Other changes
+
+- Show firmware updates in Settings and use an X to remove characters (#18)
+
 ## [v0.14.1]
 
 ### Fixes
