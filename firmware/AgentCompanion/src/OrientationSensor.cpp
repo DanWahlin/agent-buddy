@@ -1,32 +1,13 @@
 #include "OrientationSensor.h"
 #include "Config.h"
+#include "boards/BoardDrivers.h"
 #include <Arduino.h>
-#include <Wire.h>
 
 namespace copilot {
 bool OrientationSensor::begin() {
-  error_ = nullptr;
-  available_ = false;
-  if (!sensor_.begin(Wire, kImuI2cAddress)) {
-    error_ = "QMI8658 orientation sensor initialization failed.";
-    return false;
-  }
-  if (sensor_.configAccelerometer(SensorQMI8658::ACC_RANGE_2G,
-                                  SensorQMI8658::ACC_ODR_62_5Hz,
-                                  SensorQMI8658::LPF_MODE_2) != 0) {
-    error_ = "QMI8658 accelerometer configuration failed.";
-    return false;
-  }
-  if (!sensor_.enableAccelerometer()) {
-    error_ = "QMI8658 accelerometer enable failed.";
-    return false;
-  }
-  if (!Wire.setClock(kOrientationI2cFrequency)) {
-    error_ = "Touch/IMU I2C clock configuration failed.";
-    return false;
-  }
-  available_ = true;
-  return true;
+  error_ = board::accelerometer().begin();
+  available_ = !error_;
+  return available_;
 }
 
 bool OrientationSensor::update() {
@@ -34,9 +15,8 @@ bool OrientationSensor::update() {
   const uint32_t now = millis();
   if (now - lastPollMs_ < kOrientationPollMs) return false;
   lastPollMs_ = now;
-  if (!sensor_.getDataReady()) return false;
   float x, y, z;
-  if (!sensor_.getAccelerometer(x, y, z)) return false;
+  if (!board::accelerometer().read(x, y, z)) return false;
   accelerometerX_ = x;
   accelerometerY_ = y;
   accelerometerZ_ = z;

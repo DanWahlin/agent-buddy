@@ -85,8 +85,19 @@ a small board layer holds the parts that change from one model to a different mo
 | --- | --- |
 | `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` and CI build. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | The display bus, display panel, and touch driver objects. Only the device build includes it. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | The display bus and panel, the touch driver, `accelerometer()`, and `audioOutput()`. Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
+| `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, and Espressif's ES8311 driver. They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
+
+A board's `accelerometer()` gives `begin()` (returns `nullptr` or the failure
+reason) and `read(x, y, z)` (returns `false` when no new sample is ready). The
+samples must be in the orientation frame in `ScreenOrientation.h`. If the IMU
+axes are different, the board changes the axes before it returns them.
+A board's `audioOutput()` gives `begin(sampleRate)` (returns `nullptr` or an
+error tag for the `AUDIO error=` log), `enable(volume)`, `write(data, size)`,
+and `disable()`. `OrientationSensor` and `AudioPlayer` hold the board-independent
+logic: the poll timing, the angle filter, the cue queue, and the mono-to-stereo
+copy.
 
 `tools/boards.py` reads `boards.json` for the scripts and CI. `tools/arduino.sh`
 passes the board define with `--build-property compiler.cpp.extra_flags=-D<define>`
@@ -106,7 +117,8 @@ Supported now: `waveshare-amoled-175` (Waveshare ESP32-S3-Touch-AMOLED-1.75-B an
 #### Add a board
 
 1. Copy `src/boards/waveshare_amoled_175/` to a new folder. Change the pins,
-   addresses, and driver objects to agree with the vendor schematic.
+   addresses, and driver objects to agree with the vendor schematic. Use a
+   driver from `src/boards/drivers/`, or add one there for a different chip.
 2. Add a branch for the new define to both selector headers.
 3. Add the board to `firmware/boards.json` with its FQBN and pinned vendor revision.
 4. Run `python3 -m unittest tests.test_boards`, then `BOARD=<id> bash tools/arduino.sh build`.
@@ -118,8 +130,9 @@ Known limits for boards that are not similar to the current board:
   different display backend.
 - Character packs and the renderer use 466 x 466 art. A different panel size
   needs scaling in the renderer or different art.
-- Audio uses the ES8311 codec, and the IMU axis map is in `ScreenOrientation.h`.
-  A board without the codec or with a different IMU orientation needs changes there.
+- A board without an IMU or a speaker must still give `accelerometer()` and
+  `audioOutput()`. Their `begin()` can return a reason, and the firmware then
+  runs without orientation or sound.
 - The partition layout and `flash.py` expect an ESP32-S3 with 16 MB flash.
 - Each board other than the default gets its own release ZIP
   (`...-v<version>-<board>-firmware.zip`). The daemon's firmware update
@@ -636,11 +649,13 @@ do not replay a cue. Settings actions use the short tick. There is no continuous
 Working loop.
 
 `AudioPlayer` runs on a separate low-priority task, duplicates mono samples into
-the ES8311 stereo I2S stream, and uses a one-item replacement queue so stale
-sounds cannot accumulate. The NS4150B amplifier on GPIO46 stays disabled between
+the board's stereo `audioOutput()`, and uses a one-item replacement queue so stale
+sounds cannot accumulate. On the Waveshare board, `Es8311AudioOutput` drives the
+ES8311 codec over I2S, and the NS4150B amplifier on GPIO46 stays disabled between
 cues and whenever sound is Off. Codec or I2S initialization failures are logged
-without stopping animation. The checked-in ES8311 driver retains Espressif's
-Apache-2.0 SPDX headers and matches the driver in Waveshare's pinned example.
+without stopping animation. The checked-in ES8311 driver in
+`src/boards/drivers/es8311/` retains Espressif's Apache-2.0 SPDX headers and
+matches the driver in Waveshare's pinned example.
 
 The board routes audio through MCLK GPIO42, BCLK GPIO9, WS GPIO45, playback data
 GPIO8, and its two-pin speaker connector. A compatible external speaker is

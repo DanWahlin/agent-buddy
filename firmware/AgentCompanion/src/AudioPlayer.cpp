@@ -1,12 +1,11 @@
 #include "AudioPlayer.h"
 
 #include <Arduino.h>
-#include <ESP_I2S.h>
 #include <atomic>
 #include <cstring>
 #include "../generated/audio_assets.h"
 #include "Config.h"
-#include "audio/es8311.h"
+#include "boards/BoardDrivers.h"
 
 namespace copilot {
 namespace {
@@ -15,9 +14,7 @@ struct AudioAsset {
   uint32_t count;
 };
 
-I2SClass i2s;
 QueueHandle_t cueQueue = nullptr;
-es8311_handle_t codec = nullptr;
 std::atomic<uint8_t> currentVolume{kDefaultSoundVolume};
 std::atomic<bool> ready{false};
 
@@ -37,35 +34,14 @@ AudioAsset assetForCue(AudioCue cue) {
   return {nullptr, 0};
 }
 
-int codecVolume(uint8_t volume) {
-  return kAudioMinimumCodecVolume +
-         (volume * (kAudioMaximumCodecVolume - kAudioMinimumCodecVolume) + 50) / 100;
-}
-
-bool writeAll(const uint8_t* data, size_t size) {
-  while (size > 0) {
-    const size_t written = i2s.write(data, size);
-    if (written == 0) return false;
-    data += written;
-    size -= written;
-  }
-  return true;
-}
-
 bool playCue(AudioCue cue, AudioCue& replacement) {
   const uint8_t volume = soundVolume();
   if (volume == 0) return true;
   const AudioAsset asset = assetForCue(cue);
   if (!asset.samples || asset.count == 0) return true;
 
-  if (es8311_voice_volume_set(codec, codecVolume(volume), nullptr) != ESP_OK) {
-    Serial.println("AUDIO error=codec-output");
-    return true;
-  }
-  digitalWrite(kAudioAmplifierPin, HIGH);
-  delay(4);
-  if (es8311_voice_mute(codec, false) != ESP_OK) {
-    digitalWrite(kAudioAmplifierPin, LOW);
+  auto& output = board::audioOutput();
+  if (!output.enable(volume)) {
     Serial.println("AUDIO error=codec-output");
     return true;
   }
@@ -85,53 +61,21 @@ bool playCue(AudioCue cue, AudioCue& replacement) {
       stereo[frame * 2] = asset.samples[offset + frame];
       stereo[frame * 2 + 1] = asset.samples[offset + frame];
     }
-    if (!writeAll(reinterpret_cast<const uint8_t*>(stereo), frames * 4)) {
+    if (!output.write(reinterpret_cast<const uint8_t*>(stereo), frames * 4)) {
       Serial.println("AUDIO error=i2s-write");
       break;
     }
   }
 
   memset(stereo, 0, sizeof(stereo));
-  writeAll(reinterpret_cast<const uint8_t*>(stereo), 96 * 4);
-  es8311_voice_mute(codec, true);
-  delay(2);
-  digitalWrite(kAudioAmplifierPin, LOW);
+  output.write(reinterpret_cast<const uint8_t*>(stereo), 96 * 4);
+  output.disable();
   return !interrupted;
 }
 
 void audioTask(void*) {
-  pinMode(kAudioAmplifierPin, OUTPUT);
-  digitalWrite(kAudioAmplifierPin, LOW);
-  i2s.setPins(kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin, -1,
-              kAudioMclkPin);
-  if (!i2s.begin(I2S_MODE_STD, kAudioSampleRate, I2S_DATA_BIT_WIDTH_16BIT,
-                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
-    Serial.println("AUDIO error=i2s-init");
-    vTaskDelete(nullptr);
-    return;
-  }
-
-  codec = es8311_create(0, ES8311_ADDRESS_0);
-  const es8311_clock_config_t clock = {
-      .mclk_inverted = false,
-      .sclk_inverted = false,
-      .mclk_from_mclk_pin = true,
-      .mclk_frequency = static_cast<int>(kAudioSampleRate * 256),
-      .sample_frequency = static_cast<int>(kAudioSampleRate),
-  };
-  if (!codec ||
-      es8311_init(codec, &clock, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) !=
-          ESP_OK ||
-      es8311_sample_frequency_config(codec, clock.mclk_frequency,
-                                     clock.sample_frequency) != ESP_OK ||
-      es8311_voice_fade(codec, ES8311_FADE_64LRCK) != ESP_OK ||
-      es8311_voice_mute(codec, true) != ESP_OK) {
-    Serial.println("AUDIO error=codec-init");
-    if (codec) {
-      es8311_delete(codec);
-      codec = nullptr;
-    }
-    i2s.end();
+  if (const char* error = board::audioOutput().begin(kAudioSampleRate)) {
+    Serial.printf("AUDIO error=%s\n", error);
     vTaskDelete(nullptr);
     return;
   }

@@ -15,6 +15,7 @@ constexpr char kId[] = "waveshare-amoled-175";
 constexpr char kName[] = "Waveshare ESP32-S3-Touch-AMOLED-1.75";
 constexpr char kDisplayPanelName[] = "CO5300";
 constexpr char kTouchControllerName[] = "CST9217";
+constexpr char kImuName[] = "QMI8658";
 }  // namespace board
 
 constexpr int kDisplaySize = 466;
@@ -38,8 +39,14 @@ constexpr int kAudioBclkPin = 9;
 constexpr int kAudioWordSelectPin = 45;
 constexpr int kAudioDataOutPin = 8;
 constexpr int kAudioAmplifierPin = 46;
+constexpr uint8_t kAudioCodecI2cAddress = 0x18;
+// The ES8311 volume for 1% and for 100% sound volume, tuned for the board's speaker.
+constexpr int kAudioMinimumCodecVolume = 68;
+constexpr int kAudioMaximumCodecVolume = 82;
 
-// Touch, IMU, and audio codec share one I2C bus.
+// Touch, IMU, and audio codec share one I2C bus (Arduino Wire, I2C port 0).
+constexpr unsigned kI2cPort = 0;
+constexpr uint32_t kI2cFrequency = 400000;
 constexpr int kTouchSda = 15;
 constexpr int kTouchScl = 14;
 constexpr int kTouchInterrupt = 11;

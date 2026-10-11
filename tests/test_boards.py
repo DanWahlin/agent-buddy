@@ -28,9 +28,11 @@ class BoardTargetTests(unittest.TestCase):
     def test_board_config_defines_the_shared_contract(self):
         names = ("kId", "kName", "kDisplaySize", "kDisplayCsPin", "kBrightness", "kSpiFrequency",
                  "kDisplayQspiWriteCommand", "kDisplayQspiPixelAddress", "kAudioMclkPin",
-                 "kAudioAmplifierPin", "kTouchSda", "kTouchScl", "kTouchI2cAddress", "kTouchMirrorX",
-                 "kImuI2cAddress", "kBootButtonPin")
-        drivers = ("TouchController", "kTouchPointCapacity", "displayBus", "displayPanel")
+                 "kAudioAmplifierPin", "kAudioCodecI2cAddress", "kAudioMinimumCodecVolume",
+                 "kAudioMaximumCodecVolume", "kTouchSda", "kTouchScl", "kTouchI2cAddress", "kTouchMirrorX",
+                 "kI2cFrequency", "kImuI2cAddress", "kImuName", "kBootButtonPin")
+        drivers = ("TouchController", "kTouchPointCapacity", "displayBus", "displayPanel", "accelerometer",
+                   "audioOutput")
         for board_id, entry in self.data["boards"].items():
             config = (boards.BOARD_SOURCES / entry["directory"] / "BoardConfig.h").read_text()
             for name in names:
@@ -48,7 +50,8 @@ class BoardTargetTests(unittest.TestCase):
         for path in shared:
             text = path.read_text(errors="ignore")
             for pattern in (r"\bArduino_CO5300\b", r"\bArduino_ESP32QSPI\b", r"\bTouchDrvCST92xx\b",
-                            r"TouchDrvCSTXXX\.hpp", r"\bCST92XX_SLAVE_ADDRESS\b", r"\bQMI8658_L_SLAVE_ADDRESS\b"):
+                            r"TouchDrvCSTXXX\.hpp", r"\bCST92XX_SLAVE_ADDRESS\b", r"\bQMI8658_L_SLAVE_ADDRESS\b",
+                            r"\bSensorQMI8658\b", r"\bes8311_\w+", r"ESP_I2S\.h", r"\bI2SClass\b"):
                 self.assertNotRegex(text, pattern, path.relative_to(ROOT).as_posix())
 
     def test_build_keeps_the_core_defines(self):

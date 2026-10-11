@@ -1116,7 +1116,7 @@ void setup() {
   if (!orientationSensor.begin()) {
     logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
   } else {
-    logMessage("ORIENTATION sensor=%s mode=continuous\n", OrientationSensor::kModel);
+    logMessage("ORIENTATION sensor=%s mode=continuous\n", board::kImuName);
   }
   const uint8_t storedSoundVolume = loadSoundVolume();
   settings.setSoundVolume(storedSoundVolume);
