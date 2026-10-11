@@ -2,6 +2,19 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.0]
+
+### Features and improvements
+
+- Add guided onboarding and reliable desktop activation (#15)
+
+- Add a firmware board layer and refactor firmware (#16)
+
+
+### Other changes
+
+- Move the character selector to the top of the live demo panel (#13)
+
 ## [v0.13.1]
 
 ### Other changes
