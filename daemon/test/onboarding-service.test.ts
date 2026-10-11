@@ -549,6 +549,47 @@ test('firmware setup targets the selected port and restores the chosen character
   }
 });
 
+test('a Settings USB firmware install gives the device its previous character back', async () => {
+  const {service, device, flashes, cleanup} = await fixture();
+  try {
+    device.active = true;
+    device.characterId = 'claude';
+    await service.installFirmwareOverUsb(device.usbPath);
+    assert.deepEqual(flashes, [device.usbPath]);
+    assert.deepEqual(service.installedCharacters, ['claude']);
+    assert.equal(device.characterId, 'claude');
+    assert.equal(service.status().firmware.usb.last?.ok, true);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a Settings USB firmware install does not reinstall the character that the firmware brings', async () => {
+  const {service, device, cleanup} = await fixture();
+  try {
+    device.active = true;
+    await service.installFirmwareOverUsb(device.usbPath);
+    assert.deepEqual(service.installedCharacters, []);
+    assert.equal(device.characterId, 'copilot');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('firmware setup installs only the selected character, not the previous one', async () => {
+  const {service, store, device, cleanup} = await fixture();
+  try {
+    device.active = true;
+    device.characterId = 'claude';
+    await store.reset({display: 'both', character: 'copilot', port: device.usbPath});
+    await service.setupOnboardingDevice(true);
+    assert.deepEqual(service.installedCharacters, []);
+    assert.equal(device.characterId, 'copilot');
+  } finally {
+    await cleanup();
+  }
+});
+
 test('a failed firmware write stays incomplete and exposes the error', async () => {
   const {service, store, device, installer, cleanup} = await fixture();
   try {
