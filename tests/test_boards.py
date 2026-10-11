@@ -51,6 +51,13 @@ class BoardTargetTests(unittest.TestCase):
                             r"TouchDrvCSTXXX\.hpp", r"\bCST92XX_SLAVE_ADDRESS\b", r"\bQMI8658_L_SLAVE_ADDRESS\b"):
                 self.assertNotRegex(text, pattern, path.relative_to(ROOT).as_posix())
 
+    def test_build_keeps_the_core_defines(self):
+        # The ESP32 core sets -DBOARD_HAS_PSRAM in build.defines, so the board define must not replace it.
+        script = (ROOT / "tools/arduino.sh").read_text()
+        self.assertNotIn("build.defines", script)
+        self.assertIn('compiler.cpp.extra_flags=-D$BOARD_DEFINE', script)
+        self.assertIn('compiler.c.extra_flags=-D$BOARD_DEFINE', script)
+
     def test_validate_rejects_inconsistent_targets(self):
         board_id = self.data["default"]
         changes = [

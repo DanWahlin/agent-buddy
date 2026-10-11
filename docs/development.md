@@ -89,7 +89,9 @@ a small board layer holds the parts that change from one model to a different mo
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
 
 `tools/boards.py` reads `boards.json` for the scripts and CI. `tools/arduino.sh`
-passes the board define with `--build-property build.defines=-D<define>`.
+passes the board define with `--build-property compiler.cpp.extra_flags=-D<define>`
+(and the same for C). Do not set `build.defines`: the ESP32 core uses it for
+`-DBOARD_HAS_PSRAM`.
 `build/firmware-bundle.json` records the board, so an upload for a different
 `BOARD` fails until you build again. The release manifest, `INSTALL.txt`,
 `flash.py`, the boot log, and the Wi-Fi status (`"board"`) also show the board ID.

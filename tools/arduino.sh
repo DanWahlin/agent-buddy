@@ -34,7 +34,8 @@ case "$ACTION" in
     APP_SIZE="$(python3 "$ROOT/tools/firmware_artifacts.py" app-size)"
     "$CLI" --config-file "$CONFIG" compile --fqbn "$FQBN" \
       --build-property "upload.maximum_size=$APP_SIZE" \
-      --build-property "build.defines=-D$BOARD_DEFINE" \
+      --build-property "compiler.c.extra_flags=-D$BOARD_DEFINE" \
+      --build-property "compiler.cpp.extra_flags=-D$BOARD_DEFINE" \
       "${LIBRARY_ARGS[@]}" --warnings default \
       --build-path "$ROOT/build/firmware" "$ROOT/firmware/AgentCompanion"
     python3 "$ROOT/tools/firmware_artifacts.py" record
