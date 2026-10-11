@@ -24,7 +24,9 @@ export interface FirmwareReleaseOptions {
   fetch?: Fetcher;
 }
 
-export const releaseRepository = 'DanWahlin/esp32-agent-companion';
+// Keep these the same as RELEASE_NAME and RELEASE_REPOSITORY in tools/package_release.py.
+export const releaseName = 'agent-buddy';
+export const releaseRepository = 'DanWahlin/agent-buddy';
 // The board that the release firmware ZIP is built for: the default board in firmware/boards.json.
 // Other boards get their own ZIP, which this updater does not download.
 export const releaseBoard = 'waveshare-amoled-175';
@@ -42,7 +44,7 @@ export function releaseFirmwareDirectory(): string {
 }
 
 export function firmwareAssetName(version: string): string {
-  return `esp32-agent-companion-v${version}-firmware.zip`;
+  return `${releaseName}-v${version}-firmware.zip`;
 }
 
 // Downloads the firmware of one release from GitHub, checks it against the release's SHA256SUMS
@@ -158,8 +160,8 @@ function checkInnerSums(files: Map<string, Buffer>): void {
 export function validateManifest(manifest: unknown, files: Map<string, Buffer>, version: string): void {
   if (typeof manifest !== 'object' || manifest === null) throw new Error('Manifest must be an object.');
   const value = manifest as Record<string, unknown>;
-  if (value.name !== 'esp32-agent-companion' || value.version !== version)
-    throw new Error(`The firmware is not esp32-agent-companion v${version}.`);
+  if (value.name !== releaseName || value.version !== version)
+    throw new Error(`The firmware is not ${releaseName} v${version}.`);
   if (value.schema_version !== 1) throw new Error('Unsupported manifest schema.');
   if (value.chip !== 'esp32s3' || value.flash_size !== '16MB')
     throw new Error('Unsupported chip or flash size; expected ESP32-S3 with 16MB.');

@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DanWahlin/esp32-agent-companion/releases/latest"><img src="https://img.shields.io/github/v/release/DanWahlin/esp32-agent-companion" alt="Latest release"></a>
-  <a href="https://github.com/DanWahlin/esp32-agent-companion/actions/workflows/build.yml"><img src="https://github.com/DanWahlin/esp32-agent-companion/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
+  <a href="https://github.com/DanWahlin/agent-buddy/releases/latest"><img src="https://img.shields.io/github/v/release/DanWahlin/agent-buddy" alt="Latest release"></a>
+  <a href="https://github.com/DanWahlin/agent-buddy/actions/workflows/build.yml"><img src="https://github.com/DanWahlin/agent-buddy/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
 </p>
 
 ESP32 Agent Companion works with the
@@ -111,7 +111,7 @@ flowchart LR
 app. You do not need Python, Node.js, or a clone of the repository.
 
 1. Download the desktop app for your OS from
-   [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest):
+   [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest):
    `agent-companion-desktop-<version>-macos-universal.dmg`,
    `agent-companion-desktop-<version>-windows-x64-setup.exe`,
    `agent-companion-desktop-<version>-windows-arm64-setup.exe`,
@@ -172,7 +172,7 @@ device ([details](#run-the-desktop-app)).
 **Without the desktop app** (to change the code, or on Windows in WSL 2):
 
 1. Put the firmware on the device with `flash.py` from the release's
-   `esp32-agent-companion-v<version>-firmware.zip` asset. This needs
+   `agent-buddy-v<version>-firmware.zip` asset. This needs
    Python 3.10 or newer. Extract it, connect the device over USB, and run this
    in the extracted folder:
 
@@ -187,8 +187,8 @@ device ([details](#run-the-desktop-app)).
    newer:
 
    ```bash
-   git clone https://github.com/DanWahlin/esp32-agent-companion.git
-   cd esp32-agent-companion
+   git clone https://github.com/DanWahlin/agent-buddy.git
+   cd agent-buddy
    npm run setup      # installs agent hooks, starts the service, opens Settings
    npm run status     # should say: Connected over USB
    npm run settings   # opens the Settings page again at any time
@@ -225,8 +225,8 @@ the firmware yourself, see [Build from source](docs/build-from-source.md).
    newer Python from [python.org](https://www.python.org/downloads/) or with
    `brew install python`, then open a new terminal and check again.
 
-2. From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
-   download `esp32-agent-companion-v<version>-firmware.zip` and extract it.
+2. From [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest),
+   download `agent-buddy-v<version>-firmware.zip` and extract it.
 3. Open a terminal in the extracted folder (it contains `flash.py`) and install
    the flashing tool:
 
@@ -303,8 +303,8 @@ port note below also applies.
 repository and run setup:
 
 ```bash
-git clone https://github.com/DanWahlin/esp32-agent-companion.git
-cd esp32-agent-companion
+git clone https://github.com/DanWahlin/agent-buddy.git
+cd agent-buddy
 npm run setup
 ```
 
@@ -660,7 +660,7 @@ npm run character copilot      # Switch back to Copilot
 ```
 
 You can also pass the path to any `.acpk` pack, such as one from a release's
-`esp32-agent-companion-v<version>-characters.zip` asset. The daemon keeps a copy
+`agent-buddy-v<version>-characters.zip` asset. The daemon keeps a copy
 with the characters you added, as **Add character pack** does, so the desktop app can
 show it and the settings page lists it with a **Remove** button. The daemon remembers
 your choice. If an install is interrupted, the device shows **No character installed** until the daemon
@@ -758,7 +758,7 @@ the desktop app, update the app first. Then connect the device over USB, open th
 **Device** tab in Settings, and click **Install v<version>** in the
 **Install over USB** row. The button installs the firmware release that matches
 the companion service's version. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
-with the new release's `esp32-agent-companion-v<version>-firmware.zip`. Both
+with the new release's `agent-buddy-v<version>-firmware.zip`. Both
 ways keep the device's Wi-Fi settings but put the Copilot character back.
 Reinstall your character afterward from the settings page or with `npm run character <name>`.
 
@@ -984,7 +984,7 @@ a clone of the repository runs, the app leaves it alone and follows it. To
 change back to the repository's service, run `npm run setup` in the clone.
 On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
 
-- **Download it** from [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
+- **Download it** from [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest).
   The app is not code-signed. Your OS can need one extra step:
 
   | OS | File | First run |

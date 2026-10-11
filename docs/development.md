@@ -460,7 +460,7 @@ service always match. `POST /api/firmware/usb` starts it, and
 result.
 
 1. `daemon/src/firmware-release.ts` downloads `SHA256SUMS` and
-   `esp32-agent-companion-v<VERSION>-firmware.zip` from the GitHub release
+   `agent-buddy-v<VERSION>-firmware.zip` from the GitHub release
    (`AGENT_COMPANION_RELEASES_URL` overrides the base URL), checks the zip's
    SHA-256, extracts `manifest.json` and `bin/`, checks the inner `SHA256SUMS`
    and the manifest, and keeps the result in `<daemon data>/firmware/v<VERSION>`.
