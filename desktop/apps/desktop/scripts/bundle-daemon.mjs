@@ -13,7 +13,8 @@ import {chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, read
   from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {builtInPackFiles} from './character-packs.mjs';
 
 // Keep this the same as the Node.js in .github/workflows/build.yml.
 const NODE_VERSION = '24.21.0';
@@ -82,19 +83,24 @@ async function nodeBinary(arch, sums, work) {
 
 async function main() {
   const packs = join(root, 'build', 'characters');
-  const packFiles = existsSync(packs) ? readdirSync(packs).filter(name => name.endsWith('.acpk')) : [];
-  if (packFiles.length === 0)
-    throw new Error('No character packs. Run "python3 tools/character_pack.py build" first.');
+  const packFiles = builtInPackFiles(root);
 
   console.log('Building the daemon');
   if (!existsSync(join(daemon, 'node_modules'))) run(npm, ['ci', '--no-audit', '--no-fund'], daemon);
   run(npm, ['run', 'build', '--silent'], daemon);
+  const {parseCharacterPackHeader} = await import(pathToFileURL(join(daemon, 'dist', 'src', 'character-pack.js')));
+  for (const file of packFiles) {
+    if (parseCharacterPackHeader(readFileSync(join(packs, file))).id !== file.slice(0, -5)) {
+      throw new Error(`Built-in character pack ${file} has a different id.`);
+    }
+  }
 
   rmSync(output, {recursive: true, force: true});
   const runtimeDaemon = join(output, 'daemon');
   mkdirSync(runtimeDaemon, {recursive: true});
   cpSync(join(daemon, 'dist', 'src'), join(runtimeDaemon, 'dist', 'src'), {recursive: true});
   cpSync(join(daemon, 'web'), join(runtimeDaemon, 'web'), {recursive: true});
+  cpSync(join(root, 'desktop', 'engine', 'prebuilt'), join(output, 'desktop', 'engine', 'prebuilt'), {recursive: true});
   for (const file of ['package.json', 'package-lock.json']) cpSync(join(daemon, file), join(runtimeDaemon, file));
 
   console.log('Installing the daemon\'s production dependencies');

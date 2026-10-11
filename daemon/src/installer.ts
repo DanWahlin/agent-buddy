@@ -3,11 +3,13 @@ import {chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileS
 import {homedir} from 'node:os';
 import {dirname, posix, win32} from 'node:path';
 import {defaultDataDirectory, socketPath} from './paths.js';
-import {defaultAgentContext, installDetectedAgents, otherAgentLocations} from './agents/index.js';
+import {defaultAgentContext, initializeHookConsent, installDetectedAgents, otherAgentLocations} from './agents/index.js';
 import {agentHomeVariables} from './agents/homes.js';
 import {shellQuote} from './agents/commands.js';
 import {defaultDesktopAppLocations} from './desktop-app.js';
 import {launchAgentLabel, macLogName, systemdUnit, windowsRunKey, windowsRunValue} from './service-names.js';
+import {OnboardingStore} from './onboarding.js';
+import {agentsConfigPath, characterPreferencePath, displaySettingsPath, onboardingPath, wifiConfigPath} from './paths.js';
 
 export type InstallerPlatform = 'darwin' | 'linux' | 'win32';
 
@@ -90,9 +92,33 @@ export function createInstallationPlan(
   return {files, commands, messages};
 }
 
-export async function installDaemon(cli: string): Promise<void> {
+export async function installDaemon(cli: string, options: {desktop?: boolean; existingInstall?: boolean} = {}): Promise<void> {
   if (!isSupportedPlatform(process.platform))
     throw new Error(`Unsupported platform: ${process.platform}`);
+  const agentContext = defaultAgentContext({
+    home: homedir(),
+    node: process.execPath,
+    cli,
+    platform: process.platform,
+    env: process.env,
+    dataDir: defaultDataDirectory(process.platform, homedir(), process.env),
+    socketPath: socketPath(),
+  });
+  agentContext.locations = otherAgentLocations(agentContext);
+  if (options.desktop) {
+    const setupPath = onboardingPath();
+    const saved = existsSync(setupPath);
+    const setup = new OnboardingStore(setupPath);
+    const existing = options.existingInstall
+      || [agentsConfigPath(), characterPreferencePath(), displaySettingsPath(), wifiConfigPath()].some(existsSync);
+    const fresh = saved ? !setup.state.completed : !existing;
+    if (!saved) {
+      if (fresh) await setup.reset();
+      else await setup.finish();
+    }
+    await agentContext.locations?.refresh();
+    await initializeHookConsent(agentContext, fresh);
+  }
   const launcher = process.platform === 'win32' ? windowsLauncher(cli, process.env) : undefined;
   if (process.platform === 'linux') {
     const problem = linuxServiceProblem(() => {
@@ -110,17 +136,7 @@ export async function installDaemon(cli: string): Promise<void> {
     launcher,
     environment: serviceEnvironment(process.env, process.platform),
   });
-  const agentContext = defaultAgentContext({
-    home: homedir(),
-    node: process.execPath,
-    cli,
-    platform: process.platform,
-    env: process.env,
-    dataDir: defaultDataDirectory(process.platform, homedir(), process.env),
-    socketPath: socketPath(),
-  });
-  agentContext.locations = otherAgentLocations(agentContext);
-  const hookResults = await installDetectedAgents(agentContext);
+  const hookResults = await installDetectedAgents(agentContext, undefined, Boolean(options.desktop));
   for (const file of plan.files) {
     mkdirSync(dirname(file.path), {recursive: true});
     writeFileWithBackup(file.path, file.content, file.mode);

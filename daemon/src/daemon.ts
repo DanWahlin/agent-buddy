@@ -25,7 +25,8 @@ export async function runDaemon(): Promise<void> {
   // A stop on request has ended: this service runs again.
   await rm(serviceStoppedPath(), {force: true}).catch(() => undefined);
   const transport = new DeviceTransport(() => {
-    if (!service || transport.installing || Date.now() - lastAutoInstall < autoInstallRetryMs) return;
+    if (!service || !service.onboardingStatus().completed || transport.installing
+      || Date.now() - lastAutoInstall < autoInstallRetryMs) return;
     lastAutoInstall = Date.now();
     service.restoreCharacter().catch(error => console.error(`[character] automatic install failed: ${
       error instanceof Error ? error.message : String(error)}`));
@@ -73,7 +74,10 @@ export async function runDaemon(): Promise<void> {
     });
   });
   if (!pipe) await chmod(path, 0o600);
-  await transport.start(await loadConnectionMode());
+  const connectionMode = await loadConnectionMode();
+  const setup = service.onboardingStatus();
+  const preparingUsb = !setup.completed && setup.port && setup.display !== 'desktop' && !setup.deviceDeferred;
+  await transport.start(preparingUsb ? 'auto' : connectionMode, service.deviceEnabled, preparingUsb ? setup.port : null);
   console.log(`[daemon] listening ${path}`);
   settingsUrl = await startSettingsServer(companion);
 
@@ -157,7 +161,7 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         socket.setTimeout(agentHookTimeoutMs, () => socket.destroy());
         reply(service.uninstallAgentHook(request.agent).then(agents => ({ok: true, agents})));
       } else if (request.type === 'reloadWifi') {
-        reply(service.refreshWifiPairing().then(() => transport.reloadWifi()).then(() => ({ok: true})));
+        reply(service.reloadWifi().then(() => ({ok: true})));
       } else if (request.type === 'configureWifi') {
         socket.setTimeout(10000, () => socket.destroy());
         reply(service.configureWifi(request.ssid, request.password).then(deviceId => ({ok: true, deviceId})));
@@ -177,8 +181,10 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
           throw new Error('Desktop volume must be a whole number from 0 to 100.');
         if (request.character !== undefined && typeof request.character !== 'string')
           throw new Error('Desktop character must be a character id.');
+        if (request.deviceEnabled !== undefined && typeof request.deviceEnabled !== 'boolean')
+          throw new Error('Device use must be on (true) or off (false).');
         const change = {visible: request.visible, backdrop: request.backdrop, sounds: request.sounds,
-                        volume: request.volume, character: request.character};
+                        volume: request.volume, character: request.character, deviceEnabled: request.deviceEnabled};
         reply(service.setDesktop(change).then(() => ({ok: true, desktop: service.status().desktop})));
       } else if (request.type === 'usage') {
         if (request.enabled !== undefined && typeof request.enabled !== 'boolean')

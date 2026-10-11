@@ -268,6 +268,41 @@ impl Pointer {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn cursor_on_taskbar(window: &WebviewWindow) -> bool {
+    if crate::hyprland::available() {
+        return false;
+    }
+    let (Ok(cursor), Ok(monitors)) = (window.app_handle().cursor_position(), window.available_monitors()) else {
+        eprintln!("[desktop] could not read the taskbar cursor position");
+        return false;
+    };
+    monitors.iter().any(|monitor| {
+        let origin = monitor.position();
+        let size = monitor.size();
+        let work = monitor.work_area();
+        outside_work_area(
+            (cursor.x, cursor.y),
+            (origin.x, origin.y, size.width, size.height),
+            (work.position.x, work.position.y, work.size.width, work.size.height),
+        )
+    })
+}
+
+#[cfg(any(test, not(target_os = "macos")))]
+fn outside_work_area(
+    point: (f64, f64),
+    monitor: (i32, i32, u32, u32),
+    work: (i32, i32, u32, u32),
+) -> bool {
+    let inside = |area: (i32, i32, u32, u32)| {
+        point.0 >= area.0 as f64 && point.1 >= area.1 as f64
+            && point.0 < area.0 as f64 + area.2 as f64
+            && point.1 < area.1 as f64 + area.3 as f64
+    };
+    inside(monitor) && !inside(work)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +310,17 @@ mod tests {
     const NO_BUTTONS: [Rect; 2] = [Rect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 }; 2];
 
     const HEAD: Region = Region { cx: 100.0, cy: 100.0, rx: 60.0, ry: 50.0, buttons: NO_BUTTONS };
+
+    #[test]
+    fn taskbar_activation_uses_only_the_monitor_area_outside_its_work_area() {
+        let monitor = (0, 0, 2496, 1664);
+        let work = (0, 0, 2496, 1592);
+        assert!(outside_work_area((1714.0, 1628.0), monitor, work));
+        assert!(!outside_work_area((500.0, 400.0), monitor, work));
+        assert!(!outside_work_area((-100.0, 1628.0), monitor, work));
+        assert!(outside_work_area((-1900.0, 200.0), (-1920, 0, 1920, 1080), (-1860, 0, 1860, 1080)));
+        assert!(!outside_work_area((200.0, 200.0), (0, 0, 1920, 1080), (0, 0, 1920, 1080)));
+    }
 
     #[test]
     fn the_centre_is_on_the_character() {

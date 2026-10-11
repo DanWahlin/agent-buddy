@@ -12,6 +12,7 @@ export interface DisplaySettings {
   showAgentBadges: boolean;
   // Whether the desktop app shows its character; the device is unaffected.
   showDesktopCompanion: boolean;
+  useDevice: boolean;
   desktopBackdrop: DesktopBackdrop;
   // Whether the desktop app plays the device's sound cues; off until turned on.
   desktopSounds: boolean;
@@ -25,6 +26,7 @@ export interface DisplaySettings {
 export const defaultDisplaySettings: DisplaySettings = {
   showAgentBadges: true,
   showDesktopCompanion: true,
+  useDevice: true,
   desktopBackdrop: 'device',
   desktopSounds: false,
   desktopVolume: 30,
@@ -47,6 +49,7 @@ export function loadDisplaySettingsSync(path = displaySettingsPath()): DisplaySe
     return {
       showAgentBadges: parsed.showAgentBadges !== false,
       showDesktopCompanion: parsed.showDesktopCompanion !== false,
+      useDevice: parsed.useDevice !== false,
       desktopBackdrop: isDesktopBackdrop(parsed.desktopBackdrop)
         ? parsed.desktopBackdrop : defaultDisplaySettings.desktopBackdrop,
       desktopSounds: parsed.desktopSounds === true,

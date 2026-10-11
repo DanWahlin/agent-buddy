@@ -84,6 +84,7 @@ export async function packFingerprint(root: string): Promise<string> {
   };
   const files = async (folder: string) => (await readdir(folder).catch(() => [])).sort();
   await add(join(root, 'tools', 'character_pack.py'));
+  await add(join(root, 'characters', 'built-in.json'));
   for (const name of await files(join(root, 'characters'))) {
     const folder = join(root, 'characters', name);
     if (!existsSync(join(folder, 'character.json'))) continue;

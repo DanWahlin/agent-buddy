@@ -158,7 +158,7 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     if visible && !was_visible {
         show_without_focus(window);
     } else if !visible {
-        let _ = window.hide();
+        hide_companion(window);
     }
     let _ = window.emit("to-view", serde_json::json!({ "type": "showing", "showing": visible }));
     app.pointer.refresh(window);
@@ -229,7 +229,36 @@ fn show_without_focus(window: &WebviewWindow) {
 
 #[cfg(not(target_os = "macos"))]
 fn show_without_focus(window: &WebviewWindow) {
+    if let Err(error) = window.unminimize() {
+        eprintln!("[desktop] could not restore the character window: {error}");
+    }
     let _ = window.show();
+}
+
+fn hide_companion(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if let Err(error) = window.hide() {
+        eprintln!("[desktop] could not hide the character window: {error}");
+    }
+    #[cfg(target_os = "linux")]
+    if hyprland::available() {
+        // Hyprland has no taskbar and ignores minimize requests. The tray remains available.
+        if let Err(error) = window.hide() {
+            eprintln!("[desktop] could not hide the character window: {error}");
+        }
+        return;
+    }
+    // Keep the taskbar entry on Windows and Linux desktops that support minimization.
+    #[cfg(not(target_os = "macos"))]
+    match window.is_minimized() {
+        Ok(true) => {}
+        Ok(false) => {
+            if let Err(error) = window.minimize() {
+                eprintln!("[desktop] could not minimize the character window: {error}");
+            }
+        }
+        Err(error) => eprintln!("[desktop] could not read the character window's minimized state: {error}"),
+    }
 }
 
 fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
@@ -244,6 +273,68 @@ fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
 
 /// The label of the window that shows the Settings page.
 const SETTINGS: &str = "settings";
+
+fn restore_settings(window: &WebviewWindow) {
+    if let Err(error) = window.unminimize().and_then(|()| window.show()) {
+        eprintln!("[settings] could not restore the window: {error}");
+        return;
+    }
+    bring_to_front(window);
+}
+
+fn reopen_app(handle: &AppHandle, app: &Arc<App>) {
+    if let Some(window) = handle.get_webview_window(SETTINGS) {
+        restore_settings(&window);
+    } else if !app.wanted.load(Ordering::Relaxed) {
+        open_settings(handle.clone());
+    } else if let Some(window) = handle.get_webview_window("main") {
+        set_user_hidden(app, &window, false);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn settings_taskbar(handle: &AppHandle, settings_open: bool) {
+    if let Some(window) = handle.get_webview_window("main") {
+        if let Err(error) = window.set_skip_taskbar(settings_open) {
+            eprintln!("[desktop] could not update the character's taskbar entry: {error}");
+        }
+    }
+}
+
+#[cfg(any(test, not(target_os = "macos")))]
+fn restore_on_focus(visible: bool, pointer_on_taskbar: bool) -> bool {
+    !visible || pointer_on_taskbar
+}
+
+#[cfg(target_os = "macos")]
+fn companion_collection_behavior(
+    current: objc2_app_kit::NSWindowCollectionBehavior,
+    joins_applications: bool,
+) -> objc2_app_kit::NSWindowCollectionBehavior {
+    use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
+    let mut behavior = current
+        & !(Behavior::Primary | Behavior::Auxiliary | Behavior::CanJoinAllApplications
+            | Behavior::FullScreenPrimary | Behavior::FullScreenNone);
+    behavior |= Behavior::CanJoinAllSpaces | Behavior::FullScreenAuxiliary;
+    if joins_applications {
+        behavior |= Behavior::CanJoinAllApplications;
+    }
+    behavior
+}
+
+#[cfg(target_os = "macos")]
+fn configure_companion_spaces(window: &WebviewWindow) -> tauri::Result<()> {
+    use objc2_app_kit::NSWindow;
+    let pointer = window.ns_window()?;
+    // SAFETY: Called during setup on the main thread, while Tauri owns this window.
+    let native = unsafe { &*(pointer as *const NSWindow) };
+    let joins_applications = objc2::available!(macos = 13.0);
+    native.setCollectionBehavior(companion_collection_behavior(native.collectionBehavior(), joins_applications));
+    if !joins_applications {
+        eprintln!("[desktop] macOS before 13 cannot show the character over other apps' full-screen Spaces with a Dock entry");
+    }
+    Ok(())
+}
 
 /// Show the Settings page, which the daemon serves with a private token, in a
 /// window of this app: a browser would open a new tab each time, and nothing
@@ -272,22 +363,57 @@ fn show_settings(handle: &AppHandle, address: String) {
         if loaded.as_deref() != Some(address.as_str()) && window.navigate(url).is_ok() {
             *loaded = Some(address);
         }
-        let _ = window.unminimize();
-        let _ = window.show();
-        bring_to_front(&window);
+        restore_settings(&window);
+        #[cfg(target_os = "windows")]
+        settings_taskbar(handle, true);
         return;
     }
     // Only the pet's window may use this app's commands (capabilities/default.json),
     // so the page, which is the daemon's, gets nothing from the app.
+    let monitor = handle.get_webview_window("main").and_then(|window| match window.current_monitor() {
+        Ok(monitor) => monitor,
+        Err(error) => {
+            eprintln!("[settings] could not locate the companion's monitor: {error}");
+            None
+        }
+    }).or_else(|| match handle.primary_monitor() {
+        Ok(monitor) => monitor,
+        Err(error) => {
+            eprintln!("[settings] could not locate the primary monitor: {error}");
+            None
+        }
+    });
     let built = WebviewWindowBuilder::new(handle, SETTINGS, WebviewUrl::External(url))
-        .title("Agent Companion Settings")
-        .inner_size(1000.0, 860.0)
+        .title("Agent Buddy")
+        .inner_size(placement::SETTINGS_SIZE.0, placement::SETTINGS_SIZE.1)
         .min_inner_size(420.0, 480.0)
         .center()
+        .skip_taskbar(false)
+        .visible(false)
         .build();
     match built {
         Ok(window) => {
+            #[cfg(target_os = "windows")]
+            {
+                settings_taskbar(handle, true);
+                let taskbar_handle = handle.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, WindowEvent::Destroyed) {
+                        settings_taskbar(&taskbar_handle, false);
+                    }
+                });
+            }
+            if let Some(monitor) = monitor {
+                if let Err(error) = placement::fit_settings(&window, &monitor) {
+                    eprintln!("[settings] could not fit the window to the monitor: {error}");
+                }
+            } else {
+                eprintln!("[settings] no monitor work area is available; using the window manager's placement");
+            }
             *loaded = Some(address);
+            if let Err(error) = window.show() {
+                eprintln!("[settings] could not show the window: {error}");
+            }
             bring_to_front(&window);
         }
         Err(error) => eprintln!("[settings] could not open the window: {error}"),
@@ -296,6 +422,7 @@ fn show_settings(handle: &AppHandle, address: String) {
 
 /// The label of the window that says the companion service is starting.
 const STARTING: &str = "starting";
+const STARTING_TITLE: &str = "Starting Agent Companion";
 
 /// While a release build waits for its companion service, say so in a small
 /// window in the middle of the screen: the character has nothing to show yet,
@@ -312,7 +439,7 @@ fn show_starting(handle: AppHandle, app: Arc<App>) {
         }
         // Off the main thread, as making a webview from it deadlocks on Windows.
         let built = WebviewWindowBuilder::new(&handle, STARTING, WebviewUrl::App("starting.html".into()))
-            .title("Agent Companion")
+            .title(STARTING_TITLE)
             .inner_size(440.0, 250.0)
             .resizable(false)
             .maximizable(false)
@@ -464,17 +591,30 @@ fn main() {
     let again = app.clone();
     #[cfg(target_os = "macos")]
     let reopened = app.clone();
+    #[allow(unused_mut)]
+    let mut context = tauri::generate_context!();
+    #[cfg(target_os = "linux")]
+    if hyprland::available() {
+        if let Some(window) = context.config_mut().app.windows.iter_mut().find(|window| window.label == "main") {
+            // GTK otherwise locks the first tiled size. Equal min/max bounds keep the character fixed.
+            window.resizable = true;
+        }
+    }
     tauri::Builder::default()
-        // Must be the first plugin. Opening the app while it runs brings the
-        // pet back, which matters when it was hidden and the menu bar was too
-        // full for its icon to show.
+        // Must be the first plugin. Opening the app again restores Settings first.
         .plugin(tauri_plugin_single_instance::init(move |handle, args, _cwd| {
             let Some(window) = handle.get_webview_window("main") else { return };
+            let command = Command::from_args(&args);
+            if !command.starts_service() {
+                quit(handle.clone(), Quit::Quiet);
+                return;
+            }
             // Starting the app again also starts the service again if it stopped.
             let resources = handle.path().resource_dir().ok();
             std::thread::spawn(move || service::ensure(resources));
             show_starting(handle.clone(), again.clone());
-            match Command::from_args(&args) {
+            match command {
+                Command::Reopen => reopen_app(handle, &again),
                 Command::Show => set_user_hidden(&again, &window, false),
                 Command::Hide => set_user_hidden(&again, &window, true),
                 Command::Toggle => {
@@ -513,14 +653,20 @@ fn main() {
             .expect("a response is always buildable")
         })
         .setup(move |handle| {
-            // On macOS `skipTaskbar` does not hide the Dock icon, and a regular
-            // app's window cannot sit over another app's full-screen Space. An
-            // accessory app does both, which is what a desktop pet should be;
-            // the tray stays the way in.
+            let command = Command::from_args(&std::env::args().collect::<Vec<_>>());
+            if !command.starts_service() {
+                handle.handle().exit(0);
+                return Ok(());
+            }
+            if matches!(command, Command::Hide | Command::Toggle) {
+                setup.user_hidden.store(true, Ordering::Relaxed);
+            }
             #[cfg(target_os = "macos")]
-            handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            handle.handle().set_activation_policy(tauri::ActivationPolicy::Regular)?;
 
             let window: WebviewWindow = handle.get_webview_window("main").expect("the main window");
+            #[cfg(target_os = "macos")]
+            configure_companion_spaces(&window)?;
 
             // Start transparent to the mouse. If the page never reports where
             // it drew, the desktop stays usable rather than this swallowing
@@ -534,7 +680,23 @@ fn main() {
             // losing the position when the app is killed rather than quit.
             let moving = window.clone();
             let tracking = setup.pointer.clone();
+            #[cfg(not(target_os = "macos"))]
+            let controlled = setup.clone();
             window.on_window_event(move |event| match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    quit(moving.app_handle().clone(), Quit::Ask);
+                }
+                #[cfg(not(target_os = "macos"))]
+                WindowEvent::Focused(true) => {
+                    let visible = controlled.visible.load(Ordering::Relaxed);
+                    if restore_on_focus(visible, pointer::cursor_on_taskbar(&moving)) {
+                        if !visible {
+                            hide_companion(&moving);
+                        }
+                        reopen_app(moving.app_handle(), &controlled);
+                    }
+                }
                 WindowEvent::Moved(at) => {
                     placement::remember(&moving, Placement { x: at.x, y: at.y });
                     tracking.refresh(&moving);
@@ -547,24 +709,27 @@ fn main() {
 
             setup.pointer.clone().watch(window.clone());
             settle_on_hyprland(&window);
-            if Command::from_args(&std::env::args().collect::<Vec<_>>()) == Command::Settings {
+            if command == Command::Settings {
                 open_settings(handle.handle().clone());
             }
 
             // A release build carries the companion service, and starts it
-            // when no other one runs. A new user then sees Settings, as
-            // `npm run setup` shows it, once the new service answers.
+            // when no other one runs. New and returning users with incomplete
+            // setup see the shared setup page once the service answers.
             let resources = handle.path().resource_dir().ok();
             setup.bundled.store(service::bundled(resources.as_deref()), Ordering::Relaxed);
             show_starting(handle.handle().clone(), setup.clone());
             let welcome = handle.handle().clone();
             std::thread::spawn(move || {
-                if !service::ensure(resources) {
-                    return;
-                }
+                let installed = service::ensure(resources);
                 for _ in 0..15 {
-                    if let Some(url) = daemon::settings_url() {
-                        return show_settings(&welcome, url);
+                    if let Some(pending) = daemon::setup_due() {
+                        if installed || pending {
+                            if let Some(url) = daemon::settings_url() {
+                                show_settings(&welcome, url);
+                            }
+                        }
+                        return;
                     }
                     std::thread::sleep(std::time::Duration::from_secs(1));
                 }
@@ -589,15 +754,18 @@ fn main() {
             );
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("the app should start")
         .run(move |handle, event| {
             // macOS: opening the app again from Finder, Spotlight or the Dock.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                if let Some(window) = handle.get_webview_window("main") {
-                    set_user_hidden(&reopened, &window, false);
-                }
+                reopen_app(handle, &reopened);
+                return;
+            }
+            if let tauri::RunEvent::ExitRequested { code: None, api, .. } = &event {
+                api.prevent_exit();
+                quit(handle.clone(), Quit::Ask);
                 return;
             }
             if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
@@ -618,6 +786,7 @@ fn main() {
 /// flags make it scriptable, for a keyboard shortcut for example.
 #[derive(Debug, PartialEq)]
 enum Command {
+    Reopen,
     Show,
     Hide,
     Toggle,
@@ -626,6 +795,10 @@ enum Command {
 }
 
 impl Command {
+    fn starts_service(&self) -> bool {
+        *self != Self::Quit
+    }
+
     fn from_args(args: &[String]) -> Self {
         let flag = |name: &str| args.iter().skip(1).any(|arg| arg == name);
         if flag("--quit") {
@@ -636,8 +809,10 @@ impl Command {
             Self::Toggle
         } else if flag("--hide") {
             Self::Hide
-        } else {
+        } else if flag("--show") {
             Self::Show
+        } else {
+            Self::Reopen
         }
     }
 }
@@ -674,9 +849,19 @@ fn settle_on_hyprland(window: &WebviewWindow) {
         return;
     }
     let at = placement::saved(window).map(|it| (it.x, it.y));
+    let Some(configured) = window.app_handle().config().app.windows.iter().find(|it| it.label == window.label()) else {
+        eprintln!("[hyprland] the character window has no configured size");
+        return;
+    };
+    let size = tauri::LogicalSize::new(configured.width, configured.height);
+    let resized = window.clone();
     std::thread::spawn(move || {
         if hyprland::settle(at).is_none() {
             eprintln!("[hyprland] the window did not appear to Hyprland");
+            return;
+        }
+        if let Err(error) = resized.set_size(size) {
+            eprintln!("[hyprland] could not restore the configured character size: {error}");
         }
     });
 }
@@ -712,6 +897,13 @@ fn quit_plan(how: Quit, device_used: Option<bool>, can_restart: bool, notice_due
 /// Off the main thread: it asks the daemon, and the notice waits for the user.
 fn quit(handle: tauri::AppHandle, how: Quit) {
     std::thread::spawn(move || {
+        let cached_busy = handle.state::<Arc<App>>().daemon.lock().unwrap().as_ref().is_some_and(|it| it.busy);
+        if daemon::installing().unwrap_or(cached_busy) {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+            handle.dialog().message("Setup or installation is in progress. Keep the USB cable connected and wait before quitting.")
+                .title("Agent Buddy").kind(MessageDialogKind::Info).blocking_show();
+            return;
+        }
         let can_restart = handle.state::<Arc<App>>().bundled.load(Ordering::Relaxed);
         let notice_due = how == Quit::Ask && service::quit_notice_due();
         let stop = match quit_plan(how, daemon::device_used(), can_restart, notice_due) {
@@ -727,6 +919,12 @@ fn quit(handle: tauri::AppHandle, how: Quit) {
         };
         if stop && !daemon::stop_service() {
             eprintln!("[service] the companion service did not take the stop request");
+        }
+        if daemon::installing().unwrap_or(cached_busy) {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+            handle.dialog().message("Setup or installation started before the app could close. Wait before quitting.")
+                .title("Agent Buddy").kind(MessageDialogKind::Info).blocking_show();
+            return;
         }
         handle.exit(0);
     });
@@ -758,7 +956,7 @@ fn ask_on_quit(handle: &tauri::AppHandle) -> Option<bool> {
     }
 }
 
-/// With no title bar and no taskbar button, the tray is the only way in.
+/// The tray keeps character controls and an explicit service-stop action available.
 fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>) -> tauri::Result<()> {
     let visibility = MenuItem::with_id(handle, "visibility", "Hide Agent Companion", true, None::<&str>)?;
     let settings = MenuItem::with_id(handle, "settings", "Settings", true, None::<&str>)?;
@@ -826,14 +1024,74 @@ mod tests {
     }
 
     #[test]
-    fn a_second_launch_shows_the_pet_unless_asked_otherwise() {
-        assert_eq!(Command::from_args(&args(&["agent-companion-desktop"])), Command::Show);
+    fn a_second_launch_restores_the_app_unless_asked_otherwise() {
+        assert_eq!(Command::from_args(&args(&["agent-companion-desktop"])), Command::Reopen);
         assert_eq!(Command::from_args(&args(&["app", "--show"])), Command::Show);
         assert_eq!(Command::from_args(&args(&["app", "--hide"])), Command::Hide);
         assert_eq!(Command::from_args(&args(&["app", "--toggle"])), Command::Toggle);
         assert_eq!(Command::from_args(&args(&["app", "--quit"])), Command::Quit);
         assert_eq!(Command::from_args(&args(&["app", "--settings"])), Command::Settings);
         // The program's own path is never mistaken for a flag.
-        assert_eq!(Command::from_args(&args(&["--hide"])), Command::Show);
+        assert_eq!(Command::from_args(&args(&["--hide"])), Command::Reopen);
+    }
+
+    #[test]
+    fn a_quit_command_never_starts_or_restarts_the_service() {
+        assert!(!Command::from_args(&args(&["app", "--quit"])).starts_service());
+        assert!(Command::from_args(&args(&["app"])).starts_service());
+        assert!(Command::from_args(&args(&["app", "--settings"])).starts_service());
+    }
+
+    #[test]
+    fn clicking_the_character_does_not_raise_settings_but_taskbar_activation_does() {
+        assert!(!super::restore_on_focus(true, false));
+        assert!(super::restore_on_focus(true, true));
+        assert!(super::restore_on_focus(false, true));
+        assert!(super::restore_on_focus(false, false));
+    }
+
+    #[test]
+    fn minimizing_settings_does_not_restore_it_when_focus_falls_back_to_the_character() {
+        assert!(!super::restore_on_focus(true, false));
+    }
+
+    #[test]
+    fn the_startup_title_matches_its_page_and_is_distinct_from_the_character() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let character_title = config["app"]["windows"][0]["title"].as_str().unwrap();
+        assert_ne!(super::STARTING_TITLE, character_title);
+        assert!(include_str!("../../ui/starting.html")
+            .contains(&format!("<title>{}</title>", super::STARTING_TITLE)));
+    }
+
+    #[test]
+    fn the_character_keeps_a_taskbar_entry_without_changing_its_overlay() {
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let window = &config["app"]["windows"][0];
+        assert_eq!(window["skipTaskbar"], false);
+        assert_eq!(window["alwaysOnTop"], true);
+        assert_eq!(window["transparent"], true);
+        assert_eq!(window["visibleOnAllWorkspaces"], true);
+        assert_eq!(window["focus"], false);
+        assert_eq!(window["minWidth"], window["width"]);
+        assert_eq!(window["maxWidth"], window["width"]);
+        assert_eq!(window["minHeight"], window["height"]);
+        assert_eq!(window["maxHeight"], window["height"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_character_can_join_full_screen_spaces_without_conflicting_behaviors() {
+        use objc2_app_kit::NSWindowCollectionBehavior as Behavior;
+        let current = Behavior::Primary | Behavior::Auxiliary | Behavior::FullScreenPrimary
+            | Behavior::FullScreenNone | Behavior::Stationary;
+        let modern = super::companion_collection_behavior(current, true);
+        assert!(modern.contains(Behavior::CanJoinAllSpaces | Behavior::FullScreenAuxiliary
+            | Behavior::CanJoinAllApplications | Behavior::Stationary));
+        assert!(!modern.intersects(Behavior::Primary | Behavior::Auxiliary | Behavior::FullScreenPrimary
+            | Behavior::FullScreenNone));
+        let legacy = super::companion_collection_behavior(modern, false);
+        assert!(legacy.contains(Behavior::CanJoinAllSpaces | Behavior::FullScreenAuxiliary | Behavior::Stationary));
+        assert!(!legacy.contains(Behavior::CanJoinAllApplications));
     }
 }

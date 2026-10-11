@@ -3,7 +3,8 @@
 //! `scripts/bundle-daemon.mjs` puts the daemon, a Node.js runtime and the
 //! character packs in the app's `daemon-runtime` resource. When no daemon
 //! answers, the app copies that folder to the daemon's data folder and installs
-//! the service and the agents' hooks from the copy. They then keep working when
+//! the service from the copy. New users approve hooks in setup; updates repair
+//! only approved hooks. The service and hooks then keep working when
 //! the app moves, and the service starts when the user signs in, with or
 //! without the app. An update of the app updates the copy. A daemon that runs
 //! from another folder, such as a clone of the repository, is left alone.
@@ -68,6 +69,9 @@ pub fn decide(status: Option<&Value>, installed: &Path, version: &str, rebuilt: 
     let service = status.get("service");
     let root = service.and_then(|it| it.get("root")).and_then(Value::as_str);
     let running = service.and_then(|it| it.get("version")).and_then(Value::as_str);
+    if daemon::installation_active(status) {
+        return Action::Leave;
+    }
     match root {
         Some(root) if same_path(Path::new(root), installed) && (running != Some(version) || rebuilt) => Action::Install,
         _ => Action::Leave,
@@ -207,15 +211,20 @@ fn ensure_once(resources: Option<PathBuf>) -> bool {
 
 fn install(bundled: &Path, installed: &Path, version: &str) -> Result<(), String> {
     let current = std::fs::read_to_string(installed.join("VERSION")).ok();
+    let existing = current.is_some();
     if current.as_deref().map(str::trim) != Some(version) || rebuilt(bundled, installed) || !installed.join(NODE).is_file() {
         replace(bundled, installed).map_err(|error| format!("could not copy the service: {error}"))?;
     }
     let mut command = Command::new(installed.join(NODE));
     command
         .arg(installed.join("daemon").join("dist").join("src").join("install.js"))
+        .arg("--desktop")
         .current_dir(installed.join("daemon"))
         .envs(user_environment())
         .stdin(Stdio::null());
+    if existing {
+        command.arg("--existing-install");
+    }
     #[cfg(windows)]
     crate::launcher::service_command(&mut command);
     let output = command
@@ -389,6 +398,16 @@ mod tests {
         // A clone of the repository, or a daemon too old to say where it runs.
         assert_eq!(decide(Some(&status("/src/companion", "0.7.0")), installed, "0.8.0", true), Action::Leave);
         assert_eq!(decide(Some(&json!({ "state": "idle" })), installed, "0.8.0", true), Action::Leave);
+        for busy in [
+            json!({"onboarding": {"busy": true}}),
+            json!({"installing": {"percent": 20}}),
+            json!({"firmware": {"updating": {"percent": 20}}}),
+            json!({"firmware": {"usb": {"installing": {"stage": "writing"}}}}),
+        ] {
+            let mut status = busy;
+            status["service"] = json!({"root": "/data/runtime", "version": "0.7.0"});
+            assert_eq!(decide(Some(&status), installed, "0.8.0", true), Action::Leave);
+        }
     }
 
     #[test]

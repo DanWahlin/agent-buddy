@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {isLikelyEsp32Port, parseButtonLine, parseUploadReady, pickPort} from '../src/usb-transport.js';
+import {
+  candidatePorts, isLikelyEsp32Port, parseButtonLine, parseUploadReady, pickPort, selectedUsbCandidate,
+} from '../src/usb-transport.js';
 import {buttonPressed, parseUploadResponse} from '../src/wifi-transport.js';
 import {browserCommands} from '../src/browser.js';
 
@@ -70,4 +72,29 @@ test('picks the Espressif port, with its USB product ID, for installs', () => {
                             undefined, 'win32'), {path: 'COM7', pid: 0x1001});
   assert.deepEqual(pickPort([{path: 'COM4', vendorId: '10C4', productId: 'EA60'}] as never, undefined, 'win32'),
                    {path: 'COM4', pid: 0xea60});
+});
+
+test('device selection lists distinct USB candidates instead of silently choosing one', () => {
+  const ports = [
+    {path: '/dev/tty.usbmodem1', vendorId: '303a', productId: '1001'},
+    {path: '/dev/cu.usbmodem1', vendorId: '303a', productId: '1001'},
+    {path: '/dev/cu.usbmodem2', vendorId: '303a', productId: '1001'},
+    {path: '/dev/tty.Bluetooth-Incoming-Port'},
+  ] as never;
+  assert.deepEqual(candidatePorts(ports, undefined, 'darwin'), [
+    {path: '/dev/cu.usbmodem1', pid: 0x1001}, {path: '/dev/cu.usbmodem2', pid: 0x1001},
+  ]);
+  assert.deepEqual(candidatePorts([{path: 'COM1'}, {path: 'COM2', vendorId: '303a'}] as never, undefined, 'win32'),
+                   [{path: 'COM2', pid: null}]);
+});
+
+test('a resumed USB selection waits for the chosen device and follows only its serial identity', () => {
+  const first = {path: '/dev/first', pid: 0x1001, serialNumber: 'first'};
+  const second = {path: '/dev/second', pid: 0x1001, serialNumber: 'second'};
+  assert.equal(selectedUsbCandidate([first, second], second.path, null), second);
+  assert.equal(selectedUsbCandidate([first], second.path, null), null);
+  const moved = {...second, path: '/dev/new'};
+  assert.equal(selectedUsbCandidate([first, moved], second.path, 'second'), moved);
+  assert.equal(selectedUsbCandidate([{...first, path: second.path}], second.path, 'second'), null);
+  assert.equal(selectedUsbCandidate([moved, {...moved, path: '/dev/duplicate'}], second.path, 'second'), null);
 });

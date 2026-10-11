@@ -38,6 +38,8 @@ interface LineWaiter {
 
 export class UsbTransport {
   readonly #preferredPort = process.env.AGENT_COMPANION_PORT;
+  #selectedPort: string | null = null;
+  #selectedSerial: string | null = null;
   #port: SerialPort | undefined;
   #path: string | null = null;
   #desired: CharacterState = 'idle';
@@ -107,9 +109,38 @@ export class UsbTransport {
   }
 
   // The port to install firmware on: the connected device's, else the first ESP32 port found now.
-  async findPort(): Promise<UsbPort | null> {
+  async ports(): Promise<UsbPort[]> {
+    return candidatePorts(await SerialPort.list(), this.#preferredPort);
+  }
+
+  async selectPort(path: string | null, allowMissing = false): Promise<void> {
+    const port = path && !allowMissing ? (await this.ports()).find(port => port.path === path) : null;
+    if (path && !port && !allowMissing)
+      throw new Error('The selected USB device is no longer connected. Detect the device again.');
+    this.#selectedPort = path;
+    this.#selectedSerial = port?.serialNumber ?? null;
+    if (path && ((this.connected && this.#path !== path) || this.#scanActive)) {
+      const enabled = this.#enabled;
+      await this.setEnabled(false);
+      if (enabled) await this.setEnabled(true);
+    }
+  }
+
+  matches(port: UsbPort): boolean {
+    return this.connected && (port.serialNumber
+      ? port.serialNumber === this.#seen?.serialNumber : this.#path === port.path);
+  }
+
+  async findPort(selected?: string | null): Promise<UsbPort | null> {
+    const ports = await this.ports();
+    if (selected) {
+      const port = ports.find(port => port.path === selected);
+      if (!port) throw new Error('The selected USB device is no longer connected. Detect the device again.');
+      return port;
+    }
     if (this.connected && this.#path) return {path: this.#path, pid: this.#seen?.path === this.#path ? this.#seen.pid : null};
-    return pickPort(await SerialPort.list(), this.#preferredPort);
+    if (ports.length > 1) throw new Error('Several USB devices were found. Select the device to install.');
+    return ports[0] ?? null;
   }
 
   get state(): CharacterState {
@@ -183,10 +214,16 @@ export class UsbTransport {
     this.#scanActive = true;
     const before = JSON.stringify(this.unanswered);
     try {
-      const candidate = pickPort(await SerialPort.list(), this.#preferredPort);
+      const ports = await SerialPort.list();
+      const candidates = candidatePorts(ports, this.#preferredPort);
+      const candidate = this.#selectedPort
+        ? selectedUsbCandidate(candidates, this.#selectedPort, this.#selectedSerial)
+        : pickPort(ports, this.#preferredPort);
       if (candidate?.path !== this.#seen?.path) this.#failures = 0;
       this.#seen = candidate;
       if (!candidate) return;
+      if (!this.#selectedSerial && this.#selectedPort === candidate.path)
+        this.#selectedSerial = candidate.serialNumber ?? null;
       try {
         await this.#open(candidate.path);
         this.#failures = 0;
@@ -558,6 +595,21 @@ export interface UsbPort {
   path: string;
   // The USB product ID; 0x1001 is the ESP32-S3's own USB port.
   pid: number | null;
+  serialNumber?: string;
+}
+
+export function selectedUsbCandidate(ports: readonly UsbPort[], path: string, serial: string | null): UsbPort | null {
+  if (!serial) return ports.find(port => port.path === path) ?? null;
+  const matches = ports.filter(port => port.serialNumber === serial);
+  return matches.find(port => port.path === path) ?? (matches.length === 1 ? matches[0]! : null);
+}
+
+export function candidatePorts(ports: readonly PortInfo[], preferred?: string,
+                               platform: NodeJS.Platform = process.platform): UsbPort[] {
+  const candidates = ports.filter(port => port.path === preferred
+    || (isLikelyEsp32Port(port.path, platform) && (platform !== 'win32' || Boolean(port.vendorId))));
+  const normalized = candidates.map(port => pickPort([port], port.path, platform)!);
+  return [...new Map(normalized.map(port => [port.path, port])).values()];
 }
 
 // The preferred port, else an Espressif one, else any port that looks like an ESP32 board.
@@ -572,6 +624,7 @@ export function pickPort(ports: readonly PortInfo[], preferred?: string,
   return {
     path: platform === 'darwin' ? candidate.path.replace(/^\/dev\/tty\./, '/dev/cu.') : candidate.path,
     pid: Number.isFinite(pid) ? pid : null,
+    ...(candidate.serialNumber ? {serialNumber: candidate.serialNumber} : {}),
   };
 }
 

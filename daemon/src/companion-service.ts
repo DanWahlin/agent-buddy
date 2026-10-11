@@ -1,12 +1,15 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {mkdir, rename, writeFile} from 'node:fs/promises';
 import {EventEmitter} from 'node:events';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {homedir, userInfo} from 'node:os';
-import {dirname} from 'node:path';
+import {dirname, join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {
   agentStatuses,
+  adapters,
   markAgentSeen,
+  rememberHookApproval,
   defaultAgentContext,
   installAgent,
   isAgentEnabled,
@@ -20,6 +23,7 @@ import {
   type AgentStatus,
 } from './agents/index.js';
 import {copilotHome} from './agents/homes.js';
+import {isHookCurrent} from './agents/hook-config.js';
 import {
   addCharacterPack,
   isCharacterName,
@@ -62,6 +66,7 @@ import {builtFirmwareReader, type FirmwareImage} from './firmware-image.js';
 import {isOrientationOffset, type DeviceOrientation} from './orientation-settings.js';
 import {deviceUsageLines, UsageTracker, usageLines, type UsageTotals, type UsageWindow} from './usage-tracker.js';
 import {loadWifiConfig, saveWifiConfig, validateWifiCredentials} from './wifi-config.js';
+import {OnboardingStore, SetupError, type OnboardingChange, type OnboardingState, type OnboardingStep} from './onboarding.js';
 
 export interface InstallState {
   character: string;
@@ -116,6 +121,14 @@ export interface CompanionStatus extends DaemonStatus {
   wifiPaired: boolean;
   // Whether this computer has used a device. Without one, quitting the desktop app stops the service.
   deviceUsed: boolean;
+  deviceEnabled: boolean;
+  onboarding: OnboardingState & {
+    busy: boolean;
+    phase: string | null;
+    error: string | null;
+    deviceSetup: {flash: boolean; transport: 'usb' | 'wifi' | null} | null;
+  };
+  charactersRevision: number;
   firmware: FirmwareStatus;
   installing: InstallState | null;
   lastInstall: InstallResult | null;
@@ -185,6 +198,7 @@ export interface DesktopChange {
   sounds?: boolean;
   volume?: number;
   character?: string;
+  deviceEnabled?: boolean;
 }
 
 export interface UninstallResult {
@@ -228,6 +242,13 @@ export class CompanionService extends EventEmitter {
   #stopping = false;
   #restarting = false;
   #deviceUsed = loadDeviceUsed();
+  readonly #onboarding: OnboardingStore;
+  #onboardingPhase: string | null = null;
+  #onboardingError: string | null = null;
+  #onboardingDeviceSetup: CompanionStatus['onboarding']['deviceSetup'] = null;
+  #operation: symbol | null = null;
+  readonly #operationContext = new AsyncLocalStorage<symbol>();
+  #charactersRevision = 0;
 
   constructor(transport: DeviceTransport, coordinator: StateCoordinator, agentContext = defaultAgentContext(),
               badgeIcons: AgentBadgeIconDefinition[] = [],
@@ -235,7 +256,9 @@ export class CompanionService extends EventEmitter {
               desktopApp = new DesktopApp(),
               usageTracker: Pick<UsageTracker, 'refresh' | 'totals'> = new UsageTracker(),
               firmwareImage: () => FirmwareImage | null = builtFirmwareReader(),
-              usbInstaller: UsbFirmwareInstaller = {releases: new FirmwareReleases(), flash: runUsbFlasher}) {
+              usbInstaller: UsbFirmwareInstaller = {releases: new FirmwareReleases(), flash: runUsbFlasher},
+              onboarding = new OnboardingStore(process.env.AGENT_COMPANION_ONBOARDING
+                ?? join(agentContext.dataDir, 'onboarding.json'))) {
     super();
     this.#transport = transport;
     this.#coordinator = coordinator;
@@ -247,6 +270,7 @@ export class CompanionService extends EventEmitter {
     this.#usageTracker = usageTracker;
     this.#firmwareImage = firmwareImage;
     this.#usbInstaller = usbInstaller;
+    this.#onboarding = onboarding;
   }
 
   // Finds a release firmware that an earlier install downloaded, so status can say if it is current.
@@ -305,15 +329,17 @@ export class CompanionService extends EventEmitter {
   }
 
   async setUsage(change: {enabled?: boolean; window?: UsageWindow}): Promise<void> {
-    this.#display = {
-      ...this.#display,
-      ...(change.enabled === undefined ? {} : {showUsage: change.enabled}),
-      ...(change.window === undefined ? {} : {usageWindow: change.window}),
-    };
-    await saveDisplaySettings(this.#display);
-    this.#updateUsage();
-    this.emit('change');
-    if (this.#display.showUsage) await this.refreshUsage();
+    return this.#mutate(async () => {
+      this.#display = {
+        ...this.#display,
+        ...(change.enabled === undefined ? {} : {showUsage: change.enabled}),
+        ...(change.window === undefined ? {} : {usageWindow: change.window}),
+      };
+      await saveDisplaySettings(this.#display);
+      this.#updateUsage();
+      this.emit('change');
+      if (this.#display.showUsage) await this.refreshUsage();
+    });
   }
 
   async refreshWifiPairing(): Promise<void> {
@@ -332,6 +358,7 @@ export class CompanionService extends EventEmitter {
       connected: this.#transport.connected,
       port: this.#transport.address,
       character: this.#transport.character,
+      charactersRevision: this.#charactersRevision,
       network: this.#transport.network,
       orientation: this.#transport.orientation,
       mode: this.#transport.mode,
@@ -362,6 +389,8 @@ export class CompanionService extends EventEmitter {
       service: this.#service,
       wifiPaired: this.#wifiPaired,
       deviceUsed: this.deviceUsed,
+      deviceEnabled: this.deviceEnabled,
+      onboarding: this.onboardingStatus(),
       firmware: this.#firmwareStatus(),
       installing: this.#installing,
       lastInstall: this.#lastInstall,
@@ -419,23 +448,29 @@ export class CompanionService extends EventEmitter {
   }
 
   async setAgentEnabled(id: AgentId, enabled: boolean): Promise<AgentStatus[]> {
-    await setAgentEnabled(id, enabled);
-    this.emit('change');
-    return this.agentStatuses();
+    return this.#mutate(async () => {
+      await setAgentEnabled(id, enabled);
+      this.emit('change');
+      return this.agentStatuses();
+    });
   }
 
-  async installAgentHook(id: AgentId): Promise<AgentStatus[]> {
-    this.#setAgentWarnings(id, await installAgent(id, this.#agentContext));
-    await setAgentHookRemoved(id, false);
-    this.emit('change');
-    return this.agentStatuses();
+  async installAgentHook(id: AgentId, onlyNeeded = false): Promise<AgentStatus[]> {
+    return this.#mutate(async () => {
+      this.#setAgentWarnings(id, await installAgent(id, this.#agentContext, onlyNeeded));
+      await setAgentHookRemoved(id, false);
+      this.emit('change');
+      return this.agentStatuses();
+    });
   }
 
-  async uninstallAgentHook(id: AgentId): Promise<AgentStatus[]> {
-    this.#setAgentWarnings(id, await uninstallAgent(id, this.#agentContext));
-    await setAgentHookRemoved(id, true);
-    this.emit('change');
-    return this.agentStatuses();
+  async uninstallAgentHook(id: AgentId, allLocations = false): Promise<AgentStatus[]> {
+    return this.#mutate(async () => {
+      this.#setAgentWarnings(id, await uninstallAgent(id, this.#agentContext, allLocations));
+      await setAgentHookRemoved(id, true);
+      this.emit('change');
+      return this.agentStatuses();
+    });
   }
 
   async characters(): Promise<Array<CharacterEntry & {installed: boolean}>> {
@@ -445,23 +480,36 @@ export class CompanionService extends EventEmitter {
   }
 
   async configureWifi(ssid: string, password: string): Promise<string> {
-    validateWifiCredentials(ssid, password);
-    const config = await this.#transport.configureWifi(ssid, password);
-    await saveWifiConfig(config);
-    await this.#transport.reloadWifi();
-    this.#wifiPaired = true;
-    this.emit('change');
-    return config.deviceId;
+    return this.#mutate(async () => {
+      validateWifiCredentials(ssid, password);
+      const config = await this.#transport.configureWifi(ssid, password);
+      await saveWifiConfig(config);
+      await this.#transport.reloadWifi();
+      this.#wifiPaired = true;
+      this.emit('change');
+      return config.deviceId;
+    });
   }
 
   scanWifi(): Promise<WifiNetwork[]> {
-    return this.#transport.scanWifi();
+    return this.#mutate(() => this.#transport.scanWifi());
+  }
+
+  reloadWifi(): Promise<void> {
+    return this.#mutate(async () => {
+      await this.refreshWifiPairing();
+      await this.#transport.reloadWifi();
+      this.emit('change');
+    });
   }
 
   async setConnection(mode: ConnectionMode): Promise<void> {
-    await this.#transport.setMode(mode);
-    await saveConnectionMode(mode);
-    this.emit('change');
+    return this.#mutate(async () => {
+      if (!this.deviceEnabled) await this.setDesktop({deviceEnabled: true});
+      await this.#transport.setMode(mode);
+      await saveConnectionMode(mode);
+      this.emit('change');
+    });
   }
 
   syncBadges(): void {
@@ -471,13 +519,25 @@ export class CompanionService extends EventEmitter {
   }
 
   async setAgentBadgesEnabled(enabled: boolean): Promise<void> {
-    this.#display = {...this.#display, showAgentBadges: enabled};
-    await saveDisplaySettings(this.#display);
-    this.syncBadges();
-    this.emit('change');
+    return this.#mutate(async () => {
+      this.#display = {...this.#display, showAgentBadges: enabled};
+      await saveDisplaySettings(this.#display);
+      this.syncBadges();
+      this.emit('change');
+    });
   }
 
   async setDesktop(change: DesktopChange): Promise<void> {
+    return this.#mutate(() => this.#setDesktop(change));
+  }
+
+  async #setDesktop(change: DesktopChange): Promise<void> {
+    if (change.deviceEnabled !== undefined) {
+      if (this.#installBusy) throw new Error('Wait for the current installation to finish.');
+      await this.#transport.setEnabled(change.deviceEnabled);
+      this.#display = {...this.#display, useDevice: change.deviceEnabled};
+      await saveDisplaySettings(this.#display);
+    }
     if (change.character !== undefined) {
       // A connected device decides the character; this is for when there is none.
       if (this.#transport.connected) throw new Error('The device is connected; install the character instead.');
@@ -498,6 +558,285 @@ export class CompanionService extends EventEmitter {
       await saveDisplaySettings(this.#display);
     }
     this.emit('change');
+  }
+
+  get deviceEnabled(): boolean {
+    return this.#display.useDevice;
+  }
+
+  onboardingStatus(): CompanionStatus['onboarding'] {
+    return {...this.#onboarding.state, busy: this.#operation !== null,
+            phase: this.#onboardingPhase, error: this.#onboardingError ?? this.#onboarding.problem,
+            deviceSetup: this.#onboardingDeviceSetup ? {...this.#onboardingDeviceSetup} : null};
+  }
+
+  #setupAvailable(): void {
+    if (this.#operation || this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
+      throw new SetupError('Wait for the current installation to finish.');
+    if (this.#stopping || this.#restarting || this.#uninstalling)
+      throw new SetupError('The companion service is stopping.');
+  }
+
+  #requireSetup(): void {
+    if (this.#onboarding.state.completed)
+      throw new SetupError('Run setup again before changing its choices.');
+  }
+
+  #mutate<T>(work: () => Promise<T>, phase: string | null = null): Promise<T> {
+    // Nested setup actions retain ownership across awaits; other requests cannot share it.
+    if (this.#operation && this.#operationContext.getStore() === this.#operation) return work();
+    this.#setupAvailable();
+    const owner = Symbol();
+    this.#operation = owner;
+    if (phase) {
+      this.#onboardingPhase = phase;
+      this.#onboardingError = null;
+      this.emit('change');
+    }
+    const failed = (error: unknown) => {
+      if (phase) this.#onboardingError = error instanceof Error ? error.message : String(error);
+      throw error;
+    };
+    const finished = () => {
+      this.#operation = null;
+      if (phase) {
+        this.#onboardingPhase = null;
+        this.#onboardingDeviceSetup = null;
+      }
+      this.emit('change');
+    };
+    try {
+      return this.#operationContext.run(owner, work).catch(failed).finally(finished);
+    } catch (error) {
+      if (phase) this.#onboardingError = error instanceof Error ? error.message : String(error);
+      finished();
+      throw error;
+    }
+  }
+
+  async updateOnboarding(change: OnboardingChange): Promise<OnboardingState> {
+    return this.#mutate(async () => {
+      this.#requireSetup();
+      if (change.character !== undefined && !(await this.characters()).some(entry => entry.id === change.character))
+        throw new SetupError('Unknown character.', 400);
+      return this.#onboarding.update(change);
+    }, 'Saving setup choices');
+  }
+
+  async navigateOnboarding(step: OnboardingStep): Promise<OnboardingState> {
+    return this.#mutate(async () => {
+      const state = this.#onboarding.state;
+      if (state.completed) throw new SetupError('Run setup again before opening its steps.');
+      if (!state.visitedSteps.includes(step))
+        throw new SetupError('This setup step has not been reached yet.');
+      if (step === 'firmware' && (state.display === 'desktop' || state.deviceDeferred))
+        throw new SetupError('The device step is not part of your selected setup.');
+      return this.updateOnboarding({step, ...(step === 'agents' ? {agentStage: 'select'} : {})});
+    }, 'Opening setup step');
+  }
+
+  async restartOnboarding(): Promise<OnboardingState> {
+    return this.#mutate(() => this.#restartOnboarding(), 'Opening setup');
+  }
+
+  async #restartOnboarding(): Promise<OnboardingState> {
+    const available = await this.characters();
+    const current = this.desktopCharacter();
+    const previous = this.#onboarding.state;
+    const selected = previous.completed && previous.step === 'welcome' ? current : previous.character;
+    const state = await this.#onboarding.reset({
+      agents: [...new Set([...previous.agents,
+        ...this.agentStatuses().filter(agent => agent.enabled && agent.installed).map(agent => agent.id)])],
+      character: available.some(entry => entry.id === selected) ? selected
+        : available.some(entry => entry.id === current) ? current : 'copilot',
+      display: previous.deviceDeferred ? previous.display
+        : !this.deviceEnabled ? 'desktop' : this.#display.showDesktopCompanion ? 'both' : 'device',
+    }, true);
+    this.#onboardingError = null;
+    this.emit('change');
+    return state;
+  }
+
+  async rescanAgents(): Promise<AgentStatus[]> {
+    return this.#mutate(async () => {
+      await this.#agentContext.locations?.refresh({force: true});
+      return this.agentStatuses();
+    }, 'Checking installed agents');
+  }
+
+  async removeOnboardingAgent(id: AgentId): Promise<{state: OnboardingState; warning?: string}> {
+    return this.#mutate(() => this.#removeOnboardingAgent(id), 'Removing selected agent hooks');
+  }
+
+  async #removeOnboardingAgent(id: AgentId): Promise<{state: OnboardingState; warning?: string}> {
+    this.#requireSetup();
+    const previous = this.#onboarding.state;
+    if (!previous.agents.includes(id)) throw new SetupError('Agent selection changed. Review the removal again.');
+    const agents = await this.uninstallAgentHook(id, true);
+    const removed = agents.find(agent => agent.id === id);
+    await this.setAgentEnabled(id, false);
+    const state = await this.#onboarding.update({
+      agents: previous.agents.filter(agent => agent !== id),
+      deferredAgents: previous.deferredAgents.filter(agent => agent !== id),
+      agentStage: 'select',
+    });
+    const warning = removed?.warning ?? (removed?.installed
+      ? 'Some hooks remain. The agent is disabled. Check its configuration locations in Settings.' : undefined);
+    return {state, ...(warning ? {warning} : {})};
+  }
+
+  async installOnboardingAgents(approved: AgentId[] = []): Promise<Array<{id: AgentId; ok: boolean; warning?: string; error?: string}>> {
+    return this.#mutate(() => this.#installOnboardingAgents(approved), 'Checking selected hooks');
+  }
+
+  async #installOnboardingAgents(approved: AgentId[]): Promise<Array<{id: AgentId; ok: boolean; warning?: string; error?: string}>> {
+    this.#requireSetup();
+    const selected = this.#onboarding.state.agents;
+    if (!selected.length) throw new SetupError('Select an agent or choose Set up later.', 400);
+    const results: Array<{id: AgentId; ok: boolean; warning?: string; error?: string}> = [];
+    await this.#agentContext.locations?.refresh({force: true});
+    const unapproved = this.agentStatuses().filter(agent => selected.includes(agent.id)
+      && (!agent.installed || !isHookCurrent(agent.hookStatus)) && !approved.includes(agent.id));
+    if (unapproved.length)
+      throw new SetupError(`Hooks changed for ${unapproved.map(agent => agent.name).join(', ')}. Review and approve the required installation.`);
+    for (const id of selected) {
+      const found = this.agentStatuses().find(agent => agent.id === id)!;
+      const current = found.installed && isHookCurrent(found.hookStatus);
+      if (!current && !approved.includes(id))
+        throw new SetupError(`Hooks changed for ${found.name}. Review and approve the required installation.`);
+      try {
+        if (!found.detected && id !== 'copilot') throw new Error(`${found.name} was not detected. Install the agent and rescan.`);
+        if (current) await rememberHookApproval(this.#agentContext, [id]);
+        else await this.installAgentHook(id, true);
+        await this.setAgentEnabled(id, true);
+        const status = this.agentStatuses().find(agent => agent.id === id)!;
+        const ok = isHookCurrent(status.hookStatus);
+        results.push({id, ok, ...(status.warning ? {warning: status.warning} : {}),
+                      ...(!ok ? {error: status.warning ?? 'Some hooks could not be installed.'} : {})});
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[onboarding] ${id} hook installation failed: ${message}`);
+        results.push({id, ok: false, error: message});
+      }
+    }
+    for (const adapter of adapters) {
+      if (!selected.includes(adapter.id)) await this.setAgentEnabled(adapter.id, false);
+    }
+    await this.#onboarding.update({agentsDeferred: false, agentStage: 'connect'});
+    return results;
+  }
+
+  async detectUsbDevices(): Promise<{ports: Awaited<ReturnType<DeviceTransport['usbPorts']>>; connected: string | null}> {
+    this.#setupAvailable();
+    return {ports: await this.#transport.usbPorts(),
+            connected: this.#transport.transport === 'usb' ? this.#transport.address : null};
+  }
+
+  async applyOnboardingDisplay(): Promise<void> {
+    return this.#mutate(async () => {
+      this.#requireSetup();
+      await this.#applySetupDisplay(await this.#setupState());
+    }, 'Applying display choice');
+  }
+
+  async #setupState(preferWifi = true): Promise<OnboardingState> {
+    let state = this.#onboarding.state;
+    if (!(await this.characters()).some(entry => entry.id === state.character))
+      throw new SetupError('The selected character is unavailable. Return to Character and select an available pack.');
+    if (preferWifi && state.port && this.#transport.connected && this.#transport.transport === 'wifi') {
+      await this.#transport.selectUsbPort(null);
+      state = await this.#onboarding.update({port: null});
+    }
+    return state;
+  }
+
+  async #applySetupDisplay(state: OnboardingState): Promise<void> {
+    const device = state.display !== 'desktop' && !state.deviceDeferred;
+    if (device && state.port && this.#transport.mode === 'wifi') await this.#transport.setMode('auto');
+    await this.setDesktop({deviceEnabled: device, visible: state.display !== 'device' || state.deviceDeferred});
+    if (!device) await this.setDesktop({character: state.character});
+  }
+
+  setupOnboardingDevice(flash: boolean): Promise<void> {
+    return this.#mutate(() => {
+      const state = this.#onboarding.state;
+      if (state.completed || state.display === 'desktop' || state.deviceDeferred)
+        throw new SetupError('Device setup is not selected.');
+      if (flash && !state.port) throw new SetupError('Detect and select the USB device first.');
+      return this.#setupOnboardingDevice(flash);
+    }, 'Connecting to the device');
+  }
+
+  async #setupOnboardingDevice(flash: boolean): Promise<void> {
+    const state = await this.#setupState(!flash);
+    const usbPath = state.port ?? (this.#transport.transport === 'usb' ? this.#transport.address : null);
+    const target = usbPath ? await this.#transport.findUsbPort(usbPath) : null;
+    this.#onboardingDeviceSetup = {flash, transport: flash || target ? 'usb' : this.#transport.transport};
+    this.emit('change');
+    if (target) await this.#transport.selectUsbPort(target.path);
+    await this.#applySetupDisplay(state);
+    if (flash) {
+      if (!target) throw new Error('The selected USB device disconnected.');
+      await this.installFirmwareOverUsb(state.port);
+      this.#onboardingPhase = 'Waiting for the device to restart';
+      this.emit('change');
+      const firmware = this.#lastUsbFirmware?.id;
+      await this.#waitForDevice(() => this.#transport.firmware === firmware && this.#transport.matchesUsbPort(target));
+      if (this.#transport.address !== state.port)
+        await this.#onboarding.update({port: this.#transport.address});
+    } else {
+      await this.#waitForDevice(() => !target || this.#transport.matchesUsbPort(target), 15_000);
+    }
+    if (this.#transport.character !== state.character) {
+      this.#onboardingDeviceSetup.transport = this.#transport.transport;
+      this.#onboardingPhase = 'Installing the selected character';
+      this.emit('change');
+      await this.installCharacter(state.character);
+      this.#onboardingPhase = 'Waiting for the character to start';
+      this.emit('change');
+      await this.#waitForDevice(() => this.#transport.character === state.character
+        && (!target || this.#transport.matchesUsbPort(target)));
+    }
+    if (target && this.#transport.address !== this.#onboarding.state.port)
+      await this.#onboarding.update({port: this.#transport.address});
+  }
+
+  async #waitForDevice(ready: () => boolean, timeout = 120_000): Promise<void> {
+    const until = Date.now() + timeout;
+    while (Date.now() < until) {
+      if (this.#transport.connected && ready()) return;
+      await sleep(250);
+    }
+    throw new Error('The device did not reconnect. Check its power and USB or Wi-Fi connection, then detect the device and retry.');
+  }
+
+  async finishOnboarding(): Promise<OnboardingState> {
+    return this.#mutate(() => this.#finishOnboarding(), 'Finishing setup');
+  }
+
+  async #finishOnboarding(): Promise<OnboardingState> {
+    if (this.#onboarding.state.completed) return this.#onboarding.state;
+    const state = await this.#setupState();
+    if (!state.agentsDeferred) {
+      for (const id of state.agents) {
+        if (state.deferredAgents.includes(id)) continue;
+        const agent = this.agentStatuses().find(entry => entry.id === id)!;
+        if (!agent.enabled || !agent.installed || !['installed', 'needs-approval'].includes(agent.hookStatus))
+          throw new SetupError(`Install the ${agent.name} hooks or choose Set up agents later.`);
+        if (agent.action)
+          throw new SetupError(`Finish connecting ${agent.name} or choose Set up later in its guide.`);
+      }
+    }
+    if (state.display !== 'desktop' && !state.deviceDeferred
+      && (!this.#transport.connected || this.#transport.character !== state.character
+        || (state.port && this.#transport.address !== state.port)))
+      throw new SetupError('Finish preparing the selected device or choose Use desktop for now.');
+    await this.#applySetupDisplay(state);
+    if (state.display !== 'desktop' && !state.deviceDeferred && state.port) await this.setConnection('auto');
+    await this.#transport.selectUsbPort(null);
+    const completed = await this.#onboarding.finish();
+    this.emit('change');
+    return completed;
   }
 
   // The desktop app asks for status often; the reply tells it when to close or open Settings.
@@ -535,6 +874,7 @@ export class CompanionService extends EventEmitter {
   }
 
   stopDesktop(): void {
+    this.#checkCanStop();
     this.#desktopApp.stop();
     this.emit('change');
   }
@@ -542,6 +882,7 @@ export class CompanionService extends EventEmitter {
   // Removes the agent hooks now. Then, after a short time, closes the desktop app and starts a
   // script that removes the app, this service and (unless keepData) its data, and stops the service.
   async uninstall(keepData: boolean, run: (plan: UninstallPlan) => void = runUninstall): Promise<UninstallResult> {
+    this.#checkCanStop();
     const platform = process.platform;
     if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32')
       throw new Error('Uninstall from Settings works on macOS, Linux and Windows only. See "Uninstall" in the README.');
@@ -630,7 +971,7 @@ export class CompanionService extends EventEmitter {
   #checkCanStop(): void {
     if (this.#uninstalling || this.#stopping || this.#restarting)
       throw new Error('The companion service is already stopping or restarting.');
-    if (this.#installBusy || this.#installing || this.#usbInstalling)
+    if (this.#operation || this.#installBusy || this.#installing || this.#usbInstalling)
       throw new Error('Wait for the install to finish, then stop or restart the companion service.');
   }
 
@@ -649,8 +990,11 @@ export class CompanionService extends EventEmitter {
     return this.#installBusy;
   }
 
-  async installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
-    if (this.#installBusy) throw new Error('A character installation is already in progress.');
+  installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
+    return this.#mutate(() => this.#installCharacter(character, progress));
+  }
+
+  async #installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
     this.#installBusy = true;
     let pack: Awaited<ReturnType<typeof readCharacterPack>>;
     let name = character;
@@ -701,13 +1045,13 @@ export class CompanionService extends EventEmitter {
   }
 
   async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
-    if (!isOrientationOffset(offsetDegrees))
-      throw new Error('Orientation offset must be from -15 to 15 degrees in half-degree steps.');
-    if (this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
-      throw new Error('Wait for the current installation to finish.');
-    const orientation = await this.#transport.setOrientationOffset(offsetDegrees);
-    this.emit('change');
-    return orientation;
+    return this.#mutate(async () => {
+      if (!isOrientationOffset(offsetDegrees))
+        throw new Error('Orientation offset must be from -15 to 15 degrees in half-degree steps.');
+      const orientation = await this.#transport.setOrientationOffset(offsetDegrees);
+      this.emit('change');
+      return orientation;
+    });
   }
 
   #firmwareStatus(): FirmwareStatus {
@@ -739,9 +1083,11 @@ export class CompanionService extends EventEmitter {
 
   // Downloads this service's release firmware from GitHub and has the desktop app write it over
   // USB: bootloader, partition table, app and the Copilot character. Wi-Fi settings stay.
-  async installFirmwareOverUsb(): Promise<void> {
-    if (this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
-      throw new Error('Wait for the current installation to finish.');
+  installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
+    return this.#mutate(() => this.#installFirmwareOverUsb(selectedPort));
+  }
+
+  async #installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
     const version = this.#service.version;
     if (!version) throw new Error('The companion service has no VERSION file, so it cannot choose a release.');
     const program = this.#desktopApp.flasher();
@@ -758,12 +1104,17 @@ export class CompanionService extends EventEmitter {
     };
     let id: string | null = null;
     try {
+      const target = await this.#transport.findUsbPort(selectedPort);
+      if (!target) throw new Error('No device is on USB. Connect the device with a USB data cable, then try again.');
       const release = await this.#usbInstaller.releases.prepare(version, (received, total) =>
         set({stage: 'downloading', percent: total ? Math.floor(received * 100 / total) : null}));
       this.#release = release;
       id = release.id;
-      const port = await this.#transport.findUsbPort();
+      const port = await this.#transport.findUsbPort(target.path);
       if (!port) throw new Error('No device is on USB. Connect the device with a USB data cable, then try again.');
+      if (target.serialNumber && target.serialNumber !== port.serialNumber)
+        throw new Error('The selected USB device changed during the download. Detect and confirm the device again.');
+      await this.#transport.selectUsbPort(port.path);
       console.log(`[firmware] installing release v${version} (${release.id}) over USB on ${port.path}`);
       await this.#transport.withUsbReleased(() => this.#usbInstaller.flash(program, release.dir, port, {
         stage: stage => set({stage, percent: stage === 'writing' ? 0 : null}),
@@ -785,9 +1136,11 @@ export class CompanionService extends EventEmitter {
 
   // Sends the built firmware over Wi-Fi. The device restarts into it, and goes back to its old
   // firmware if the new one does not reach Wi-Fi within 90 seconds.
-  async updateFirmware(): Promise<void> {
-    if (this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
-      throw new Error('Wait for the current installation to finish.');
+  updateFirmware(): Promise<void> {
+    return this.#mutate(() => this.#updateFirmware());
+  }
+
+  async #updateFirmware(): Promise<void> {
     const image = this.#firmwareImage();
     if (!image) throw new Error('No firmware is built. Run: bash tools/arduino.sh build');
     if (image.id === this.#transport.firmware) throw new Error('The device already runs this firmware.');
@@ -820,23 +1173,29 @@ export class CompanionService extends EventEmitter {
 
   // Restores the remembered character when a connected device reports that it has none.
   async restoreCharacter(): Promise<void> {
-    if (this.#installBusy) return;
+    if (this.#operation || this.#installBusy) return;
     const character = await loadCharacterPreference();
-    if (this.#installBusy) return;
+    if (this.#operation || this.#installBusy) return;
     console.log(`[character] device has no character; installing ${character}`);
     await this.installCharacter(character);
   }
 
   async addCharacter(data: Buffer): Promise<CharacterEntry> {
-    const entry = await addCharacterPack(data);
-    this.emit('change');
-    return entry;
+    return this.#mutate(async () => {
+      const entry = await addCharacterPack(data);
+      this.#charactersRevision++;
+      this.emit('change');
+      return entry;
+    });
   }
 
   async removeCharacter(id: string): Promise<void> {
-    if (id === this.#transport.character) throw new Error('That character is installed on the device.');
-    await removeCharacterPack(id);
-    this.emit('change');
+    return this.#mutate(async () => {
+      if (id === this.#transport.character) throw new Error('That character is installed on the device.');
+      await removeCharacterPack(id);
+      this.#charactersRevision++;
+      this.emit('change');
+    });
   }
 }
 
