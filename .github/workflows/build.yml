@@ -272,8 +272,9 @@ jobs:
 
             ### The device
 
-            Download the desktop app for your OS (below) and open it. It installs the companion service and opens Settings.
-            Connect the device over USB, and click **Install** on the **Device** tab: the app downloads this release's firmware, checks it, and writes it to the device.
+            Download the desktop app for your OS (below) and open it. A new installation starts the companion service and opens setup.
+            Choose your agents and approve any required hook changes. Choose a character and display option. For a new device, connect USB, detect the device, and confirm the supported Waveshare board before installing firmware and your character. Select **Finish** to open Settings.
+            To replace firmware later, use **USB release install or recovery** on the **Device** tab.
 
             Without the desktop app, download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
             It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
@@ -284,7 +285,7 @@ jobs:
             ### The desktop app
 
             The same character, with the same animation, in a small window on your desktop. It carries the
-            companion service: when no service runs, it installs it with your agents' hooks, so you need
+            companion service: when no service runs, it installs the service and asks you to choose and approve agent hooks, so you need
             no clone of the repository and no Node.js. If a service from a clone runs, the app follows that one.
 
             > [!TIP]
@@ -305,7 +306,7 @@ jobs:
             sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"
             ```
 
-            Then open it from Applications. It has no Dock icon: look for it in the menu bar.
+            Then open it from Applications. The running app appears in the Dock and the menu bar. Select its Dock entry to return to an open Settings window.
 
             #### 🪟 Windows (x64 and Arm64)
 

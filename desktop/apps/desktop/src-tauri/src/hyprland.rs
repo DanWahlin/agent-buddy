@@ -84,7 +84,9 @@ pub fn find_client(clients: &str, pid: u32) -> Option<Client> {
     let client = clients
         .as_array()?
         .iter()
-        .find(|client| client.get("pid").and_then(Value::as_u64) == Some(pid as u64))?;
+        .find(|client| client.get("pid").and_then(Value::as_u64) == Some(pid as u64)
+            && client.get("initialTitle").or_else(|| client.get("title")).and_then(Value::as_str)
+                == Some("Agent Companion"))?;
     let pair = |key: &str| -> Option<(f64, f64)> {
         let values = client.get(key)?.as_array()?;
         Some((values.first()?.as_f64()?, values.get(1)?.as_f64()?))
@@ -176,10 +178,11 @@ mod tests {
     }
 
     #[test]
-    fn this_window_is_found_by_process() {
+    fn the_character_is_found_by_process_and_initial_title() {
         let clients = r#"[
-            {"address":"0xaaa","pid":1,"at":[0,0],"size":[10,10],"floating":false,"pinned":false},
-            {"address":"0xbbb","pid":4242,"at":[2200,1000],"size":[280,280],"floating":true,"pinned":false}
+            {"address":"0xaaa","pid":1,"title":"Agent Companion","at":[0,0],"size":[10,10],"floating":false,"pinned":false},
+            {"address":"0xsettings","pid":4242,"title":"Agent Buddy","at":[0,0],"size":[1000,800],"floating":false,"pinned":false},
+            {"address":"0xbbb","pid":4242,"initialTitle":"Agent Companion","title":"Copilot","at":[2200,1000],"size":[280,280],"floating":true,"pinned":false}
         ]"#;
         let client = find_client(clients, 4242).unwrap();
         assert_eq!(client.address, "0xbbb");
@@ -187,6 +190,30 @@ mod tests {
         assert!(client.floating && !client.pinned);
         assert!(find_client(clients, 7).is_none());
         assert!(find_client("not json", 1).is_none());
+        assert!(find_client(r#"[{"pid":4242,"title":"Agent Buddy"}]"#, 4242).is_none());
+    }
+
+    #[test]
+    fn the_startup_dialog_is_ignored_when_the_character_is_hidden() {
+        let clients = serde_json::json!([
+            {"address":"0xstarting","pid":4242,"initialTitle":crate::STARTING_TITLE,
+             "title":crate::STARTING_TITLE,"at":[600,400],"size":[440,250],
+             "floating":false,"pinned":false}
+        ]).to_string();
+        assert!(find_client(&clients, 4242).is_none());
+    }
+
+    #[test]
+    fn the_character_is_found_when_the_startup_dialog_maps_first() {
+        let clients = serde_json::json!([
+            {"address":"0xstarting","pid":4242,"initialTitle":crate::STARTING_TITLE,
+             "title":crate::STARTING_TITLE,"at":[600,400],"size":[440,250],
+             "floating":false,"pinned":false},
+            {"address":"0xcharacter","pid":4242,"initialTitle":"Agent Companion",
+             "title":"Copilot","at":[2200,1000],"size":[280,280],
+             "floating":true,"pinned":true}
+        ]).to_string();
+        assert_eq!(find_client(&clients, 4242).unwrap().address, "0xcharacter");
     }
 
     #[test]

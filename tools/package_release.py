@@ -40,9 +40,12 @@ def package(root, version, name="esp32-agent-companion", output=None,
         raise ValueError("Repository must be an owner/repository pair.")
     firmware_artifacts.check(root)
     app, assets = firmware_artifacts.layout(root)
+    if not (root / character_pack.CHARACTERS / "built-in.json").is_file():
+        raise ValueError("characters/built-in.json is required for release packaging.")
     characters = {}
-    for path in sorted((root / character_pack.OUTPUT).glob("*.acpk")):
-        pack_id = path.stem
+    for source in character_pack.discover_characters(root):
+        pack_id = source.name
+        path = root / character_pack.OUTPUT / f"{pack_id}.acpk"
         data = path.read_bytes()
         if character_pack.decode(data, assets["size"])["id"] != pack_id:
             raise ValueError(f"Character pack {pack_id}.acpk has a different id.")

@@ -46,8 +46,16 @@ default), so the button and the **Play sounds** switch in Settings agree. The
 **Sound volume** slider in Settings sets the cue gain (`desktopVolume`, 0 to
 100, 30 by default); the page plays a tick when the volume changes.
 
-**Quit from the tray.** With no title bar and no taskbar button, the tray is
-the only way out. Its menu has Show/Hide, *Settings* and *Quit*.
+**Return from the Dock or taskbar.** The running app has an entry in the
+macOS Dock or the taskbar on Windows and supported Linux desktops.
+Reopening it restores an existing Settings window, including a minimized one.
+If the desktop character is disabled, activation opens Settings.
+
+**Quit from the tray.** Its menu has Show/Hide, *Settings* and *Quit*.
+On Hyprland, including Omarchy, Hide removes the character window while
+the menu-bar tray entry remains available. Other Linux desktops retain
+their taskbar entry through minimization.
+Native quit and taskbar-close actions use the same installation guard.
 
 Where it was put is remembered, and checked on the way back up: a position is
 only restored if enough of the window would land on a monitor that exists
@@ -84,10 +92,9 @@ needed to take the mouse only over the character and to remember its place:
 ## What it does not do yet
 
 - **No autostart.** It does not come back after a reboot.
-- **Windows cannot follow agents.** The companion service has no Windows build,
-  so on Windows the app shows the character in idle.
 - **Not code-signed.** Each OS needs a one-time step on first run; the release
   notes and the root README give it. `macOSPrivateApi` is set, because a
   transparent window does not work on macOS without it, and it rules out the
-  Mac App Store. On macOS the app is an accessory app: it has no Dock icon and
-  can sit over full-screen Spaces.
+  Mac App Store. The app has a Dock entry on macOS. Its character can still
+  sit over other apps' full-screen Spaces on macOS 13 or later. Earlier versions
+  keep the Dock entry but cannot show this window over another app's full-screen Space.

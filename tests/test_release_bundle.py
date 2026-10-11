@@ -39,7 +39,9 @@ class ReleaseBundleTests(unittest.TestCase):
                  "app1,app,ota_1,0x210000,0x200000,\n"
                  "assets,data,0x40,0x410000,0xBE0000,\n")
         self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
-        for pack_id in ("copilot", "openclaw"):
+        self.put("characters/built-in.json", (ROOT / "characters/built-in.json").read_bytes())
+        for pack_id in ("claude", "copilot", "openclaw"):
+            self.put(f"characters/{pack_id}/character.json", (ROOT / f"characters/{pack_id}/character.json").read_bytes())
             self.put(f"build/characters/{pack_id}.acpk", tiny_pack(pack_id))
         for path in firmware_artifacts.BINARIES:
             self.put(path, b"compiled-" + path.name.encode())
@@ -86,7 +88,7 @@ class ReleaseBundleTests(unittest.TestCase):
             self.assertEqual(set(archive.namelist()), {*flash_release.PAYLOAD_NAMES, "SHA256SUMS"})
             self.assertTrue(all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()))
         with zipfile.ZipFile(characters) as archive:
-            self.assertEqual(archive.namelist(), ["copilot.acpk", "openclaw.acpk"])
+            self.assertEqual(archive.namelist(), ["claude.acpk", "copilot.acpk", "openclaw.acpk"])
             self.assertEqual(archive.read("openclaw.acpk"), tiny_pack("openclaw"))
         with zipfile.ZipFile(firmware) as archive:
             self.assertEqual(archive.read("bin/character-copilot.acpk"), tiny_pack("copilot"))
@@ -218,6 +220,38 @@ class ReleaseBundleTests(unittest.TestCase):
             package_release.package(self.root, "1.2.3")
         path.write_bytes(tiny_pack("other"))
         with self.assertRaisesRegex(ValueError, "different id"):
+            package_release.package(self.root, "1.2.3")
+
+    def test_release_excludes_unregistered_add_on_packs(self):
+        self.put("build/characters/custom.acpk", tiny_pack("custom"))
+        _, _, characters = self.bundle()
+        with zipfile.ZipFile(characters) as archive:
+            self.assertEqual(archive.namelist(), ["claude.acpk", "copilot.acpk", "openclaw.acpk"])
+
+    def test_release_uses_real_builtin_packs_and_excludes_addons(self):
+        files = {
+            f"{source.name}.acpk": character_pack.build_character(ROOT, source)
+            for source in character_pack.discover_characters(ROOT)
+        }
+        for name, data in files.items():
+            self.put(f"build/characters/{name}", data)
+        self.put("build/characters/custom.acpk", tiny_pack("custom"))
+        firmware_artifacts.snapshot(self.root)
+        firmware_artifacts.record(self.root)
+        _, _, characters = self.bundle()
+        with zipfile.ZipFile(characters) as archive:
+            self.assertEqual(archive.namelist(), sorted(files))
+            for name, data in files.items():
+                self.assertEqual(archive.read(name), data)
+
+    def test_release_requires_every_builtin_pack(self):
+        (self.root / "build/characters/claude.acpk").unlink()
+        with self.assertRaisesRegex(FileNotFoundError, "claude.acpk"):
+            package_release.package(self.root, "1.2.3")
+
+    def test_release_requires_the_builtin_roster(self):
+        (self.root / "characters/built-in.json").unlink()
+        with self.assertRaisesRegex(ValueError, "built-in.json is required"):
             package_release.package(self.root, "1.2.3")
 
     def test_layout_is_read_not_reexported(self):

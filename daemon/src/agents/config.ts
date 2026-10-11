@@ -11,30 +11,48 @@ export interface AgentsConfig {
   seen?: Partial<Record<AgentId, number>>;
   // Agents whose hooks the user removed. Setup and app updates don't add these hooks back.
   removed?: Partial<Record<AgentId, boolean>>;
+  // An empty record means no hooks have been approved. Missing means a legacy installation.
+  approved?: Partial<Record<AgentId, boolean>>;
+  problem?: string;
+}
+
+const reportedProblems = new Set<string>();
+
+function unreadableConfig(error: unknown, path: string): AgentsConfig {
+  if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {enabled: {}};
+  const problem = 'Saved agent choices could not be read. Run setup again to repair them. Hooks are disabled until choices can be saved.';
+  if (!reportedProblems.has(path)) {
+    console.error(`[agents] ${problem} File: ${path}`);
+    reportedProblems.add(path);
+  }
+  return {enabled: {}, approved: {}, problem};
 }
 
 export async function loadAgentsConfig(path = agentsConfigPath()): Promise<AgentsConfig> {
   try {
-    const value = JSON.parse(await readFile(path, 'utf8')) as Partial<AgentsConfig>;
-    return fromJson(value);
-  } catch {
-    return {enabled: {}};
+    const config = fromJson(JSON.parse(await readFile(path, 'utf8')));
+    reportedProblems.delete(path);
+    return config;
+  } catch (error) {
+    return unreadableConfig(error, path);
   }
 }
 
 export function loadAgentsConfigSync(path = agentsConfigPath()): AgentsConfig {
   try {
-    const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<AgentsConfig>;
-    return fromJson(value);
-  } catch {
-    return {enabled: {}};
+    const config = fromJson(JSON.parse(readFileSync(path, 'utf8')));
+    reportedProblems.delete(path);
+    return config;
+  } catch (error) {
+    return unreadableConfig(error, path);
   }
 }
 
 export async function saveAgentsConfig(config: AgentsConfig, path = agentsConfigPath()): Promise<void> {
   await mkdir(dirname(path), {recursive: true, mode: 0o700});
   const temporary = uniqueTemporaryPath(path);
-  await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, {mode: 0o600});
+  const {problem: _problem, ...saved} = config;
+  await writeFile(temporary, `${JSON.stringify(saved, null, 2)}\n`, {mode: 0o600});
   await rename(temporary, path);
   await chmod(path, 0o600).catch(() => undefined);
 }
@@ -54,12 +72,26 @@ export function updateAgentsConfig(
 
 export function isAgentEnabledSync(id: AgentId, detected = true, path = agentsConfigPath()): boolean {
   if (!existsSync(path)) return detected;
-  const configured = loadAgentsConfigSync(path).enabled[id];
-  return configured ?? detected;
+  return configuredAgentEnabled(loadAgentsConfigSync(path), id, detected);
 }
 
-function fromJson(value: Partial<AgentsConfig>): AgentsConfig {
+export function configuredAgentEnabled(config: AgentsConfig, id: AgentId, detected = true): boolean {
+  return config.enabled[id] ?? (config.approved === undefined ? detected : config.approved[id] === true && detected);
+}
+
+function fromJson(input: unknown): AgentsConfig {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid agent choices.');
+  const value = recordOf(input);
+  for (const key of ['enabled', 'removed', 'approved', 'seen']) {
+    const field = value[key];
+    if (field === undefined) continue;
+    if (!field || typeof field !== 'object' || Array.isArray(field)
+      || Object.values(field).some(item => key === 'seen'
+        ? typeof item !== 'number' || !Number.isFinite(item) || item < 0 : typeof item !== 'boolean'))
+      throw new Error('Invalid agent choices.');
+  }
   return {enabled: recordOf(value.enabled) as Partial<Record<AgentId, boolean>>,
           seen: recordOf(value.seen) as Partial<Record<AgentId, number>>,
-          removed: recordOf(value.removed) as Partial<Record<AgentId, boolean>>};
+          removed: recordOf(value.removed) as Partial<Record<AgentId, boolean>>,
+          ...(value.approved === undefined ? {} : {approved: recordOf(value.approved) as Partial<Record<AgentId, boolean>>})};
 }

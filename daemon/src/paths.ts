@@ -87,6 +87,11 @@ export function agentsConfigPath(): string {
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'agents.json');
 }
 
+export function onboardingPath(): string {
+  if (process.env.AGENT_COMPANION_ONBOARDING) return process.env.AGENT_COMPANION_ONBOARDING;
+  return join(defaultDataDirectory(process.platform, homedir(), process.env), 'onboarding.json');
+}
+
 export function characterPreferencePath(): string {
   if (process.env.AGENT_COMPANION_CHARACTER_CONFIG) return process.env.AGENT_COMPANION_CHARACTER_CONFIG;
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'character.json');

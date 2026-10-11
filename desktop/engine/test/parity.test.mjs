@@ -25,7 +25,7 @@ const firmware = join(repository, 'firmware', 'AgentCompanion', 'src');
 const SEED = 20260911;
 
 function nativePreview() {
-  const out = join(here, '..', 'dist', 'character-preview');
+  const out = join(here, '..', 'dist', process.platform === 'win32' ? 'character-preview.exe' : 'character-preview');
   if (existsSync(out)) return out;
   mkdirSync(dirname(out), { recursive: true });
   execFileSync(process.env.CXX ?? 'clang++', [

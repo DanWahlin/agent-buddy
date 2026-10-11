@@ -61,6 +61,20 @@ test('concurrent refreshes share one build', async () => {
   }
 });
 
+test('character packs rebuild when the built-in roster changes', async () => {
+  const {root, runs, cleanup} = await checkout();
+  try {
+    const builder = new CharacterPackBuilder({root, python: process.execPath});
+    await builder.refresh();
+    await writeFile(join(root, 'characters', 'built-in.json'), '["demo"]\n');
+    await builder.refresh();
+    await builder.refresh();
+    assert.equal(await runs(), 2);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('a failed build is logged, keeps the existing packs, and retries next time', async () => {
   const {root, runs, cleanup} = await checkout();
   try {

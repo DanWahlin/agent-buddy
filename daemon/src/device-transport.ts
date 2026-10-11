@@ -21,6 +21,7 @@ export class DeviceTransport {
   #usage: readonly string[] = [];
   #installing = false;
   #mode: ConnectionMode = 'auto';
+  #enabled = true;
   #lastPress: {presses: number; at: number} | null = null;
   readonly #missing: () => void;
   readonly #button: () => void;
@@ -91,13 +92,26 @@ export class DeviceTransport {
     return this.#mode;
   }
 
-  async start(mode: ConnectionMode = 'auto'): Promise<void> {
+  async start(mode: ConnectionMode = 'auto', enabled = true, selectedPort: string | null = null): Promise<void> {
+    this.#enabled = enabled;
+    await this.#usb.selectPort(selectedPort, true);
     await this.setMode(mode);
+  }
+
+  async setEnabled(enabled: boolean): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the installation to finish.');
+    this.#enabled = enabled;
+    if (enabled) await this.setMode(this.#mode);
+    else await this.stop();
   }
 
   async setMode(mode: ConnectionMode): Promise<void> {
     if (this.#installing) throw new Error('Wait for the installation to finish.');
     this.#mode = mode;
+    if (!this.#enabled) {
+      await this.stop();
+      return;
+    }
     if (mode === 'usb') this.#wifi.stop();
     else await this.#wifi.start();
     await this.#usb.setEnabled(mode !== 'wifi');
@@ -180,8 +194,20 @@ export class DeviceTransport {
     return this.#mode === 'wifi' ? null : this.#usb.unanswered;
   }
 
-  findUsbPort(): Promise<UsbPort | null> {
-    return this.#usb.findPort();
+  usbPorts(): Promise<UsbPort[]> {
+    return this.#usb.ports();
+  }
+
+  selectUsbPort(path: string | null): Promise<void> {
+    return this.#usb.selectPort(path);
+  }
+
+  findUsbPort(selected?: string | null): Promise<UsbPort | null> {
+    return this.#usb.findPort(selected);
+  }
+
+  matchesUsbPort(port: UsbPort): boolean {
+    return this.#usb.matches(port);
   }
 
   // Closes the USB port while `run` uses it (to install firmware), then opens it again.
@@ -192,7 +218,7 @@ export class DeviceTransport {
       await this.#usb.setEnabled(false);
       return await run();
     } finally {
-      await this.#usb.setEnabled(this.#mode !== 'wifi');
+      await this.#usb.setEnabled(this.#enabled && this.#mode !== 'wifi');
       this.#installing = false;
       this.#route();
     }
@@ -207,7 +233,7 @@ export class DeviceTransport {
   }
 
   #route(): void {
-    if (this.#installing) return;
+    if (this.#installing || !this.#enabled) return;
     if (this.#usb.connected) {
       this.#wifi.setEnabled(false);
       this.#usb.setState(this.#desired);
