@@ -840,6 +840,8 @@ Run these from the repository folder.
   by itself. Unplug the USB cable. Hold BOOT, connect the cable, and release BOOT
   after 2 seconds. The screen stays dark. Then click **Update to v<version>**, or
   open **USB release install or recovery**, click **Detect**, and install.
+  If the screen stays dark after the install, unplug the cable and connect it
+  again without BOOT. When the device starts, the app installs your character again.
 - **No USB device:** use a USB data cable, and close any serial monitor that uses
   the port.
 - **Download failed:** the computer must reach GitHub. The app downloads the
