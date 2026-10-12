@@ -118,6 +118,10 @@ class ReleaseBundleTests(unittest.TestCase):
         self.assertNotIn("--name", workflow)
         # The desktop app records the release firmware ID, so Settings can show an update.
         self.assertIn('--release-firmware "$RUNNER_TEMP"/release-bundles/*-firmware.zip', workflow)
+        # SHA256SUMS covers the desktop apps as well as the ZIPs.
+        release = workflow[workflow.index("  release:"):]
+        self.assertLess(release.index("pattern: desktop-*"), release.index("sha256sum --check --strict SHA256SUMS"))
+        self.assertLess(release.index("mv SHA256SUMS.new SHA256SUMS"), release.index("Publish GitHub Release"))
 
     def test_custom_name_and_repository(self):
         firmware, characters = package_release.package(self.root, "0.0.0", name="new-name",

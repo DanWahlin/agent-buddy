@@ -259,6 +259,14 @@ jobs:
           pattern: desktop-*
           path: artifacts
           merge-multiple: true
+      - name: Add the desktop apps to SHA256SUMS
+        working-directory: artifacts
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%P\n' | LC_ALL=C sort \
+            | xargs -d '\n' sha256sum -- > SHA256SUMS.new
+          mv SHA256SUMS.new SHA256SUMS
+          cat SHA256SUMS
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
