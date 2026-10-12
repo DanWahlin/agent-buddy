@@ -48,8 +48,9 @@ struct App {
     built_in: Option<PathBuf>,
     ids: Vec<String>,
     daemon: Mutex<Option<Snapshot>>,
-    /// The pack the page has been told to show, and the only one served.
-    current: Mutex<Option<(String, PathBuf)>>,
+    /// The pack the page has been told to show, and the only one served, with
+    /// the version it had then.
+    current: Mutex<Option<(String, PathBuf, Option<packs::Version>)>>,
     tray: Mutex<Option<tauri::tray::TrayIcon>>,
     /// The tray's Show/Hide item, whose label follows the window.
     visibility: Mutex<Option<MenuItem<Wry>>>,
@@ -94,6 +95,8 @@ fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
         let _ = window.emit("to-view", serde_json::json!({ "type": "error", "message": message }));
         return;
     };
+    let version = packs::version(&next.1);
+    let next = (next.0, next.1, version);
     {
         let mut current = app.current.lock().unwrap();
         if !force && current.as_ref() == Some(&next) {
@@ -109,7 +112,7 @@ fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
     if let Some(tray) = tray {
         let _ = tray.set_tooltip(Some(format!("Agent Companion - {}", next.0)));
     }
-    let _ = window.emit("to-view-pack", serde_json::json!({ "url": packs::pack_url(&next.0) }));
+    let _ = window.emit("to-view-pack", serde_json::json!({ "url": packs::pack_url(&next.0, version) }));
 }
 
 /// Pass the daemon's latest to the page, and act on the parts that are the shell's.
@@ -128,7 +131,7 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
     let tray = app.tray.lock().unwrap().clone();
     if let Some(tray) = tray {
         let installing = snapshot.as_ref().map(|it| &it.installing).filter(|it| !it.is_null());
-        let current = app.current.lock().unwrap().as_ref().map(|(id, _)| id.clone()).unwrap_or_default();
+        let current = app.current.lock().unwrap().as_ref().map(|(id, _, _)| id.clone()).unwrap_or_default();
         let tooltip = match installing {
             Some(install) => format!(
                 "Agent Companion - installing {} on the device: {}%",
@@ -635,8 +638,8 @@ fn main() {
             let current = serving.current.lock().unwrap().clone();
             let file = packs::requested_id(request.uri().path())
                 .zip(current)
-                .filter(|(id, (current_id, _))| id == current_id)
-                .map(|(_, (_, path))| path);
+                .filter(|(id, (current_id, _, _))| id == current_id)
+                .map(|(_, (_, path, _))| path);
             let response = tauri::http::Response::builder();
             match file.map(|path| std::fs::read(&path)) {
                 Some(Ok(bytes)) => response
