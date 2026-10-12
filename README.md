@@ -829,19 +829,23 @@ Run these from the repository folder.
 </details>
 
 <details>
-<summary><strong>Install over USB fails or is not available</strong></summary>
+<summary><strong>A firmware install over USB fails or is not available</strong></summary>
 
 - **Needs the desktop app:** the desktop app writes the firmware. Open it, then
   open Settings again. An older desktop app cannot install firmware; install the
   latest one.
 - **No BOOT press needed:** a normal USB install resets the device into download
-  mode itself. Press BOOT only for the recovery step below.
+  mode itself. Press BOOT only for the steps below.
+- **Couldn't connect to the ESP32-S3:** the device did not go into download mode
+  by itself. Unplug the USB cable. Hold BOOT, connect the cable, and release BOOT
+  after 2 seconds. The screen stays dark. Then click **Update to v<version>**, or
+  open **USB release install or recovery**, click **Detect**, and install.
 - **No USB device:** use a USB data cable, and close any serial monitor that uses
   the port.
 - **Download failed:** the computer must reach GitHub. The app downloads the
   release that matches the companion service's version.
 - **Connection problems while it writes:** disconnect the USB cable. Hold BOOT,
-  connect the cable, then release BOOT. Click **Install v<version>** again. If it
+  connect the cable, then release BOOT. Install again. If it
   still fails, use [Step 1](#step-1-flash-the-firmware) or the
   [Waveshare board guide](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75).
 

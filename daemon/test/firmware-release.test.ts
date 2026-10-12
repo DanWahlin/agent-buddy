@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {deflateRawSync} from 'node:zlib';
 import {FirmwareReleases, firmwareAssetName, releaseFirmwareId, unzip} from '../src/firmware-release.js';
-import {runUsbFlasher, usbFlashArguments} from '../src/usb-flasher.js';
+import {explainFlashError, runUsbFlasher, usbFlashArguments} from '../src/usb-flasher.js';
 
 const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 
@@ -176,10 +176,21 @@ test('runs the desktop app to write firmware and follows its progress', async ()
     assert.deepEqual(events, ['checking', 'connecting', 'writing', '40', '100']);
     await assert.rejects(runUsbFlasher(await script('bad', 'echo "error No ESP32-S3 found"; exit 1'), '/fw', port, record),
                          /No ESP32-S3 found/);
+    // A device that does not go into download mode by itself gets the BOOT steps.
+    await assert.rejects(runUsbFlasher(await script('stuck',
+      'echo "error Couldn\'t connect to the ESP32-S3: Error while connecting to device"; exit 1'), '/fw', port, record),
+      /Error while connecting to device\. The device did not go into download mode by itself\. .*hold the BOOT button/);
     // A program that does not know --flash-firmware exits without a result.
     await assert.rejects(runUsbFlasher(await script('old', 'exit 0'), '/fw', port, record), /Update the desktop app/);
     await assert.rejects(runUsbFlasher(join(directory, 'missing'), '/fw', port, record), /Couldn't start/);
   } finally {
     await rm(directory, {recursive: true, force: true});
   }
+});
+
+test('flasher errors that the user can fix say what to do', () => {
+  assert.match(explainFlashError("Couldn't open /dev/cu.usbmodem1: Resource busy"),
+               /^Couldn't open \/dev\/cu\.usbmodem1: Resource busy\. Close any other program .*hold the BOOT button/);
+  assert.match(explainFlashError("Couldn't connect to the ESP32-S3: Timeout"), /release BOOT after 2 seconds/);
+  assert.equal(explainFlashError("Couldn't write the firmware: CRC"), "Couldn't write the firmware: CRC");
 });
