@@ -453,7 +453,8 @@ upload.
 
 ### Firmware installs over USB
 
-The **Install over USB** row on the Device tab installs the release that matches
+**Update to v<version>** and the **USB release install or recovery** section on
+the Device tab install the release that matches
 the daemon's `VERSION` (`v<VERSION>`, not "latest"), so the firmware and the
 service always match. `POST /api/firmware/usb` starts it, and
 `status.firmware.usb` reports the release, the USB port, the stage, and the
