@@ -202,7 +202,7 @@ The app's binary also installs firmware. With `--flash-firmware <folder> --port
 <port> [--pid <hex>]`, [`flasher.rs`](apps/desktop/src-tauri/src/flasher.rs) runs
 before Tauri starts, opens no window, writes the release in `<folder>` to the
 device with espflash, and exits. The daemon starts this mode from the
-**Install over USB** row in Settings; see
+**Device** tab in Settings (**Update to v<version>** or **USB release install or recovery**); see
 [Firmware installs over USB](../docs/development.md#firmware-installs-over-usb).
 Every build of the app has this mode, also a build without the bundled service.
 

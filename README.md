@@ -210,7 +210,7 @@ it, or turn on sounds on the **Desktop** tab in Settings.
 ## Step 1: Flash the firmware
 
 The easiest way is the desktop app: open Settings, go to the **Device** tab, and
-click **Install v<version>** in the **Install over USB** row (see [Quick start](#quick-start)).
+open **USB release install or recovery**, and click **Install v<version>** (see [Quick start](#quick-start)).
 The steps below use `flash.py` instead, for computers without the desktop app.
 You don't need Arduino tools or the source code for them. If you'd rather build
 the firmware yourself, see [Build from source](docs/build-from-source.md).
@@ -757,9 +757,9 @@ characters show up on the settings page on their own.
 **Firmware.** Reflash only when a release's notes mention firmware changes. With
 the desktop app, update the app first. When the device runs other firmware than
 the app's release, the **Device** tab shows a dot and **Device firmware** shows
-**Update available**. Connect the device over USB and click **Update to v<version>**,
-or click **Install v<version>** in the **Install over USB** row. The button installs the firmware release that matches
-the companion service's version. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
+**Update available**. Connect the device over USB and click **Update to v<version>**.
+The button installs the firmware release that matches the companion service's version.
+**USB release install or recovery** is only for a new device or one that does not answer. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
 with the new release's `agent-buddy-v<version>-firmware.zip`. Both
 ways keep the device's Wi-Fi settings and write the Copilot character. When the
 desktop app installs the firmware, it then installs your previous character again.

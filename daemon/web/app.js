@@ -975,7 +975,7 @@ function releaseFirmwareView(firmware) {
   return {pill: 'Update available', kind: 'warning', update: true, overUsb: true,
     hint: `Firmware v${release} is available for this app. The device runs other firmware (ID ${firmware.device}). `
       + 'Update installs it over USB: connect the device with a USB data cable. '
-      + 'Wi-Fi settings stay; the character goes back to Copilot.'};
+      + 'Wi-Fi settings stay, and the app then installs your character again.'};
 }
 
 function renderFirmware() {
@@ -1024,8 +1024,12 @@ function usbFirmwareView(usb) {
     hint: `The desktop app writes the ${release} firmware from GitHub to the device over USB. Open the desktop app, `
       + 'then come back here.'};
   const about = `This downloads published release ${release} from GitHub and replaces the firmware over USB. `
-    + 'Wi-Fi settings stay; the character goes back to Copilot.';
+    + 'Wi-Fi settings stay, and the app then installs your character again.';
   if (last && !last.ok) return {pill: 'Failed', kind: 'warning', hint: `${last.error} ${about}`};
+  // The device answers over Wi-Fi, so it has companion firmware; only its USB link is silent.
+  if (usb.unanswered && status.connected) return {pill: 'USB not answering', kind: 'warning',
+    hint: `The device answers over Wi-Fi but not over USB on ${usb.port}. Unplug the USB cable, `
+      + 'connect it again, and wait a few seconds.'};
   if (usb.unanswered) return {pill: 'No companion firmware', kind: 'warning',
     hint: `An ESP32 on ${usb.port} does not answer as an Agent Companion. Install ${release} to set it up. ${about}`};
   const device = status.firmware?.device;
@@ -1055,12 +1059,12 @@ function renderUsbFirmware() {
     bar.firstElementChild.style.width = `${view.percent}%`;
   }
   const button = $('usb-firmware-install');
-  const action = !status?.connected || usb?.unanswered ? 'Install'
+  const action = !status?.connected ? 'Install'
     : usb?.releaseId && status.firmware?.device === usb.releaseId ? 'Reinstall' : 'Replace with';
   button.textContent = usb?.release ? `${action} v${usb.release}` : 'Install';
   button.disabled = usbFirmwareBlocked(usb);
-  if (usb?.installing || usb?.unanswered || (status?.connected && !status.firmware?.device))
-    $('usb-firmware-recovery').open = true;
+  // Recovery is for a device that does not answer at all; a device that answers updates with the row above.
+  if (!status?.connected && (usb?.installing || usb?.unanswered)) $('usb-firmware-recovery').open = true;
 }
 
 function usbRestarting(usb) {

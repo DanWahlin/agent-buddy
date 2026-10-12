@@ -90,6 +90,12 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('usb-firmware-recovery').open, false);
   assert.equal(element('usb-firmware-install').textContent, 'Replace with v0.9.0');
   assert.match(element('usb-firmware-hint').textContent, /replacement, not an update/);
+  // A device that answers over Wi-Fi has companion firmware; only its USB link is silent.
+  runInContext('status.connected = true; status.firmware.usb.unanswered = true; renderUsbFirmware()', context);
+  assert.equal(element('usb-firmware-recovery').open, false);
+  assert.equal(element('usb-firmware-state').textContent, 'USB not answering');
+  assert.match(element('usb-firmware-hint').textContent, /Unplug the USB cable/);
+  assert.equal(element('usb-firmware-install').textContent, 'Replace with v0.9.0');
   runInContext('status.connected = false; status.firmware.usb.unanswered = true; renderUsbFirmware()', context);
   assert.equal(element('usb-firmware-recovery').open, true);
   assert.equal(element('usb-firmware-install').textContent, 'Install v0.9.0');
