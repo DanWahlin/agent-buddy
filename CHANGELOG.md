@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.5]
+
+### Other changes
+
+- Exit when the daemon cannot start; make OpenClaw smaller (#21)
+
 ## [v0.14.4]
 
 ### Other changes
