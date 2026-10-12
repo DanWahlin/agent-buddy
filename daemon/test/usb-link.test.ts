@@ -12,10 +12,10 @@ const openPort = MockBinding.open.bind(MockBinding);
 
 // A device on the mock port that answers INFO, orientation, state, and upload requests. After
 // an upload it restarts, and `silentAfterRestart` makes it stop answering, as a wedged USB link does.
-function fakeDevice(options: {silentAfterRestart: boolean}) {
+function fakeDevice(options: {silentAfterRestart: boolean; silent?: boolean}) {
   MockBinding.reset();
   MockBinding.createPort(path, {echo: false, record: false, vendorId: '303a', productId: '1001'});
-  const state = {character: 'copilot', silent: false, received: 0, uploading: false};
+  const state = {character: 'copilot', silent: options.silent ?? false, received: 0, uploading: false};
   MockBinding.open = async openOptions => {
     const binding: MockPortBinding = await openPort(openOptions);
     const write = binding.write.bind(binding);
@@ -99,6 +99,25 @@ test('a device that restarts normally keeps its USB link', async () => {
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(usb.connected, true);
     assert.equal(usb.character, 'bunny');
+  } finally {
+    await usb.stop();
+  }
+});
+
+test('an open USB port does not count as connected until the device answers', async () => {
+  fakeDevice({silentAfterRestart: false, silent: true});
+  let changes = 0;
+  const usb = new UsbTransport(() => { changes++; }, undefined, {serial: SerialPortMock, requestTimeoutMs: 100});
+  try {
+    usb.start();
+    const end = Date.now() + 400;
+    while (Date.now() < end) {
+      assert.equal(usb.connected, false);
+      assert.equal(usb.character, null);
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    // Only the unanswered-port notice changes; a silent port never reports a connect or disconnect.
+    assert.ok(changes <= 1);
   } finally {
     await usb.stop();
   }

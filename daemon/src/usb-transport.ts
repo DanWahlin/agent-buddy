@@ -59,6 +59,8 @@ export class UsbTransport {
   #selectedSerial: string | null = null;
   #port: SerialPort | SerialPortMock | undefined;
   #path: string | null = null;
+  // True once the open port answered INFO. An open port that does not answer is not a connection.
+  #answered = false;
   #desired: CharacterState = 'idle';
   #scanTimer: NodeJS.Timeout | undefined;
   #networkTimer: NodeJS.Timeout | undefined;
@@ -119,7 +121,7 @@ export class UsbTransport {
   }
 
   get connected(): boolean {
-    return this.#port?.isOpen === true;
+    return this.#answered && this.#port?.isOpen === true;
   }
 
   get path(): string | null {
@@ -186,6 +188,7 @@ export class UsbTransport {
     const port = this.#port;
     this.#port = undefined;
     this.#path = null;
+    this.#answered = false;
     this.#orientation = null;
     if (port?.isOpen) {
       await new Promise<void>(resolve => port.close(() => resolve()));
@@ -275,9 +278,11 @@ export class UsbTransport {
       console.log(`[usb] disconnected ${path}`);
       this.#rejectWaiters(new Error('USB device disconnected.'));
       if (this.#port === port) {
+        const wasConnected = this.#answered;
         this.#port = undefined;
         this.#path = null;
-        this.#changed();
+        this.#answered = false;
+        if (wasConnected) this.#changed();
       }
     });
     await new Promise<void>((resolve, reject) => {
@@ -297,6 +302,7 @@ export class UsbTransport {
       this.#iconSignature = '';
       this.#activeSignature = '';
       this.#usageSignature = null;
+      this.#answered = true;
       console.log(`[usb] ${info}`);
       console.log(`[usb] connected ${path}`);
       this.#changed();
