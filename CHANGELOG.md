@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.7]
+
+### Other changes
+
+- Count USB as connected only after the device answers (#23)
+
 ## [v0.14.6]
 
 ### Features and improvements
