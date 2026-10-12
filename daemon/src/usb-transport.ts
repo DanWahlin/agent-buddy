@@ -1,4 +1,4 @@
-import {SerialPort} from 'serialport';
+import {SerialPort, type SerialPortMock} from 'serialport';
 import {
   orientationPacket, orientationProtocol, parseOrientationLine, type DeviceOrientation,
 } from './orientation-settings.js';
@@ -28,6 +28,23 @@ import {
 const networkRefreshMs = 5000;
 // The newest firmware protocol this daemon knows; see kDeviceProtocol in DeviceCommands.h.
 const maxProtocol = 12;
+// Requests in a row without an answer before the port counts as dead. A device that restarts
+// can leave the old port open but silent; closing it lets discovery or Wi-Fi take over.
+const deadLinkTimeouts = 3;
+
+// serialport's SerialPortMock in tests.
+export type SerialPortClass = typeof SerialPort | typeof SerialPortMock;
+
+export interface UsbTransportOptions {
+  serial?: SerialPortClass;
+  requestTimeoutMs?: number;
+}
+
+class AcknowledgementTimeout extends Error {
+  constructor() {
+    super('Timed out waiting for device acknowledgement.');
+  }
+}
 
 interface LineWaiter {
   match: (line: string) => boolean;
@@ -40,7 +57,7 @@ export class UsbTransport {
   readonly #preferredPort = process.env.AGENT_COMPANION_PORT;
   #selectedPort: string | null = null;
   #selectedSerial: string | null = null;
-  #port: SerialPort | undefined;
+  #port: SerialPort | SerialPortMock | undefined;
   #path: string | null = null;
   #desired: CharacterState = 'idle';
   #scanTimer: NodeJS.Timeout | undefined;
@@ -64,13 +81,19 @@ export class UsbTransport {
   // The ESP32 port the last scan chose, and how many handshakes in a row it failed.
   #seen: UsbPort | null = null;
   #failures = 0;
+  #timeouts = 0;
+  readonly #serial: SerialPortClass;
+  readonly #requestTimeoutMs: number;
   readonly #changed: () => void;
   readonly #button: (presses: number) => void;
 
   // `button` runs when the device's BOOT button is pressed, with the count since the device started.
-  constructor(changed: () => void = () => undefined, button: (presses: number) => void = () => undefined) {
+  constructor(changed: () => void = () => undefined, button: (presses: number) => void = () => undefined,
+              options: UsbTransportOptions = {}) {
     this.#changed = changed;
     this.#button = button;
+    this.#serial = options.serial ?? SerialPort;
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? 5000;
   }
 
   get character(): string | null {
@@ -110,7 +133,7 @@ export class UsbTransport {
 
   // The port to install firmware on: the connected device's, else the first ESP32 port found now.
   async ports(): Promise<UsbPort[]> {
-    return candidatePorts(await SerialPort.list(), this.#preferredPort);
+    return candidatePorts(await this.#serial.list(), this.#preferredPort);
   }
 
   async selectPort(path: string | null, allowMissing = false): Promise<void> {
@@ -214,7 +237,7 @@ export class UsbTransport {
     this.#scanActive = true;
     const before = JSON.stringify(this.unanswered);
     try {
-      const ports = await SerialPort.list();
+      const ports = await this.#serial.list();
       const candidates = candidatePorts(ports, this.#preferredPort);
       const candidate = this.#selectedPort
         ? selectedUsbCandidate(candidates, this.#selectedPort, this.#selectedSerial)
@@ -240,7 +263,7 @@ export class UsbTransport {
   }
 
   async #open(path: string): Promise<void> {
-    const port = new SerialPort({
+    const port = new this.#serial({
       path,
       baudRate: 115200,
       autoOpen: false,
@@ -266,6 +289,7 @@ export class UsbTransport {
     }
     this.#port = port;
     this.#path = path;
+    this.#timeouts = 0;
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
       this.#applyInfo(info);
@@ -476,22 +500,37 @@ export class UsbTransport {
       progress(sent, pack.length);
       if (last) {
         console.log(`[usb] ${response}`);
-        return /\bcharacter=([a-z0-9-]+)\b/.exec(response)?.[1] ?? 'unknown';
+        const character = /\bcharacter=([a-z0-9-]+)\b/.exec(response)?.[1] ?? 'unknown';
+        // The device restarts into the new character. Its boot banner confirms it, but until
+        // then the INFO from before the upload would still name the old character.
+        this.#character = character;
+        this.#changed();
+        return character;
       }
     }
     throw new Error('Character pack is empty.');
   }
 
   async #request(text: string | Buffer, match: (line: string) => boolean,
-                 timeoutMs = 5000): Promise<string> {
+                 timeoutMs = this.#requestTimeoutMs): Promise<string> {
     const response = this.#waitFor(match, timeoutMs);
     try {
       await this.#write(text);
-      return await response;
+      const line = await response;
+      this.#timeouts = 0;
+      return line;
     } catch (error) {
       this.#rejectWaiters(error instanceof Error ? error : new Error(String(error)));
+      if (error instanceof AcknowledgementTimeout && ++this.#timeouts >= deadLinkTimeouts) this.#closeDeadPort();
       throw error;
     }
+  }
+
+  #closeDeadPort(): void {
+    const port = this.#port;
+    if (!port?.isOpen) return;
+    console.error(`[usb] ${this.#path} stopped answering; closing it`);
+    port.close();
   }
 
   async #write(text: string | Buffer): Promise<void> {
@@ -552,7 +591,7 @@ export class UsbTransport {
         reject,
         timer: setTimeout(() => {
           this.#waiters.splice(this.#waiters.indexOf(waiter), 1);
-          reject(new Error('Timed out waiting for device acknowledgement.'));
+          reject(new AcknowledgementTimeout());
         }, timeoutMs),
       };
       this.#waiters.push(waiter);
@@ -589,7 +628,7 @@ export function parseUploadReady(line: string): {maxBytes: number; chunk: number
   return {maxBytes, chunk};
 }
 
-type PortInfo = Awaited<ReturnType<typeof SerialPort.list>>[number];
+type PortInfo = Awaited<ReturnType<SerialPortClass['list']>>[number];
 
 export interface UsbPort {
   path: string;
