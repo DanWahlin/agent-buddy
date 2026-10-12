@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.6]
+
+### Features and improvements
+
+- Show the new character after an upload and drop a silent USB link (#22)
+
 ## [v0.14.5]
 
 ### Other changes
