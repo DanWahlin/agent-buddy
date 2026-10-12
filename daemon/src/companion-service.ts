@@ -176,6 +176,8 @@ const uninstallDelayMs = 3_000;
 const uninstallAppWaitMs = 6_000;
 // Time for the reply, and for the device to get the idle state, before the service stops.
 const stopDelayMs = 500;
+// How long a firmware install keeps the previous character for a device that has not started yet.
+const pendingRestoreMs = 30 * 60_000;
 
 function loadDeviceUsed(path = deviceHistoryPath()): boolean {
   try {
@@ -236,6 +238,11 @@ export class CompanionService extends EventEmitter {
   #lastFirmware: FirmwareStatus['last'] = null;
   readonly #usbInstaller: UsbFirmwareInstaller;
   #release: ReleaseFirmware | null = null;
+  // A character to install again when the device starts the new firmware later, for example after
+  // the user power-cycles a device that stayed in download mode.
+  #pendingRestore: symbol | null = null;
+  // How long a firmware install waits for the device to restart; tests make it shorter.
+  firmwareRestartMs = 120_000;
   #usbInstalling: UsbFirmwareStatus['installing'] = null;
   #lastUsbFirmware: UsbFirmwareStatus['last'] = null;
   #uninstalling = false;
@@ -996,6 +1003,8 @@ export class CompanionService extends EventEmitter {
   }
 
   async #installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
+    // A character the user installs replaces one that was waiting to be installed again.
+    this.#pendingRestore = null;
     this.#installBusy = true;
     let pack: Awaited<ReturnType<typeof readCharacterPack>>;
     let name = character;
@@ -1096,18 +1105,41 @@ export class CompanionService extends EventEmitter {
   async #restoreCharacterAfterFirmware(character: string): Promise<void> {
     const firmware = this.#lastUsbFirmware?.id;
     try {
-      await this.#waitForDevice(() => this.#transport.firmware === firmware);
+      await this.#waitForDevice(() => this.#transport.firmware === firmware, this.firmwareRestartMs);
     } catch {
-      console.error(`[character] the device did not restart after the firmware install; ${character} was not installed`);
+      console.error(`[character] the device did not restart after the firmware install; ${character} is installed `
+        + 'when it starts');
+      void this.#restoreWhenDeviceStarts(character, firmware);
       return;
     }
+    await this.#restoreAfterFirmware(character);
+  }
+
+  async #restoreAfterFirmware(character: string): Promise<void> {
     if (this.#transport.character === character) return;
     console.log(`[character] installing ${character} again after the firmware install`);
     await this.installCharacter(character).catch(error => console.error(
       `[character] install after the firmware install failed: ${error instanceof Error ? error.message : String(error)}`));
   }
 
+  // Not inside #mutate, so Settings stays usable while the device waits for a power cycle.
+  async #restoreWhenDeviceStarts(character: string, firmware: string | null | undefined): Promise<void> {
+    const token = Symbol();
+    this.#pendingRestore = token;
+    const until = Date.now() + pendingRestoreMs;
+    while (this.#pendingRestore === token && Date.now() < until) {
+      if (this.#transport.connected && this.#transport.firmware === firmware && !this.#operation && !this.#installBusy) {
+        this.#pendingRestore = null;
+        await this.#restoreAfterFirmware(character);
+        return;
+      }
+      await sleep(1000, undefined, {ref: false});
+    }
+    if (this.#pendingRestore === token) this.#pendingRestore = null;
+  }
+
   async #installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
+    this.#pendingRestore = null;
     const version = this.#service.version;
     if (!version) throw new Error('The companion service has no VERSION file, so it cannot choose a release.');
     const program = this.#desktopApp.flasher();

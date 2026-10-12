@@ -575,6 +575,55 @@ test('a Settings USB firmware install does not reinstall the character that the 
   }
 });
 
+async function eventually(ready: () => boolean): Promise<void> {
+  const end = Date.now() + 5000;
+  while (!ready()) {
+    if (Date.now() > end) throw new Error('Timed out waiting for the test condition.');
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
+test('a device that starts the new firmware after the restart wait still gets its previous character back', async () => {
+  const {service, device, installer, cleanup} = await fixture();
+  try {
+    device.active = true;
+    device.characterId = 'claude';
+    service.firmwareRestartMs = 50;
+    // The device stays in download mode until the user power-cycles it.
+    installer.flash = async () => { device.active = false; };
+    await service.installFirmwareOverUsb(device.usbPath);
+    assert.deepEqual(service.installedCharacters, []);
+    device.active = true;
+    device.firmwareId = 'aaaaaaaaaaaaaaaa';
+    device.characterId = 'copilot';
+    await eventually(() => service.installedCharacters.length > 0);
+    assert.deepEqual(service.installedCharacters, ['claude']);
+    assert.equal(device.characterId, 'claude');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a character the user installs while the device has not started replaces the pending one', async () => {
+  const {service, device, installer, cleanup} = await fixture();
+  try {
+    device.active = true;
+    device.characterId = 'claude';
+    service.firmwareRestartMs = 50;
+    installer.flash = async () => { device.active = false; };
+    await service.installFirmwareOverUsb(device.usbPath);
+    // SetupService replaces installCharacter, so call the real one, which clears the pending character.
+    await CompanionService.prototype.installCharacter.call(service, 'missing').catch(() => undefined);
+    device.active = true;
+    device.firmwareId = 'aaaaaaaaaaaaaaaa';
+    device.characterId = 'copilot';
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    assert.deepEqual(service.installedCharacters, []);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('firmware setup installs only the selected character, not the previous one', async () => {
   const {service, store, device, cleanup} = await fixture();
   try {
