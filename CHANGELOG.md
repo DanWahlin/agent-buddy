@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.4]
+
+### Other changes
+
+- List the desktop apps in SHA256SUMS (#20)
+
 ## [v0.14.3]
 
 ### Other changes
