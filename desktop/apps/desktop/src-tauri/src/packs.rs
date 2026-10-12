@@ -6,6 +6,7 @@
 //! back to the packs built in this repository (`build/characters`).
 
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The character shown when nothing says otherwise.
 pub const DEFAULT: &str = "copilot";
@@ -64,13 +65,34 @@ pub fn choose(ids: &[String]) -> Option<&String> {
     ids.iter().find(|candidate| candidate.as_str() == DEFAULT).or_else(|| ids.first())
 }
 
-/// Where the page fetches a pack from.
-pub fn pack_url(id: &str) -> String {
+/// A pack added again under the same id keeps its path, so its time and size
+/// tell the app that the pack changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Version {
+    modified: SystemTime,
+    bytes: u64,
+}
+
+pub fn version(path: &Path) -> Option<Version> {
+    let metadata = std::fs::metadata(path).ok()?;
+    Some(Version { modified: metadata.modified().ok()?, bytes: metadata.len() })
+}
+
+/// Where the page fetches a pack from. The version in the query makes each
+/// version of a pack its own URL, so no cache gives back an old one.
+pub fn pack_url(id: &str, version: Option<Version>) -> String {
     // Windows serves custom schemes over http; everywhere else uses the scheme.
-    if cfg!(windows) {
+    let base = if cfg!(windows) {
         format!("http://{SCHEME}.localhost/{id}.acpk")
     } else {
         format!("{SCHEME}://localhost/{id}.acpk")
+    };
+    match version {
+        Some(Version { modified, bytes }) => {
+            let nanos = modified.duration_since(UNIX_EPOCH).map(|it| it.as_nanos()).unwrap_or(0);
+            format!("{base}?v={nanos}-{bytes}")
+        }
+        None => base,
     }
 }
 
@@ -104,6 +126,23 @@ mod tests {
         assert_eq!(choose(&ids(&["claude", "copilot", "openclaw"])).unwrap(), "copilot");
         assert_eq!(choose(&ids(&["openclaw"])).unwrap(), "openclaw");
         assert!(choose(&[]).is_none());
+    }
+
+    #[test]
+    fn a_pack_replaced_under_the_same_id_has_a_new_version_and_url() {
+        let directory = std::env::temp_dir().join(format!("ac-pack-version-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("bunny.acpk");
+        std::fs::write(&path, b"old pack").unwrap();
+        let old = version(&path);
+        std::fs::write(&path, b"the new, smaller pack is not the same size").unwrap();
+        let new = version(&path);
+        assert!(old.is_some() && new.is_some());
+        assert_ne!(old, new);
+        assert_ne!(pack_url("bunny", old), pack_url("bunny", new));
+        assert!(pack_url("bunny", new).contains("/bunny.acpk?v="));
+        assert!(version(&directory.join("missing.acpk")).is_none());
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
