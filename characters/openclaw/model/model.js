@@ -268,7 +268,8 @@ export function createOpenClawScene(canvas) {
   const root = new THREE.Group();
   root.name = 'openclaw-root';
   root.position.y = .08;
-  root.scale.setScalar(1.18);
+  // 1.0 high, with a body 8% narrower, keeps OpenClaw near the size of the other characters.
+  root.scale.set(.92, 1, 1);
   const body = createBody(shell);
   const leftClaw = createClaw(-1, shell);
   const rightClaw = createClaw(1, shell);
