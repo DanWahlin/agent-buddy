@@ -1,5 +1,5 @@
 import type {CharacterState} from './protocol.js';
-import {createSpeechSynthesizer, validateSpeechText, type SpeechSynthesizer} from './speech.js';
+import {createSpeechSynthesizer, speechSampleRate, validateSpeechText, type SpeechSynthesizer} from './speech.js';
 
 export const voiceNotificationModes = ['off', 'milestones', 'chatty', 'contextual'] as const;
 export type VoiceNotificationMode = typeof voiceNotificationModes[number];
@@ -53,6 +53,18 @@ interface VoiceOutput {
   speak(packet: Buffer): Promise<void>;
 }
 
+type SpokenState = Exclude<CharacterState, 'surprise'>;
+interface Announcement {
+  state: SpokenState;
+  previous: CharacterState;
+  readyAt: number;
+}
+
+const quietMs = 2000;
+const stableMs = 3000;
+const routineCooldownMs = 15_000;
+const playbackMarginMs = 250;
+
 export interface VoiceNotifierOptions {
   synthesizer?: SpeechSynthesizer;
   random?: () => number;
@@ -66,6 +78,15 @@ export class VoiceNotifier {
   #lastState: CharacterState = 'idle';
   readonly #lastPhrase = new Map<CharacterState, string>();
   #pending = Promise.resolve();
+  #announcement: Announcement | undefined;
+  #timer: NodeJS.Timeout | undefined;
+  #automaticQueued = false;
+  #quietSince: number | undefined;
+  #workingAnnounced = false;
+  #lastSpeechAt = -Infinity;
+  #suppressWorkingUntil = -Infinity;
+  #narrationsPending = 0;
+  #playbackUntil = 0;
   readonly #output: VoiceOutput;
   readonly #synthesizer: SpeechSynthesizer;
   readonly #random: () => number;
@@ -88,7 +109,10 @@ export class VoiceNotifier {
   }
 
   setMode(mode: VoiceNotificationMode): void {
+    if (mode === this.#mode) return;
     this.#mode = mode;
+    this.#announcement = undefined;
+    this.#schedule();
   }
 
   narrate(value: unknown): Promise<void> {
@@ -97,15 +121,21 @@ export class VoiceNotifier {
       return Promise.reject(new Error('Contextual narration is not enabled.'));
     if (!this.#available())
       return Promise.reject(new Error('Contextual narration needs the device connected over Wi-Fi.'));
-    const work = this.#pending.then(async () => {
+    this.#narrationsPending++;
+    this.#suppressWorkingUntil = Date.now() + routineCooldownMs;
+    this.#workingAnnounced = true;
+    const work = this.#enqueue(async () => {
+      await this.#waitForPlayback();
       if (this.#mode !== 'contextual') throw new Error('Contextual narration was disabled.');
       if (!this.#available()) throw new Error('The device is no longer connected over Wi-Fi.');
       const packet = await this.#synthesizer.synthesize(text);
-      await this.#output.speak(packet);
+      if (this.#mode !== 'contextual') throw new Error('Contextual narration was disabled.');
+      if (!this.#available()) throw new Error('The device is no longer connected over Wi-Fi.');
+      await this.#send(packet);
       this.#log('[voice] contextual narration sent');
-    });
-    this.#pending = work.catch(error => {
-      this.#error(`[voice] ${error instanceof Error ? error.message : String(error)}`);
+    }).finally(() => {
+      this.#narrationsPending--;
+      this.#suppressWorkingUntil = Date.now() + routineCooldownMs;
     });
     return work;
   }
@@ -114,20 +144,84 @@ export class VoiceNotifier {
     if (state === this.#lastState) return;
     const previous = this.#lastState;
     this.#lastState = state;
-    if (!this.#shouldAnnounce(state, previous)) return;
-    const phrase = this.#choose(state);
-    this.#pending = this.#pending.then(async () => {
-      if (!this.#shouldAnnounce(state, previous) || !this.#available()) return;
-      const packet = await this.#synthesizer.synthesize(phrase);
-      await this.#output.speak(packet);
-      this.#log(`[voice] ${state}: ${phrase}`);
-    }).catch(error => {
-      this.#error(`[voice] ${error instanceof Error ? error.message : String(error)}`);
-    });
+    const now = Date.now();
+    if (this.#quietSince !== undefined && now - this.#quietSince >= quietMs)
+      this.#workingAnnounced = false;
+    if (state === 'complete' || state === 'idle') this.#quietSince ??= now;
+    else this.#quietSince = undefined;
+
+    // The coordinator clears the completion animation after four seconds; a
+    // completion waiting for synthesis/playback remains relevant until work resumes.
+    if (state === 'idle' && previous === 'complete') return;
+    this.#announcement = this.#shouldAnnounce(state, previous) ? {
+      state, previous, readyAt: now + (state === 'complete' || state === 'idle' ? quietMs : stableMs),
+    } : undefined;
+    this.#schedule();
   }
 
   settled(): Promise<void> {
     return this.#pending;
+  }
+
+  #schedule(): void {
+    clearTimeout(this.#timer);
+    this.#timer = undefined;
+    if (!this.#announcement || this.#automaticQueued) return;
+    this.#timer = setTimeout(() => {
+      this.#timer = undefined;
+      this.#automaticQueued = true;
+      void this.#enqueue(async () => {
+        let event: Announcement | undefined;
+        try {
+          if (!this.#announcement || this.#announcement.readyAt > Date.now()) return;
+          event = this.#announcement;
+          await this.#waitForPlayback();
+          if (!this.#relevant(event)) return;
+          const phrase = this.#choose(event.state);
+          const packet = await this.#synthesizer.synthesize(phrase);
+          if (!this.#relevant(event)) return;
+          await this.#send(packet);
+          this.#lastPhrase.set(event.state, phrase);
+          if (event.state === 'working') this.#workingAnnounced = true;
+          this.#log(`[voice] ${event.state}: ${phrase}`);
+        } finally {
+          if (this.#announcement === event) this.#announcement = undefined;
+          this.#automaticQueued = false;
+          this.#schedule();
+        }
+      });
+    }, Math.max(0, this.#announcement.readyAt - Date.now(), this.#playbackUntil - Date.now()));
+    this.#timer.unref();
+  }
+
+  #relevant(event: Announcement): boolean {
+    return this.#announcement === event
+      && this.#shouldAnnounce(event.state, event.previous)
+      && this.#available()
+      && (event.state === 'attention' || Date.now() - this.#lastSpeechAt >= routineCooldownMs)
+      && (event.state !== 'working' || (!this.#workingAnnounced
+        && this.#narrationsPending === 0 && Date.now() >= this.#suppressWorkingUntil));
+  }
+
+  #enqueue(action: () => Promise<void>): Promise<void> {
+    const work = this.#pending.then(action);
+    this.#pending = work.catch(error => {
+      this.#error(`[voice] ${error instanceof Error ? error.message : String(error)}`);
+    });
+    return work;
+  }
+
+  async #waitForPlayback(): Promise<void> {
+    const delay = this.#playbackUntil - Date.now();
+    if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, delay));
+  }
+
+  async #send(packet: Buffer): Promise<void> {
+    await this.#output.speak(packet);
+    this.#lastSpeechAt = Date.now();
+    // /speech acknowledges acceptance, not playback completion. Leave time for
+    // this ACSP clip to finish before sending another notifier-owned clip.
+    this.#playbackUntil = Date.now() + packet.readUInt32LE(8) / speechSampleRate * 1000 + playbackMarginMs;
   }
 
   #shouldAnnounce(state: CharacterState, previous: CharacterState): state is Exclude<CharacterState, 'surprise'> {
@@ -144,7 +238,6 @@ export class VoiceNotifier {
     const available = choices.length > 1 ? choices.filter(choice => choice !== previous) : choices;
     const index = Math.min(available.length - 1, Math.floor(this.#random() * available.length));
     const phrase = available[Math.max(0, index)]!;
-    this.#lastPhrase.set(state, phrase);
     return phrase;
   }
 }

@@ -709,7 +709,7 @@ The setting is also available on the **Agents** tab in Settings:
 | --- | --- |
 | **Off** (default) | Never speaks automatically |
 | **Milestones** | Questions that need attention and completed work |
-| **Chatty** | Milestones plus working and idle transitions |
+| **Chatty** | Milestones plus settled working and idle transitions |
 | **Contextual** | Chatty plus short purpose-written lines from the active agent |
 
 Announcements use a rotating set of fixed, lightly whimsical phrases, including
@@ -717,6 +717,21 @@ occasional thinking sounds in Chatty mode. They do not repeat the same line
 every time and never read prompts, tool arguments, responses, file names, or
 other session content aloud. Use `npm run voice off` at any time to disable
 them.
+
+Animations still respond immediately. Automatic speech waits for about three
+seconds of sustained attention or working, and two seconds of quiet before
+announcing completion or idle. Brief questions that resolve themselves stay
+silent, and quick stop/start transitions count as one work stretch rather than
+repeating a working line for every tool. Routine announcements have a 15-second
+cooldown; sustained attention can bypass it. Cooldown-suppressed lines are
+dropped, not saved for later.
+
+Only the latest relevant automatic event is kept, and it is checked again after
+synthesis before sending. Completion remains eligible when its animation returns
+to idle, but is canceled if work resumes. The notifier spaces its clips using
+their audio duration because device acceptance does not mean playback has ended;
+it cannot interrupt speech already playing. Manual `npm run speak` requests stay
+independent and retain the device's existing busy/error behavior.
 
 Contextual mode lets an integrated agent explicitly submit a short narration
 such as “Let me send that message to Paul for you.” The daemon does not derive
@@ -729,6 +744,11 @@ path manually with:
 npm run voice contextual
 npm run narrate "Let me check the calendar for you"
 ```
+
+Explicit contextual lines remain ordered rather than being replaced by automatic
+events or dropped by their cooldown. Generic working speech is suppressed while
+narration is pending and for 15 seconds afterwards; an accepted narration also
+counts as the working announcement for that work stretch.
 
 The text is passed only to the operating system's local speech synthesizer. The
 generated audio is held in a temporary file on the computer, deleted after
