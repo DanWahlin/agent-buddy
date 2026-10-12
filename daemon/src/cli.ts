@@ -12,7 +12,12 @@ import {isAgentId} from './agents/types.js';
 async function main(): Promise<void> {
   const [command, argument, file, ...options] = process.argv.slice(2);
   if (command === 'daemon') {
-    await runDaemon();
+    // A daemon that cannot start (for example, another one holds the socket) ends at once. Its
+    // timers would keep it alive otherwise, and the service manager would count it as running.
+    await runDaemon().catch(error => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    });
     return;
   }
   if (command === 'status') {
