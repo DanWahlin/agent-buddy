@@ -2,6 +2,17 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.8]
+
+### Features and improvements
+
+- Reload a character pack that is added again under the same id (#24)
+
+
+### Other changes
+
+- Keep USB recovery closed when the device answers (#25)
+
 ## [v0.14.7]
 
 ### Other changes
