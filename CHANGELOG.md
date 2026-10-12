@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.9]
+
+### Other changes
+
+- Help the user when a USB firmware install needs download mode (#26)
+
 ## [v0.14.8]
 
 ### Features and improvements
