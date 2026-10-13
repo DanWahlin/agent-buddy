@@ -10,6 +10,8 @@
 #include <cstdarg>
 #include <atomic>
 #include <mbedtls/base64.h>
+#include <hal/usb_serial_jtag_ll.h>
+#include <soc/usb_serial_jtag_struct.h>
 #include "src/SpriteRenderer.h"
 #include "src/FullFrameRenderer.h"
 #include "src/NetworkManager.h"
@@ -29,6 +31,7 @@
 #include "src/OrientedDisplay.h"
 #include "src/OrientationSensor.h"
 #include "src/OrientationSettings.h"
+#include "src/UsbSerialWatchdog.h"
 #include "src/boards/BoardDrivers.h"
 
 using namespace copilot;
@@ -1017,8 +1020,52 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
 
 // One parser for both loops: the device restarts between the shell and a character.
 DeviceCommands commandParser;
+UsbSerialWatchdog usbSerialWatchdog;
+
+constexpr uint32_t kUsbSerialInterrupts = USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY
+    | USB_SERIAL_JTAG_INTR_SERIAL_OUT_RECV_PKT | USB_SERIAL_JTAG_INTR_BUS_RESET;
+
+bool beginSerial() {
+  const bool sendBufferReady = Serial.setTxBufferSize(2048) == 2048;
+  // Character uploads send one acknowledged chunk at a time; HWCDC drops bytes when full.
+  const bool receiveBufferReady = Serial.setRxBufferSize(kCharacterUploadRxBufferBytes)
+      == kCharacterUploadRxBufferBytes;
+  Serial.setTxTimeoutMs(0);
+  Serial.begin(115200);
+  if (!sendBufferReady || !receiveBufferReady) return false;
+  Serial.setDebugOutput(true);
+  return true;
+}
+
+void checkUsbSerial() {
+  switch (usbSerialWatchdog.poll(usb_serial_jtag_ll_rxfifo_data_available(), millis())) {
+    case UsbSerialWatchdog::Action::None: break;
+    case UsbSerialWatchdog::Action::EnableInterrupts:
+      usb_serial_jtag_ll_ena_intr_mask(kUsbSerialInterrupts);
+      break;
+    case UsbSerialWatchdog::Action::Restart:
+      // Only this loop reads the port, and error logs from other tasks are rare.
+      Serial.end();
+      if (!beginSerial()) ++droppedLogs;
+      logMessage("USB serial restarted\n");
+      break;
+  }
+}
+
+// For GET /status over Wi-Fi, which still works when the USB serial port does not.
+int writeUsbSerialDiagnostics(char* output, size_t capacity) {
+  return snprintf(output, capacity,
+                  "{\"interruptEnable\":%u,\"interruptRaw\":%u,\"rxPending\":%s,"
+                  "\"interruptEnables\":%u,\"restarts\":%u}",
+                  static_cast<unsigned>(usb_serial_jtag_ll_get_intr_ena_status()),
+                  static_cast<unsigned>(USB_SERIAL_JTAG.int_raw.val),
+                  usb_serial_jtag_ll_rxfifo_data_available() ? "true" : "false",
+                  static_cast<unsigned>(usbSerialWatchdog.interruptEnables()),
+                  static_cast<unsigned>(usbSerialWatchdog.restarts()));
+}
 
 void processSerialCommands(const Frame* frame, unsigned maxBytes) {
+  checkUsbSerial();
   processCommand(commandParser.expire(esp_timer_get_time() / 1000), commandParser, frame);
   for (unsigned read = 0; read < maxBytes && Serial.available(); ++read)
     processCommand(commandParser.feed(static_cast<char>(Serial.read()), esp_timer_get_time() / 1000),
@@ -1089,14 +1136,7 @@ void startCharacter() {
 }
 
 void setup() {
-  const bool serialBufferReady = Serial.setTxBufferSize(2048) == 2048;
-  // Character uploads send one acknowledged chunk at a time; HWCDC drops bytes when full.
-  const bool receiveBufferReady = Serial.setRxBufferSize(kCharacterUploadRxBufferBytes)
-      == kCharacterUploadRxBufferBytes;
-  Serial.setTxTimeoutMs(0);
-  Serial.begin(115200);
-  if (!serialBufferReady || !receiveBufferReady) fatal("USB buffer allocation failed.");
-  Serial.setDebugOutput(true);
+  if (!beginSerial()) fatal("USB buffer allocation failed.");
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
   logMessage("\nAgent Companion character shell / %s (%s)\nPanel: %s, touch: %s\nPSRAM: %u bytes\n",
              board::kName, board::kId, board::kDisplayPanelName, board::kTouchControllerName,
@@ -1112,7 +1152,8 @@ void setup() {
   orientationDirty = display.setTrim(orientationOffsetTenths * kOrientationPi / 1800.0f);
   // Start Wi-Fi before renderer and audio allocations so the radio stack can reserve contiguous
   // internal RAM. The character allocator will move optional patch buffers to PSRAM as needed.
-  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket, &kOrientationControl);
+  network.begin(queueNetworkMode, &kWifiUpload, handleBadgePacket, &kOrientationControl,
+                writeUsbSerialDiagnostics);
   if (!orientationSensor.begin()) {
     logMessage("ORIENTATION disabled reason=%s\n", orientationSensor.error());
   } else {

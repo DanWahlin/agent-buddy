@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
-for TEST in deadline touch_input button_input settings_menu device_commands screen_orientation screen_transform; do
+for TEST in deadline touch_input button_input settings_menu device_commands screen_orientation screen_transform usb_serial_watchdog; do
   clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
     "tests/test_${TEST}.cpp" -o "build/test-${TEST}"
