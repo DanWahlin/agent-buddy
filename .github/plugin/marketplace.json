@@ -1,0 +1,18 @@
+{
+  "name": "esp32-agent-companion",
+  "owner": {
+    "name": "ESP32 Agent Companion contributors"
+  },
+  "metadata": {
+    "description": "GitHub Copilot integrations for the ESP32 Agent Companion.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "esp32-agent-companion",
+      "description": "Connect GitHub Copilot activity to the ESP32 Agent Companion through its local daemon.",
+      "version": "0.2.0",
+      "source": "./plugins/copilot-app-companion"
+    }
+  ]
+}

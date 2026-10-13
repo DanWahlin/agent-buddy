@@ -16,7 +16,7 @@
 ESP32 Agent Companion works with the
 [Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C](https://www.amazon.com/dp/B0FBWDL117)
 and turns it into a character that reacts to your AI coding agents. When GitHub Copilot,
-Claude Code, Codex CLI, Grok Build, Hermes Agent, or OpenClaw starts working,
+Claude Code, Codex CLI, Cursor Agent, Grok Build, Hermes Agent, or OpenClaw starts working,
 needs your approval, or finishes, the character shows it, along with a small
 badge for the agent involved.
 
@@ -61,8 +61,8 @@ desktop, with or without the device.
   just finished.
 - **Usage:** GitHub Copilot AI credits (`AIC`) and agent tokens, at the bottom
   of the screen.
-- **Six supported agents:** GitHub Copilot, Claude Code, Codex CLI, Grok Build,
-  Hermes Agent, and OpenClaw.
+- **Seven supported agents:** GitHub Copilot, Claude Code, Codex CLI, Cursor Agent,
+  Grok Build, Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
   ships with Copilot, and you can install OpenClaw, Claude, or your own pack over USB or Wi-Fi.
 - **Settings page:** a local web page for agents, badges, characters, Wi-Fi, the
@@ -81,7 +81,7 @@ desktop, with or without the device.
 
 ```mermaid
 flowchart LR
-    A["AI agents<br/>Copilot, Claude, Codex,<br/>Grok, Hermes, OpenClaw"] -- lifecycle hooks --> D["Companion daemon<br/>(background service)"]
+    A["AI agents<br/>Copilot, Claude, Codex, Cursor,<br/>Grok, Hermes, OpenClaw"] -- lifecycle hooks --> D["Companion daemon<br/>(background service)"]
     B["Settings page<br/>127.0.0.1:4667"] <--> D
     D -- USB serial or local Wi-Fi --> E["ESP32 companion<br/>(firmware + character pack)"]
 ```
@@ -476,6 +476,7 @@ outdated hooks. The confirmation lists only configuration files that need change
 | GitHub Copilot (CLI and app) | `~/.copilot/hooks/agent-companion.json` | None |
 | Claude Code | `~/.claude/settings.json` | Accept Claude's folder-trust prompt if it asks |
 | Codex CLI | `~/.codex/hooks.json` | Approve the hooks in Codex with `/hooks` |
+| Cursor Agent | `~/.cursor/hooks.json` | Restart Cursor and Cursor Agent |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | None |
 | Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | Approve each hook the first time Hermes runs it |
 | OpenClaw | A plugin registered with the `openclaw` CLI | Restart the OpenClaw Gateway |
@@ -496,6 +497,14 @@ then skips all of your Claude hooks, not only this one:
 [compat.claude]
 hooks = false
 ```
+
+Cursor Agent and the Cursor IDE share `~/.cursor/hooks.json`. Setup adds its
+commands beside hooks you already have there, and leaves a repository's
+`.cursor/hooks.json` alone. The companion hook allows every permission prompt
+it sees, so it only reports what Cursor is doing. Cursor has no hook for its
+own approval dialog, so that dialog does not become Needs attention. A turn
+that stops with status `error` does. On Windows, Cursor runs the command in
+cmd.exe, so the command is quoted for that shell.
 
 On Windows, Codex and Grok run their hooks in PowerShell, so setup writes the
 Windows hook command in the PowerShell form
@@ -559,8 +568,8 @@ Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 - Active agent or subagent work maps to **Working**.
 - Permission and input prompts, and errors that end a turn, map to
   **Needs attention**, which takes priority over every other session. Prompts
-  from one-shot runs (`copilot -p`, `claude -p`, `codex exec`, `grok -p`, and
-  `hermes -z`) are ignored, because no one can answer them.
+  from one-shot runs (`copilot -p`, `claude -p`, `codex exec`, `grok -p`,
+  `cursor-agent -p`, and `hermes -z`) are ignored, because no one can answer them.
 - A finished turn that used tools maps to **Complete**.
 - Inactive sessions return to **Idle**.
 
@@ -737,6 +746,86 @@ mode** on the settings page's **Device** tab, or with `npm run connection auto|w
 
 </details>
 
+## Speech
+
+On macOS, the companion can speak a short phrase through the device speaker:
+
+```bash
+npm run speak "Hello from your Agent Companion"
+```
+
+The background service uses macOS `say` and `afconvert` locally, converts the
+result to mono 24 kHz signed 16-bit PCM, and streams up to 15 seconds to the
+paired device over Wi-Fi. Speech requires current firmware and a reachable
+Wi-Fi connection even when USB is also connected. Linux and Windows currently
+report that no speech provider is available rather than claiming success.
+
+Speech preempts a cue that is already playing. Cues requested while speech is
+playing are serialized behind it, and a second speech request is rejected until
+the first finishes. The configured device volume applies to both cues and
+speech.
+
+**Voice notifications.** The companion can announce state changes with short,
+varied phrases:
+
+```bash
+npm run voice milestones
+```
+
+The setting is also available on the **Agents** tab in Settings:
+
+| Mode | Announcements |
+| --- | --- |
+| **Off** (default) | Never speaks automatically |
+| **Milestones** | Questions that need attention and completed work |
+| **Chatty** | Milestones plus settled working and idle transitions |
+| **Contextual** | Chatty plus short purpose-written lines from the active agent |
+
+Announcements use a rotating set of fixed, lightly whimsical phrases, including
+occasional thinking sounds in Chatty mode. They do not repeat the same line
+every time and never read prompts, tool arguments, responses, file names, or
+other session content aloud. Use `npm run voice off` at any time to disable
+them.
+
+Animations still respond immediately. Automatic speech waits for about three
+seconds of sustained attention or working, and two seconds of quiet before
+announcing completion or idle. Brief questions that resolve themselves stay
+silent, and quick stop/start transitions count as one work stretch rather than
+repeating a working line for every tool. Routine announcements have a 15-second
+cooldown; sustained attention can bypass it. Cooldown-suppressed lines are
+dropped, not saved for later.
+
+Only the latest relevant automatic event is kept, and it is checked again after
+synthesis before sending. Completion remains eligible when its animation returns
+to idle, but is canceled if work resumes. The notifier spaces its clips using
+their audio duration because device acceptance does not mean playback has ended;
+it cannot interrupt speech already playing. Manual `npm run speak` requests stay
+independent and retain the device's existing busy/error behavior.
+
+Contextual mode lets an integrated agent explicitly submit a short narration
+such as “Let me send that message to Paul for you.” The daemon does not derive
+these lines from prompts, and rejects multiline text, URLs, email addresses, and
+lines longer than 180 characters. Agents are instructed to omit secrets,
+identifiers, code, file names, and message contents. You can exercise the same
+path manually with:
+
+```bash
+npm run voice contextual
+npm run narrate "Let me check the calendar for you"
+```
+
+Explicit contextual lines remain ordered rather than being replaced by automatic
+events or dropped by their cooldown. Generic working speech is suppressed while
+narration is pending and for 15 seconds afterwards; an accepted narration also
+counts as the working announcement for that work stretch.
+
+The text is passed only to the operating system's local speech synthesizer. The
+generated audio is held in a temporary file on the computer, deleted after
+conversion, and streamed through a bounded device buffer rather than retained
+as a recording. The authenticated request stays on the local network, but like
+the rest of the Wi-Fi control protocol it uses plain HTTP, so use speech only on
+a trusted network.
+
 ## Update
 
 **Companion daemon.** If the desktop app installed it, install the new release
@@ -789,6 +878,9 @@ Run these from the repository folder.
 | `npm run setup` | Installs or updates the daemon, agent hooks, and background service. Add `-- --no-open` to skip opening the browser. |
 | `npm run settings` | Opens the settings page |
 | `npm run status` | Shows the connection, character, state, and any pending agent steps |
+| `npm run speak "<text>"` | Speaks up to 15 seconds of locally synthesized audio over Wi-Fi (macOS) |
+| `npm run narrate "<text>"` | Sends a validated contextual line when Contextual mode is enabled |
+| `npm run voice off\|milestones\|chatty\|contextual` | Controls automatic and contextual spoken notifications |
 | `npm run agents` | Lists agents with their versions and hook status |
 | `npm run agents enable\|disable <agent>` | Lets an agent drive the device, or stops it |
 | `npm run agents install\|uninstall <agent>` | Installs or removes one agent's hook |

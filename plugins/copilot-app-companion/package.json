@@ -1,0 +1,9 @@
+{
+  "name": "@esp32-agent-companion/copilot-app-plugin",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

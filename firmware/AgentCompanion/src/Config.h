@@ -16,6 +16,7 @@ constexpr int kCharacterArtX = (kCharacterFrameWidth - kFrameWidth) / 2;
 constexpr int kTargetFps = 30;
 constexpr unsigned kAudioSampleRate = 24000;
 constexpr uint8_t kDefaultSoundVolume = 50;
+constexpr size_t kSpeechStreamBufferBytes = 16 * 1024;
 constexpr unsigned kTouchDebounceMs = 180;
 constexpr int kTouchTapTravelPixels = 24;
 constexpr unsigned kTouchTapMaxMs = 650;

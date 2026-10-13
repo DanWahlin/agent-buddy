@@ -8,6 +8,8 @@ class NetworkManager {
  public:
   using CommandHandler = bool (*)(const char*);
   using BadgeHandler = bool (*)(const char* packet, char* response, size_t responseSize);
+  // Writes a JSON object about the USB serial port for GET /status; returns its length.
+  using UsbDiagnostics = int (*)(char* output, size_t capacity);
   // Streams an authenticated POST /character body into the device's pack installer.
   struct CharacterUpload {
     const char* (*begin)();
@@ -16,13 +18,21 @@ class NetworkManager {
     void (*abort)(const char* error);
     const char* (*installedId)();
   };
+  // Streams authenticated POST /speech PCM into the audio task without retaining the recording.
+  struct SpeechUpload {
+    const char* (*begin)(uint32_t frames);
+    const char* (*write)(const uint8_t* data, size_t bytes);
+    const char* (*finish)();
+    void (*abort)();
+  };
   struct OrientationControl {
     int16_t (*offset)();
     const char* (*configure)(int16_t tenths);
   };
 
   void begin(CommandHandler commandHandler, const CharacterUpload* upload,
-             BadgeHandler badgeHandler = nullptr, const OrientationControl* orientation = nullptr);
+             BadgeHandler badgeHandler = nullptr, const OrientationControl* orientation = nullptr,
+             UsbDiagnostics usbDiagnostics = nullptr, const SpeechUpload* speech = nullptr);
   void update();
   bool startSetup();
   bool configure(const char* name, const char* password);
@@ -69,6 +79,8 @@ class NetworkManager {
   void handleFirmwareResponse();
   void handleFirmwareApproval();
   void handleOrientation();
+  void handleSpeechBody();
+  void handleSpeechResponse();
   void confirmFirmware();
   void handleDiscovery();
   void updateConnection();
@@ -84,10 +96,21 @@ class NetworkManager {
   CommandHandler commandHandler_ = nullptr;
   BadgeHandler badgeHandler_ = nullptr;
   const CharacterUpload* upload_ = nullptr;
+  const SpeechUpload* speech_ = nullptr;
   const OrientationControl* orientation_ = nullptr;
+  UsbDiagnostics usbDiagnostics_ = nullptr;
   const char* uploadError_ = nullptr;
   bool uploadAuthorized_ = false;
   bool uploadStarted_ = false;
+  const char* speechError_ = nullptr;
+  bool speechAuthorized_ = false;
+  bool speechStarted_ = false;
+  bool speechPlaybackStarted_ = false;
+  int speechStatus_ = 400;
+  size_t speechRequestBytes_ = 0;
+  size_t speechHeaderBytes_ = 0;
+  size_t speechPayloadBytes_ = 0;
+  uint8_t speechHeader_[16] = {};
   const char* firmwareError_ = nullptr;
   bool firmwareAuthorized_ = false;
   bool firmwareStarted_ = false;

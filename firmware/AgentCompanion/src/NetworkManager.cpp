@@ -3,6 +3,7 @@
 #include "Deadline.h"
 #include "DeviceCommands.h"
 #include "OrientationSettings.h"
+#include "SpeechWire.h"
 
 #include <Arduino.h>
 #include <DNSServer.h>
@@ -77,11 +78,14 @@ void copyText(char* destination, size_t capacity, const String& source) {
 
 namespace copilot {
 void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload* upload,
-                           BadgeHandler badgeHandler, const OrientationControl* orientation) {
+                           BadgeHandler badgeHandler, const OrientationControl* orientation,
+                           UsbDiagnostics usbDiagnostics, const SpeechUpload* speech) {
   commandHandler_ = commandHandler;
   upload_ = upload;
   badgeHandler_ = badgeHandler;
   orientation_ = orientation;
+  speech_ = speech;
+  usbDiagnostics_ = usbDiagnostics;
   bootId_ = esp_random();
   // esp_app_get_elf_sha256() stops at CONFIG_APP_RETRIEVE_LEN_ELF_SHA (9) digits, so format the
   // first 8 bytes here; the daemon reads the same bytes from the .bin.
@@ -131,8 +135,8 @@ void NetworkManager::ensureIdentity() {
 }
 
 void NetworkManager::configureRoutes() {
-  const char* headers[] = {"Authorization", "X-Firmware-MD5"};
-  server.collectHeaders(headers, 2);
+  const char* headers[] = {"Authorization", "X-Firmware-MD5", "Content-Length", "Content-Type"};
+  server.collectHeaders(headers, 4);
   server.on("/", HTTP_GET, [] { server.send(200, "text/html", kSetupPage); });
   server.on("/configure", HTTP_POST, [this] { handleConfigure(); });
   server.on("/pair", HTTP_POST, [this] { handlePair(); });
@@ -143,6 +147,8 @@ void NetworkManager::configureRoutes() {
   server.on("/orientation", HTTP_POST, [this] { handleOrientation(); });
   server.on("/character", HTTP_POST, [this] { handleCharacterResponse(); },
             [this] { handleCharacterBody(); });
+  server.on("/speech", HTTP_POST, [this] { handleSpeechResponse(); },
+            [this] { handleSpeechBody(); });
   server.on("/firmware/approval", HTTP_POST, [this] { handleFirmwareApproval(); });
   server.on("/firmware", HTTP_POST, [this] { handleFirmwareResponse(); },
             [this] { handleFirmwareBody(); });
@@ -153,6 +159,109 @@ void NetworkManager::configureRoutes() {
   });
 }
 
+void NetworkManager::handleSpeechBody() {
+  HTTPRaw& raw = server.raw();
+  if (raw.status == RAW_START) {
+    speechAuthorized_ = authorized();
+    speechStarted_ = false;
+    speechPlaybackStarted_ = false;
+    speechError_ = nullptr;
+    speechStatus_ = 400;
+    speechRequestBytes_ = 0;
+    speechHeaderBytes_ = 0;
+    speechPayloadBytes_ = 0;
+    if (!speechAuthorized_ || !speech_) return;
+    const String length = server.header("Content-Length");
+    const String contentType = server.header("Content-Type");
+    if (contentType != "application/vnd.agent-companion.pcm") {
+      speechError_ = "Unsupported speech content type.";
+      speechStatus_ = 415;
+      return;
+    }
+    if (length.isEmpty()) {
+      speechError_ = "Speech content length is required.";
+      speechStatus_ = 411;
+      return;
+    }
+    const unsigned long parsed = length.toInt();
+    if (parsed < kSpeechHeaderBytes + sizeof(int16_t)
+        || parsed > kMaxSpeechRequestBytes) {
+      speechError_ = "Speech request is empty or too large.";
+      speechStatus_ = 413;
+      return;
+    }
+    speechRequestBytes_ = parsed;
+    speechStarted_ = true;
+    return;
+  }
+  if (!speechStarted_) return;
+  if (raw.status == RAW_WRITE) {
+    size_t offset = 0;
+    if (speechHeaderBytes_ < kSpeechHeaderBytes) {
+      const size_t copied = min(raw.currentSize, kSpeechHeaderBytes - speechHeaderBytes_);
+      std::memcpy(speechHeader_ + speechHeaderBytes_, raw.buf, copied);
+      speechHeaderBytes_ += copied;
+      offset += copied;
+      if (speechHeaderBytes_ == kSpeechHeaderBytes) {
+        SpeechHeader header{};
+        speechError_ = parseSpeechHeader(
+            speechHeader_, speechHeaderBytes_, speechRequestBytes_, header);
+        if (!speechError_) {
+          speechError_ = speech_->begin(header.frames);
+          speechPlaybackStarted_ = !speechError_;
+          if (speechError_ && std::strcmp(
+                  speechError_, "Speech playback is already in progress.") == 0)
+            speechStatus_ = 409;
+          else if (speechError_)
+            speechStatus_ = 503;
+        }
+      }
+    }
+    if (!speechError_ && offset < raw.currentSize) {
+      const size_t bytes = raw.currentSize - offset;
+      speechPayloadBytes_ += bytes;
+      speechError_ = speech_->write(raw.buf + offset, bytes);
+      if (speechError_) speechStatus_ = 408;
+    }
+  } else if (raw.status == RAW_END) {
+    if (!speechError_ && speechHeaderBytes_ != kSpeechHeaderBytes)
+      speechError_ = "Speech header was incomplete.";
+    if (!speechError_ && speechPayloadBytes_ + kSpeechHeaderBytes != speechRequestBytes_)
+      speechError_ = "Speech body ended before its declared content length.";
+    if (!speechError_) speechError_ = speech_->finish();
+    if (speechError_ && speechPlaybackStarted_) speech_->abort();
+  } else if (raw.status == RAW_ABORTED) {
+    speechError_ = "Speech upload was interrupted.";
+    speechStatus_ = 408;
+    if (speechPlaybackStarted_) speech_->abort();
+  }
+}
+
+void NetworkManager::handleSpeechResponse() {
+  const bool authorizedUpload = speechAuthorized_;
+  speechAuthorized_ = false;
+  if (!authorizedUpload) {
+    server.send(401, "application/json", "{\"error\":\"Unauthorized\"}");
+    return;
+  }
+  if (!speechStarted_) {
+    char response[160];
+    snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}",
+             speechError_ ? speechError_ : "Missing speech body");
+    server.send(speechStatus_, "application/json", response);
+    return;
+  }
+  speechStarted_ = false;
+  speechPlaybackStarted_ = false;
+  if (speechError_) {
+    char response[160];
+    snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}", speechError_);
+    server.send(speechStatus_, "application/json", response);
+    return;
+  }
+  server.send(202, "application/json", "{\"ok\":true,\"playing\":true}");
+}
+
 void NetworkManager::handleStatus() {
   if (!requireAuthorized()) return;
   char encodedName[48];
@@ -160,19 +269,24 @@ void NetworkManager::handleStatus() {
   char orientation[8] = "null";
   if (orientation_) snprintf(orientation, sizeof(orientation), "%d", orientation_->offset());
   const FirmwareApproval approval = firmwareApproval();
-  char response[544];
+  char usb[160] = "null";
+  if (usbDiagnostics_) {
+    const int length = usbDiagnostics_(usb, sizeof(usb));
+    if (length < 0 || static_cast<size_t>(length) >= sizeof(usb)) std::strcpy(usb, "null");
+  }
+  char response[704];
   snprintf(response, sizeof(response),
            "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
            "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
            "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s,"
-           "\"board\":\"%s\"}",
+           "\"board\":\"%s\",\"usb\":%s}",
            deviceId_, hostname_, connected_ ? "true" : "false",
            static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
            upload_ ? upload_->installedId() : "none", encodedName, firmwareId_,
            static_cast<unsigned>(buttonPresses_),
            approval == FirmwareApproval::Waiting ? "waiting"
                : approval == FirmwareApproval::Allowed ? "allowed" : "none", orientation,
-           board::kId);
+           board::kId, usb);
   server.send(200, "application/json", response);
 }
 

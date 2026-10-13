@@ -13,7 +13,7 @@ static DeviceCommand send(DeviceCommands& parser, const std::string& text) {
 }
 
 int main() {
-  static_assert(kDeviceProtocol == 12);
+  static_assert(kDeviceProtocol == 13);
   DeviceCommands parser;
   for (DeviceCommand command : {DeviceCommand::Idle, DeviceCommand::Surprise, DeviceCommand::Working,
                                 DeviceCommand::Complete, DeviceCommand::Attention}) {

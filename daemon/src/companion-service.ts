@@ -66,6 +66,9 @@ import {builtFirmwareReader, type FirmwareImage} from './firmware-image.js';
 import {isOrientationOffset, type DeviceOrientation} from './orientation-settings.js';
 import {deviceUsageLines, UsageTracker, usageLines, type UsageTotals, type UsageWindow} from './usage-tracker.js';
 import {loadWifiConfig, saveWifiConfig, validateWifiCredentials} from './wifi-config.js';
+import {
+  VoiceNotifier, type VoiceNotificationMode,
+} from './voice-notifications.js';
 import {OnboardingStore, SetupError, type OnboardingChange, type OnboardingState, type OnboardingStep} from './onboarding.js';
 
 export interface InstallState {
@@ -163,6 +166,10 @@ export interface CompanionStatus extends DaemonStatus {
     // Both values, for the settings page.
     summary: string[];
   };
+  voice: {
+    mode: VoiceNotificationMode;
+    supported: boolean;
+  };
 }
 
 // How often the agents' session logs are checked for new usage.
@@ -237,6 +244,7 @@ export class CompanionService extends EventEmitter {
   #firmwareUpdating: FirmwareStatus['updating'] = null;
   #lastFirmware: FirmwareStatus['last'] = null;
   readonly #usbInstaller: UsbFirmwareInstaller;
+  readonly #voice: VoiceNotifier;
   #release: ReleaseFirmware | null = null;
   // A character to install again when the device starts the new firmware later, for example after
   // the user power-cycles a device that stayed in download mode.
@@ -277,6 +285,9 @@ export class CompanionService extends EventEmitter {
     this.#usageTracker = usageTracker;
     this.#firmwareImage = firmwareImage;
     this.#usbInstaller = usbInstaller;
+    this.#voice = new VoiceNotifier(this.#transport, this.#display.voiceNotifications, {
+      available: () => this.#transport.network?.connected === true,
+    });
     this.#onboarding = onboarding;
   }
 
@@ -392,6 +403,10 @@ export class CompanionService extends EventEmitter {
         ...this.#usageTotals,
         lines: this.#deviceUsageLines(),
         summary: this.#display.showUsage ? usageLines(this.#usageTotals) : [],
+      },
+      voice: {
+        mode: this.#display.voiceNotifications,
+        supported: process.platform === 'darwin',
       },
       service: this.#service,
       wifiPaired: this.#wifiPaired,
@@ -532,6 +547,21 @@ export class CompanionService extends EventEmitter {
       this.syncBadges();
       this.emit('change');
     });
+  }
+
+  announceState(state: DaemonStatus['state']): void {
+    this.#voice.stateChanged(state);
+  }
+
+  narrate(text: unknown): Promise<void> {
+    return this.#voice.narrate(text);
+  }
+
+  async setVoiceNotifications(mode: VoiceNotificationMode): Promise<void> {
+    this.#display = {...this.#display, voiceNotifications: mode};
+    this.#voice.setMode(mode);
+    await saveDisplaySettings(this.#display);
+    this.emit('change');
   }
 
   async setDesktop(change: DesktopChange): Promise<void> {
