@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.10]
+
+### Other changes
+
+- Keep the service alive when the device stops reading its USB port (#27)
+
 ## [v0.14.9]
 
 ### Other changes
