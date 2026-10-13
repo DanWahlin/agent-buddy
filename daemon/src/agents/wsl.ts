@@ -10,7 +10,7 @@ import type {AgentContext, AgentLocation, AgentLocations} from './types.js';
 // agents' files in each distribution through \\wsl$\<distribution>.
 
 // The agents that a distribution can have. OpenClaw's plugin cannot reach a Windows named pipe.
-const wslCommands = ['copilot', 'claude', 'codex', 'grok', 'hermes', 'openclaw'] as const;
+const wslCommands = ['copilot', 'claude', 'codex', 'cursor-agent', 'grok', 'hermes', 'openclaw'] as const;
 
 export interface WslProbe {
   home: string;
@@ -34,6 +34,11 @@ export function probeScript(windowsNode: string): string {
     `p mount "$(wslpath -u 'C:\\' 2>/dev/null)"`,
     `for v in ${agentHomeVariables.join(' ')}; do eval "p env:$v \\"\\\${$v:-}\\""; done`,
     `for c in ${wslCommands.join(' ')}; do command -v "$c" >/dev/null 2>&1 && p command "$c"; done`,
+    // `agent` alone is not Cursor. It counts when the Cursor launcher sits beside it.
+    'if ! command -v cursor-agent >/dev/null 2>&1 && command -v agent >/dev/null 2>&1; then',
+    '  d=$(dirname "$(command -v agent)")',
+    '  if [ -e "$d/cursor-agent" ] || [ -e "$d/cursor-agent.exe" ]; then p command cursor-agent; fi',
+    'fi',
     'if [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop-late ]; then p interop 1; fi',
     'exit 0',
     '',
