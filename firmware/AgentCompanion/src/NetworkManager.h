@@ -8,6 +8,8 @@ class NetworkManager {
  public:
   using CommandHandler = bool (*)(const char*);
   using BadgeHandler = bool (*)(const char* packet, char* response, size_t responseSize);
+  // Writes a JSON object about the USB serial port for GET /status; returns its length.
+  using UsbDiagnostics = int (*)(char* output, size_t capacity);
   // Streams an authenticated POST /character body into the device's pack installer.
   struct CharacterUpload {
     const char* (*begin)();
@@ -30,7 +32,7 @@ class NetworkManager {
 
   void begin(CommandHandler commandHandler, const CharacterUpload* upload,
              BadgeHandler badgeHandler = nullptr, const OrientationControl* orientation = nullptr,
-             const SpeechUpload* speech = nullptr);
+             UsbDiagnostics usbDiagnostics = nullptr, const SpeechUpload* speech = nullptr);
   void update();
   bool startSetup();
   bool configure(const char* name, const char* password);
@@ -96,6 +98,7 @@ class NetworkManager {
   const CharacterUpload* upload_ = nullptr;
   const SpeechUpload* speech_ = nullptr;
   const OrientationControl* orientation_ = nullptr;
+  UsbDiagnostics usbDiagnostics_ = nullptr;
   const char* uploadError_ = nullptr;
   bool uploadAuthorized_ = false;
   bool uploadStarted_ = false;

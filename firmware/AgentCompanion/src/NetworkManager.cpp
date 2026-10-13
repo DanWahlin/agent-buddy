@@ -79,12 +79,13 @@ void copyText(char* destination, size_t capacity, const String& source) {
 namespace copilot {
 void NetworkManager::begin(CommandHandler commandHandler, const CharacterUpload* upload,
                            BadgeHandler badgeHandler, const OrientationControl* orientation,
-                           const SpeechUpload* speech) {
+                           UsbDiagnostics usbDiagnostics, const SpeechUpload* speech) {
   commandHandler_ = commandHandler;
   upload_ = upload;
   badgeHandler_ = badgeHandler;
   orientation_ = orientation;
   speech_ = speech;
+  usbDiagnostics_ = usbDiagnostics;
   bootId_ = esp_random();
   // esp_app_get_elf_sha256() stops at CONFIG_APP_RETRIEVE_LEN_ELF_SHA (9) digits, so format the
   // first 8 bytes here; the daemon reads the same bytes from the .bin.
@@ -268,19 +269,24 @@ void NetworkManager::handleStatus() {
   char orientation[8] = "null";
   if (orientation_) snprintf(orientation, sizeof(orientation), "%d", orientation_->offset());
   const FirmwareApproval approval = firmwareApproval();
-  char response[544];
+  char usb[160] = "null";
+  if (usbDiagnostics_) {
+    const int length = usbDiagnostics_(usb, sizeof(usb));
+    if (length < 0 || static_cast<size_t>(length) >= sizeof(usb)) std::strcpy(usb, "null");
+  }
+  char response[704];
   snprintf(response, sizeof(response),
            "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
            "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
            "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s,"
-           "\"board\":\"%s\"}",
+           "\"board\":\"%s\",\"usb\":%s}",
            deviceId_, hostname_, connected_ ? "true" : "false",
            static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
            upload_ ? upload_->installedId() : "none", encodedName, firmwareId_,
            static_cast<unsigned>(buttonPresses_),
            approval == FirmwareApproval::Waiting ? "waiting"
                : approval == FirmwareApproval::Allowed ? "allowed" : "none", orientation,
-           board::kId);
+           board::kId, usb);
   server.send(200, "application/json", response);
 }
 
