@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
@@ -193,6 +193,22 @@ test('tells the user when interop is off in a distribution', async () => {
   assert.match(wsl.list()[0]!.problem ?? '', /interop is off in Ubuntu/);
 });
 
+test('an explicit rescan reprobes running WSL agents without starting stopped distributions', async () => {
+  const host = defaultAgentContext({platform: 'win32', env: {}});
+  const state = {running: new Set(['Ubuntu'])};
+  const {run, probes} = fakeWsl(state);
+  const wsl = new WslLocations(host, run, () => 0);
+  await wsl.refresh();
+  await wsl.refresh();
+  assert.deepEqual(probes, ['Ubuntu']);
+  await wsl.refresh({force: true});
+  assert.deepEqual(probes, ['Ubuntu', 'Ubuntu']);
+  assert.equal(state.running.has('Debian'), false);
+  state.running.clear();
+  await wsl.refresh({force: true});
+  assert.deepEqual(probes, ['Ubuntu', 'Ubuntu']);
+});
+
 test('a refresh that fails does not stop the next one', async () => {
   const host = defaultAgentContext({platform: 'win32', env: {}});
   let calls = 0;
@@ -283,6 +299,56 @@ test('installs and removes hooks in a distribution where only it has the agent',
   }
 });
 
+test('missing-only hook setup preserves current host and WSL hook files', async () => {
+  const {hostHome, linuxHome, host, cleanup} = await locationFixture();
+  try {
+    await mkdir(join(linuxHome, '.copilot'), {recursive: true});
+    await installAgent('copilot', host);
+    const hostHooks = join(hostHome, '.copilot', 'hooks', 'agent-companion.json');
+    const wslHooks = join(linuxHome, '.copilot', 'hooks', 'agent-companion.json');
+    for (const {current, missing} of [
+      {current: hostHooks, missing: wslHooks}, {current: wslHooks, missing: hostHooks},
+    ]) {
+      const text = JSON.stringify({...JSON.parse(await readFile(current, 'utf8')), note: 'Keep this current file.'}) + '\n';
+      await writeFile(current, text);
+      const before = await stat(current);
+      await rm(missing);
+      assert.deepEqual(await installAgent('copilot', host, true), []);
+      assert.equal(await readFile(current, 'utf8'), text);
+      assert.equal((await stat(current)).mtimeMs, before.mtimeMs);
+      assert.equal(agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'copilot')?.hookStatus, 'installed');
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
+test('approved removal reaches a stopped WSL installation as well as native host hooks', async () => {
+  const {hostHome, linuxHome, host, ubuntu, cleanup} = await locationFixture();
+  try {
+    await mkdir(join(hostHome, '.claude'), {recursive: true});
+    await mkdir(join(linuxHome, '.claude'), {recursive: true});
+    await writeFile(join(hostHome, '.claude', 'settings.json'), '{}');
+    await installAgent('claude', host);
+    const found = agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'claude')!;
+    assert.deepEqual(found.locations?.map(location => location.detected), [true, true]);
+    ubuntu.running = false;
+    let approvedScan = false;
+    host.locations = {
+      list: () => [ubuntu],
+      async refresh(options) {
+        approvedScan = options?.all === true && options.force === true;
+        if (options?.all) ubuntu.running = true;
+      },
+    };
+    await uninstallAgent('claude', host, true);
+    assert.equal(approvedScan, true);
+    assert.doesNotMatch(await readFile(join(hostHome, '.claude', 'settings.json'), 'utf8'), /cli\.js/);
+    assert.doesNotMatch(await readFile(join(linuxHome, '.claude', 'settings.json'), 'utf8'), /cli\.js/);
+  } finally {
+    await cleanup();
+  }
+});
 test('reports the problem of a distribution as a warning and installs the other places', async () => {
   const {hostHome, linuxHome, host, ubuntu, cleanup} = await locationFixture();
   try {

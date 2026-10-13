@@ -12,11 +12,11 @@ import {copilotAdapter, copilotAppVersion, copilotVersions} from '../src/agents/
 import {grokAdapter, runsClaudeHooks} from '../src/agents/grok.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
 import {openclawAdapter} from '../src/agents/openclaw.js';
-import {agentStatuses, defaultAgentContext, installDetectedAgents, setAgentHookRemoved,
+import {adapters, agentStatuses, defaultAgentContext, installDetectedAgents, setAgentHookRemoved,
         shouldIgnoreGrokClaudeHook} from '../src/agents/index.js';
 import {loadAgentsConfig} from '../src/agents/config.js';
 import {StateCoordinator} from '../src/state-coordinator.js';
-import type {AgentContext} from '../src/agents/types.js';
+import type {AgentContext, AgentId} from '../src/agents/types.js';
 
 // Windows has no POSIX permission bits, so mode checks run only on macOS and Linux.
 const posix = process.platform !== 'win32';
@@ -488,6 +488,50 @@ async function withAgentsConfig<T>(path: string, run: () => Promise<T>): Promise
     else process.env.AGENT_COMPANION_AGENTS_CONFIG = previous;
   }
 }
+
+test('all six agents update connection status from real activity and retain pending approval gates', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const bin = join(root, 'bin');
+    await mkdir(bin, {recursive: true});
+    await writeFile(join(bin, 'openclaw'), '#!/bin/sh\n', {mode: 0o755});
+    const context = {...ctx, env: {PATH: bin}};
+    for (const adapter of adapters) await adapter.install(context);
+    const config = join(root, 'agents.json');
+    await writeFile(config, JSON.stringify({enabled: Object.fromEntries(adapters.map(adapter => [adapter.id, true]))}));
+    await withAgentsConfig(config, async () => {
+      const events = new Map<AgentId, number>();
+      const statuses = () => agentStatuses(context, new Map(), events);
+      assert.equal(statuses().length, 6);
+      for (const agent of statuses()) {
+        assert.equal(agent.installed, true, agent.id);
+        assert.equal(agent.action?.kind, ['codex', 'hermes'].includes(agent.id) ? 'approve' : 'restart', agent.id);
+        events.set(agent.id, Date.now());
+      }
+      for (const agent of statuses()) {
+        assert.ok(agent.lastEventAt, agent.id);
+        assert.equal(agent.action?.kind, ['codex', 'hermes'].includes(agent.id) ? 'approve' : undefined, agent.id);
+      }
+      const path = join(home, '.codex', 'hooks.json');
+      const hooks = JSON.parse(await readFile(path, 'utf8')).hooks as Record<string, Array<{hooks: unknown[]}>>;
+      const keys = Object.entries(hooks).flatMap(([event, groups]) => groups.flatMap((group, index) =>
+        group.hooks.map((_, handler) => `[hooks.state."${path}:${event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()}:${index}:${handler}"]\ntrusted_hash = "a"\n`)));
+      await writeFile(join(home, '.codex', 'config.toml'), keys.join(''));
+      const hermes = parseDocument(await readFile(join(home, '.hermes', 'config.yaml'), 'utf8')).toJSON() as
+        {hooks: {pre_llm_call: Array<{command: string}>}};
+      assert.ok(hermes.hooks.pre_llm_call[0]);
+      await writeFile(join(home, '.hermes', 'shell-hooks-allowlist.json'), JSON.stringify({
+        approvals: [{event: 'pre_llm_call', command: hermes.hooks.pre_llm_call[0].command}],
+      }));
+      for (const agent of statuses()) {
+        assert.equal(agent.hookStatus, 'installed', agent.id);
+        assert.equal(agent.action, undefined, agent.id);
+      }
+    });
+  } finally {
+    await cleanup();
+  }
+});
 
 test('hook status reads the hooks: stale, partial, or broken hooks are outdated, not installed', async () => {
   const {root, home, ctx, cleanup} = await fixture();

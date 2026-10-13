@@ -11,7 +11,7 @@ test('display settings default to badges on, desktop shown and muted, device loo
   const directory = await mkdtemp(join(tmpdir(), 'display-settings-'));
   try {
     assert.deepEqual(loadDisplaySettingsSync(join(directory, 'missing.json')), defaultDisplaySettings);
-    assert.deepEqual(defaultDisplaySettings, {showAgentBadges: true, showDesktopCompanion: true, desktopBackdrop: 'device',
+    assert.deepEqual(defaultDisplaySettings, {showAgentBadges: true, showDesktopCompanion: true, useDevice: true, desktopBackdrop: 'device',
                                               desktopSounds: false, desktopVolume: 30, showUsage: true,
                                               usageWindow: 'today', voiceNotifications: 'off'});
   } finally {
@@ -25,12 +25,12 @@ test('older settings files gain the desktop defaults, and bad values fall back',
   try {
     await writeFile(path, JSON.stringify({showAgentBadges: false}));
     assert.deepEqual(loadDisplaySettingsSync(path),
-      {showAgentBadges: false, showDesktopCompanion: true, desktopBackdrop: 'device', desktopSounds: false,
+      {showAgentBadges: false, showDesktopCompanion: true, useDevice: true, desktopBackdrop: 'device', desktopSounds: false,
        desktopVolume: 30, showUsage: true, usageWindow: 'today', voiceNotifications: 'off'});
     await writeFile(path, JSON.stringify({showDesktopCompanion: false, desktopBackdrop: 'orb', desktopSounds: 'yes',
                                           desktopVolume: 150, showUsage: false, usageWindow: 'year'}));
     assert.deepEqual(loadDisplaySettingsSync(path),
-      {showAgentBadges: true, showDesktopCompanion: false, desktopBackdrop: 'device', desktopSounds: false,
+      {showAgentBadges: true, showDesktopCompanion: false, useDevice: true, desktopBackdrop: 'device', desktopSounds: false,
        desktopVolume: 30, showUsage: false, usageWindow: 'today', voiceNotifications: 'off'});
     await writeFile(path, 'not json');
     assert.deepEqual(loadDisplaySettingsSync(path), defaultDisplaySettings);
@@ -43,7 +43,7 @@ test('desktop settings round-trip', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'display-settings-'));
   const path = join(directory, 'nested', 'display.json');
   try {
-    const settings = {showAgentBadges: true, showDesktopCompanion: false, desktopBackdrop: 'none',
+    const settings = {showAgentBadges: true, showDesktopCompanion: false, useDevice: false, desktopBackdrop: 'none',
                       desktopSounds: true, desktopVolume: 20, showUsage: true, usageWindow: 'month',
                       voiceNotifications: 'contextual'} as const;
     await saveDisplaySettings(settings, path);

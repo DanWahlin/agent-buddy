@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/DanWahlin/esp32-agent-companion/releases/latest"><img src="https://img.shields.io/github/v/release/DanWahlin/esp32-agent-companion" alt="Latest release"></a>
-  <a href="https://github.com/DanWahlin/esp32-agent-companion/actions/workflows/build.yml"><img src="https://github.com/DanWahlin/esp32-agent-companion/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
+  <a href="https://github.com/DanWahlin/agent-buddy/releases/latest"><img src="https://img.shields.io/github/v/release/DanWahlin/agent-buddy" alt="Latest release"></a>
+  <a href="https://github.com/DanWahlin/agent-buddy/actions/workflows/build.yml"><img src="https://github.com/DanWahlin/agent-buddy/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
 </p>
 
 ESP32 Agent Companion works with the
@@ -97,7 +97,7 @@ flowchart LR
 
 | Item | Details |
 | --- | --- |
-| Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262) |
+| Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262). Other ESP32 displays need their own board target; see [Boards](docs/development.md#boards). |
 | Cable | A USB data cable (charge-only cables won't work) |
 | Computer | macOS, Linux, or Windows (x64 or Arm64). On Windows, the desktop app runs the companion service natively, and agents in [WSL 2](#windows-wsl-2) use it too. |
 | Python | [3.10 or newer](https://www.python.org/downloads/), for flashing. The `python3` that comes with macOS is too old. |
@@ -111,7 +111,7 @@ flowchart LR
 app. You do not need Python, Node.js, or a clone of the repository.
 
 1. Download the desktop app for your OS from
-   [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest):
+   [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest):
    `agent-companion-desktop-<version>-macos-universal.dmg`,
    `agent-companion-desktop-<version>-windows-x64-setup.exe`,
    `agent-companion-desktop-<version>-windows-arm64-setup.exe`,
@@ -119,23 +119,60 @@ app. You do not need Python, Node.js, or a clone of the repository.
    `agent-companion-desktop-<version>-linux-amd64.deb`.
 2. Open the app. It is not code-signed, so see
    [Run the desktop app](#run-the-desktop-app) for the first-run step on your
-   OS. If no service is running, the first run installs
-   the companion service and your agents' hooks. Then it opens Settings.
-3. Connect the device with a USB data cable. In Settings, open the **Device**
-   tab. In the **Install over USB** row, select **Install v<version>**. The app
-   downloads the matching firmware release from GitHub, checks it, and writes it
-   to the device. The device restarts when the install finishes.
-4. In Settings, connect Wi-Fi on the **Device** tab if you want to untether the
-   device. Choose a character on the **Characters** tab.
+   OS. On a new installation, the app starts its local companion service and
+   opens the welcome screen. Select **Get Started**.
+3. Select your agents. If hooks need installation or an update, approve the
+   changes. Follow the short guide for each selected agent. The guide waits for real agent activity. You can
+   select **Set up later** without marking an agent as connected.
+4. Select a character.
+5. Select **Desktop only**, **Device only**, or **Both**. For a new device, connect a
+   USB data cable and select **Detect Device**. Confirm the supported Waveshare
+   model before firmware installation. The app downloads and checks the matching
+   release, installs it, and then installs your selected character. You can keep
+   compatible existing firmware or select **Use desktop for now**.
+6. Select **Finish** to open Settings. Configure Wi-Fi on the **Device** tab if
+   you want to untether the device.
 
-Use the same **Install v<version>** button later to install the firmware again or
-to repair the device. The character on your desktop follows the device
-([details](#run-the-desktop-app)).
+Setup resumes after an interruption. Existing installations do not receive a
+forced setup flow after an update. Use **Run setup wizard** in Settings to change
+your choices or continue deferred setup.
+Select a previously reached step in the top navigation to return to it.
+Saved choices stay intact. New steps unlock as you reach them, and navigation
+is disabled during an installation.
+Setup also blocks conflicting changes from other Settings windows or the CLI.
+If saved progress is damaged, the app opens a new setup flow and shows a recovery
+message. The damaged file is kept when new progress is saved. Existing hooks,
+characters, and device settings are not reset.
+If a selected character is no longer available, return to **Character**, select
+**Refresh characters**, and choose an available pack.
+Previously selected agents remain checked. If an agent already has hooks,
+unchecking it asks for approval before removing Agent Buddy hooks. Cancel keeps
+the agent selected. The coding agent itself is not uninstalled.
+
+If you run desktop setup again with a device connected over Wi-Fi, the wizard
+recognizes that connection. You can keep its firmware and install your selected
+character over Wi-Fi. First-time firmware installation still needs USB.
+The same USB device can reconnect on a new port after a character or firmware
+install. Setup keeps track of that device and saves its new port.
+The character button names the character it installs. It does not replace
+firmware. Firmware replacement is a separate option. Its confirmation dialog
+checks the supported board model and explains both installation stages.
+
+On Windows, detection includes Windows agents and running WSL distributions.
+Open a stopped distribution before selecting **Rescan agents**. Rescan checks
+running distributions again instead of waiting for the cached scan to expire.
+Approved hook removal includes WSL installations and may start stopped
+distributions to remove their hooks.
+
+To repair or replace firmware later, enable **Use a physical device** on the
+**Device** tab. Open **USB release install or recovery**, detect and select the
+device, then approve **Install v<version>**. The desktop character follows the
+device ([details](#run-the-desktop-app)).
 
 **Without the desktop app** (to change the code, or on Windows in WSL 2):
 
 1. Put the firmware on the device with `flash.py` from the release's
-   `esp32-agent-companion-v<version>-firmware.zip` asset. This needs
+   `agent-buddy-v<version>-firmware.zip` asset. This needs
    Python 3.10 or newer. Extract it, connect the device over USB, and run this
    in the extracted folder:
 
@@ -150,8 +187,8 @@ to repair the device. The character on your desktop follows the device
    newer:
 
    ```bash
-   git clone https://github.com/DanWahlin/esp32-agent-companion.git
-   cd esp32-agent-companion
+   git clone https://github.com/DanWahlin/agent-buddy.git
+   cd agent-buddy
    npm run setup      # installs agent hooks, starts the service, opens Settings
    npm run status     # should say: Connected over USB
    npm run settings   # opens the Settings page again at any time
@@ -173,7 +210,7 @@ it, or turn on sounds on the **Desktop** tab in Settings.
 ## Step 1: Flash the firmware
 
 The easiest way is the desktop app: open Settings, go to the **Device** tab, and
-click **Install v<version>** in the **Install over USB** row (see [Quick start](#quick-start)).
+open **USB release install or recovery**, and click **Install v<version>** (see [Quick start](#quick-start)).
 The steps below use `flash.py` instead, for computers without the desktop app.
 You don't need Arduino tools or the source code for them. If you'd rather build
 the firmware yourself, see [Build from source](docs/build-from-source.md).
@@ -188,8 +225,8 @@ the firmware yourself, see [Build from source](docs/build-from-source.md).
    newer Python from [python.org](https://www.python.org/downloads/) or with
    `brew install python`, then open a new terminal and check again.
 
-2. From [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest),
-   download `esp32-agent-companion-v<version>-firmware.zip` and extract it.
+2. From [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest),
+   download `agent-buddy-v<version>-firmware.zip` and extract it.
 3. Open a terminal in the extracted folder (it contains `flash.py`) and install
    the flashing tool:
 
@@ -257,16 +294,17 @@ The daemon connects your agents to the device and runs in the background.
 
 **With the desktop app.** Download the app and open it (see
 [Run the desktop app](#run-the-desktop-app)). If no daemon runs, the app installs
-the one it carries: the same service and hooks that setup below installs. It then
-opens Settings. Restart any agent sessions that were already open. On Linux, the
-serial port note below also applies.
+the one it carries. A new installation opens the setup flow before changing
+agent configuration. Hooks are installed only for agents you select and approve.
+Follow the selected-agent guides or defer them until later. On Linux, the serial
+port note below also applies.
 
 **From the repository.** With the device plugged in over USB, clone the
 repository and run setup:
 
 ```bash
-git clone https://github.com/DanWahlin/esp32-agent-companion.git
-cd esp32-agent-companion
+git clone https://github.com/DanWahlin/agent-buddy.git
+cd agent-buddy
 npm run setup
 ```
 
@@ -305,8 +343,10 @@ sudo usermod -aG dialout "$USER"
 <summary><strong>Windows (WSL 2)</strong></summary>
 
 The easiest way on Windows is the desktop app (see [Quick start](#quick-start)). Its
-service runs on Windows and installs hooks for agents on Windows and in running WSL 2
-distributions, and it uses the device's USB port with no extra steps.
+service runs on Windows. After approval, it installs selected agents' hooks on
+Windows and in running WSL 2 distributions. The setup dialog lists the affected
+configuration locations. The OpenClaw plugin does not yet connect from WSL.
+The Windows app uses the device's USB port with no extra steps.
 
 To run the daemon from a clone inside WSL instead, run your agent CLIs and the daemon
 **inside the same WSL 2 distribution**. Hooks installed in WSL can't see agents running
@@ -352,13 +392,21 @@ The page runs only on your computer and needs the private link that
 `npm run settings` opens, so other websites and devices can't reach it. The link
 survives restarts, so you can bookmark it.
 
-Some agents need a one-time step before their hooks run, such as approving the
-hooks in Codex. When that's the case, a **Finish setting up your agents** panel
-lists exactly what to do. Each step disappears once the daemon sees it's done. If
-there's no panel, you're all set.
+Some agents need a one-time step before their hooks run, such as approval with
+`/hooks` in Codex, folder trust in Claude Code, or a Gateway restart in OpenClaw.
+Desktop setup shows one guide per selected agent. Hermes can request approval
+when each event type first runs; one received event does not approve every hook.
+
+In Settings, expand **Finish connecting your agents** to see outstanding steps.
+Select **Open setup guides** to continue. The app distinguishes installed hooks
+from agent approval and received activity.
+
+The guides check all six supported agents automatically. Run the displayed test
+task in the agent. The guide updates when Agent Buddy receives real activity
+and the required approval is complete.
 
 <p align="center">
-  <img src="images/settings-first-run.png" alt="Settings page with a Finish setting up your agents panel listing steps for Claude Code and Codex, above the Status card" width="720">
+  <img src="images/settings-first-run.png" alt="Agent Buddy setup guide for connecting Codex and approving its hooks" width="720">
 </p>
 
 ## Step 4: Try it
@@ -370,8 +418,10 @@ tool, such as reading a file. The character should:
 2. Switch to **Needs attention** if the agent asks for your permission.
 3. Celebrate with **Complete** when the turn finishes, then return to **Idle**.
 
-The settings page's **Status** card shows the current state and which agent is
-driving it. If the character doesn't react, see
+The Settings overview shows the current state and which agent is
+driving it. Device address, network, and version information are in
+**Connection details and versions**. Select the **Device** tab to change
+**Connection mode** between Auto, Wi-Fi, and USB. If the character doesn't react, see
 [Troubleshooting](#troubleshooting).
 
 ## Using the device
@@ -412,8 +462,14 @@ change them.
 
 ## Agents
 
-Setup installs a hook for every agent it detects. Hooks only notify the daemon;
-if the daemon or device isn't running, your agents keep working normally.
+Command-line setup installs hooks for detected agents. Desktop setup installs
+only selected, approved hooks. Hooks notify the daemon; if the daemon or device
+is not running, your agents continue to work.
+
+When you select **Next** in desktop setup, Agent Buddy checks the selected hooks.
+Current hooks stay unchanged, including hooks that still need approval inside
+the agent. Setup asks for approval only to install missing hooks or update
+outdated hooks. The confirmation lists only configuration files that need changes.
 
 | Agent | Hook location | One-time step |
 | --- | --- | --- |
@@ -566,12 +622,12 @@ The device shows one line, for what is running now:
 - While no Copilot session runs but another agent runs, it shows `Tokens` only.
 - While no agent runs, it shows no line.
 
-The settings page's Status card shows each value that has usage. Large values get commas
+The Settings overview shows each value that has usage. Large values get commas
 (`AIC: 12,345`), then a short form (`Tokens: 1.2M`).
 
 Usage is on by default. On the settings page's Agents tab, use the **Show usage
 on the device** switch and choose the **Usage period**: **Today**, **This
-month**, or **Active sessions**. The Status card shows the same values in the
+month**, or **Active sessions**. The Settings overview shows the same values in the
 **Usage** box. The desktop app shows the lines too.
 
 The device needs firmware with protocol 8 or later. Older firmware does not show
@@ -582,14 +638,18 @@ usage, but everything else works.
 The device holds one character at a time. The settings page's **Characters** tab
 shows each character you can install, with the current one marked **Installed**.
 
+The app and release archives ship only **Copilot**, **OpenClaw**, and **Claude**.
+Add-on packs are distributed separately and appear after you add them in Settings.
+
 <p align="center">
   <img src="images/settings-characters.png" alt="Characters card showing the installed Copilot character and the OpenClaw character with an Install button" width="720">
 </p>
 
 - Select **Install** to switch characters. A progress bar tracks the transfer,
   which takes about a minute, and the device restarts when it's done.
-- Select **Add character…** to upload your own `.acpk` pack. Packs you've added
-  have a **Remove** button.
+- Select **Add character pack** to upload your own `.acpk` pack. To remove a pack
+  you've added, select the **×** in the upper-right corner of its card. The installed
+  character has no **×** until you install another one.
 
 Or switch from the command line:
 
@@ -601,9 +661,9 @@ npm run character copilot      # Switch back to Copilot
 ```
 
 You can also pass the path to any `.acpk` pack, such as one from a release's
-`esp32-agent-companion-v<version>-characters.zip` asset. The daemon keeps a copy
-with the characters you added, as **Add character…** does, so the desktop app can
-show it and the settings page lists it with a **Remove** button. The daemon remembers
+`agent-buddy-v<version>-characters.zip` asset. The daemon keeps a copy
+with the characters you added, as **Add character pack** does, so the desktop app can
+show it and the settings page lists it with a **×** remove button. The daemon remembers
 your choice. If an install is interrupted, the device shows **No character installed** until the daemon
 reinstalls your character, which it does as soon as the device reconnects.
 
@@ -623,14 +683,14 @@ needs a 2.4 GHz network.
   <img src="images/settings-wifi.png" alt="Wi-Fi card with network name and password fields, a Connect device button, and the Auto, Wi-Fi only, and USB only connection modes" width="720">
 </p>
 
-1. Plug the device in over USB and set **Device connection** (on the **Status**
-   card) to **Auto**.
+1. Plug the device in over USB and set **Connection mode** to **Auto**.
 2. Choose your network from **Nearby network**, or type its name in **Or type a
    network name** if it's hidden or not listed. Enter the password, then select
    **Connect device**. The daemon sends the credentials over USB and pairs with the
    device automatically. The list comes from the device's own radio, so it shows
    only 2.4 GHz networks the device can join. Select **Scan** to refresh it.
-   The Status card shows **(not connected)** after the network name until the device
+   In the Settings overview, open **Connection details and versions** to check
+   the network. **(not connected)** appears after the network name until the device
    joins. If it stays there, check the password and that the network has 2.4 GHz turned on.
 3. Unplug the device from your computer and power it from any USB source. It
    keeps working over Wi-Fi.
@@ -655,8 +715,8 @@ npm run pair 12345678
 
 The setup network and code expire after ten minutes.
 
-**Connection modes.** Choose how the daemon reaches the device with **Device
-connection** on the settings page's **Status** card, or with `npm run connection auto|wifi|usb`:
+**Connection modes.** Choose how the daemon reaches the device with **Connection
+mode** on the settings page's **Device** tab, or with `npm run connection auto|wifi|usb`:
 
 | Mode | Behavior |
 | --- | --- |
@@ -761,7 +821,7 @@ a trusted network.
 
 **Companion daemon.** If the desktop app installed it, install the new release
 of the app and open it: the app updates its copy of the service. The settings
-page's Status card shows the **Versions** of the service and the desktop app,
+page's **Connection details and versions** shows the **Versions** of the service and the desktop app,
 and tells you when they are different. If you set it
 up from the repository, run this in the repository folder:
 
@@ -775,13 +835,15 @@ service, and installs hooks for any agents you've added. New or updated
 characters show up on the settings page on their own.
 
 **Firmware.** Reflash only when a release's notes mention firmware changes. With
-the desktop app, update the app first. Then connect the device over USB, open the
-**Device** tab in Settings, and click **Install v<version>** in the
-**Install over USB** row. The button installs the firmware release that matches
-the companion service's version. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
-with the new release's `esp32-agent-companion-v<version>-firmware.zip`. Both
-ways keep the device's Wi-Fi settings but put the Copilot character back.
-Reinstall your character afterward from the settings page or with `npm run character <name>`.
+the desktop app, update the app first. When the device runs other firmware than
+the app's release, the **Device** tab shows a dot and **Device firmware** shows
+**Update available**. Connect the device over USB and click **Update to v<version>**.
+The button installs the firmware release that matches the companion service's version.
+**USB release install or recovery** is only for a new device or one that does not answer. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
+with the new release's `agent-buddy-v<version>-firmware.zip`. Both
+ways keep the device's Wi-Fi settings and write the Copilot character. When the
+desktop app installs the firmware, it then installs your previous character again.
+If you flash without the desktop app, reinstall your character afterward from the settings page or with `npm run character <name>`.
 
 **Firmware over Wi-Fi.** When the device is on Wi-Fi and has firmware with
 protocol 9 or later, open the settings page's **Device** tab. The **Device
@@ -850,19 +912,25 @@ Run these from the repository folder.
 </details>
 
 <details>
-<summary><strong>Install over USB fails or is not available</strong></summary>
+<summary><strong>A firmware install over USB fails or is not available</strong></summary>
 
 - **Needs the desktop app:** the desktop app writes the firmware. Open it, then
   open Settings again. An older desktop app cannot install firmware; install the
   latest one.
 - **No BOOT press needed:** a normal USB install resets the device into download
-  mode itself. Press BOOT only for the recovery step below.
+  mode itself. Press BOOT only for the steps below.
+- **Couldn't connect to the ESP32-S3:** the device did not go into download mode
+  by itself. Unplug the USB cable. Hold BOOT, connect the cable, and release BOOT
+  after 2 seconds. The screen stays dark. Then click **Update to v<version>**, or
+  open **USB release install or recovery**, click **Detect**, and install.
+  If the screen stays dark after the install, unplug the cable and connect it
+  again without BOOT. When the device starts, the app installs your character again.
 - **No USB device:** use a USB data cable, and close any serial monitor that uses
   the port.
 - **Download failed:** the computer must reach GitHub. The app downloads the
   release that matches the companion service's version.
 - **Connection problems while it writes:** disconnect the USB cable. Hold BOOT,
-  connect the cable, then release BOOT. Click **Install v<version>** again. If it
+  connect the cable, then release BOOT. Install again. If it
   still fails, use [Step 1](#step-1-flash-the-firmware) or the
   [Waveshare board guide](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75).
 
@@ -994,18 +1062,21 @@ and no service answers within 10 seconds, it installs the one it carries:
   service's data folder (`~/Library/Application Support/ESP32 Agent Companion/runtime`
   on macOS, `~/.local/state/esp32-agent-companion/runtime` on Linux,
   `%LOCALAPPDATA%\ESP32 Agent Companion\runtime` on Windows).
-- From that copy, it installs your agents' hooks and the background service
+- From that copy, it installs the background service
   (a LaunchAgent, a systemd user service, or on Windows a `Run` registry value
   that starts the app's own launcher), as `npm run setup` does. The service
   then starts when you sign in, with or without the app.
-- It opens Settings the first time.
+- A new installation opens the welcome screen. Agent selection and approval come
+  before hook installation. The app opens Settings after you select **Finish**.
+- Incomplete setup resumes on launch. Updates preserve approved agent choices
+  and do not install hooks for newly detected, unselected agents.
 
 When you update the app, it updates its copy of the service. If a service from
 a clone of the repository runs, the app leaves it alone and follows it. To
 change back to the repository's service, run `npm run setup` in the clone.
 On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
 
-- **Download it** from [Releases](https://github.com/DanWahlin/esp32-agent-companion/releases/latest).
+- **Download it** from [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest).
   The app is not code-signed. Your OS can need one extra step:
 
   | OS | File | First run |
@@ -1014,7 +1085,8 @@ On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
   | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for an Arm PC | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
   | Linux | `agent-companion-desktop-<version>-linux-x86_64.AppImage` or `agent-companion-desktop-<version>-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./agent-companion-desktop-<version>-linux-amd64.deb`. |
 
-  It has no Dock or taskbar button: use its menu bar or tray icon.
+  The running app appears in the macOS Dock or the taskbar on Windows and
+  supported Linux desktops. Its menu bar or tray icon remains available.
 
   On Linux:
   - **Sounds** use GStreamer. The AppImage includes it. The `.deb` installs it.
@@ -1023,8 +1095,8 @@ On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
     (Ubuntu) or `gst-plugins-base gst-plugins-good` (Arch, Omarchy).
   - **GNOME shows no tray icons** without an extension. Install
     [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/)
-    (Ubuntu includes it). Without the icon, open the app again to show a hidden
-    character, and use the upper button on the case for Settings.
+    (Ubuntu includes it). Without the tray icon, use the app's taskbar entry
+    or open the app again.
   - **The service is a systemd user service.** On a system without systemd,
     the install stops and tells you the command that runs the service in a
     terminal.
@@ -1068,9 +1140,17 @@ The window has no frame and is always on top.
 - **Settings opens in a window of the app**, not in a browser tab. If the
   Settings window is already open, the app brings it to the front. To use a
   browser, run `npm run settings`.
-- **To bring it back after Hide**, open the app again (from Applications, Spotlight
-  or your app launcher), or use its tray icon (the menu bar on macOS). If your
-  menu bar is too full, macOS hides the icon, so opening the app again always works.
+- **Use the Dock or taskbar** to return to the running app. An open Settings
+  window takes priority, including when it is minimized. The window keeps
+  your current tab and setup progress.
+  On Windows, Settings is the only taskbar window while it is open. After
+  Settings closes, the character's taskbar entry returns.
+- **To bring the character back after Hide**, use **Show Agent Companion**
+  in the tray menu, or run the app with `--show`. On Windows and Linux
+  desktops with a taskbar, Hide minimizes the character window so the app
+  remains available. On Hyprland, including Omarchy, Hide removes the window
+  and keeps the menu-bar tray entry.
+  On macOS, the Dock entry remains while the app runs.
 - **The tray icon** has **Show Agent Companion** or **Hide Agent Companion**,
   **Settings**, **Quit Agent Companion** and **Quit and Stop Companion Service**.
   Choose the character in Settings.
@@ -1079,6 +1159,10 @@ The window has no frame and is always on top.
 
 Hide is for now; to keep it off the desktop for good, turn off **Show the
 character on the desktop** in Settings.
+If the desktop character is turned off, selecting the app entry opens Settings
+instead of turning the character on. On macOS 13 or later, the character can
+still appear over other apps' full-screen Spaces. Earlier macOS versions keep
+the Dock entry but cannot show this window over another app's full-screen Space.
 
 **Quitting.** If this computer has never used a device, **Quit** and **Close**
 also stop the companion service, because it has nothing to do without the app.
@@ -1135,8 +1219,9 @@ reaction.
 
 Packs must match the firmware's animation model: 13 tracks, 24 poses, and 5 blink
 levels at 412 x 352. They use one of two layouts, Copilot-style base frames with
-blink patches or OpenClaw-style full frames. Each character lives in
-`characters/<id>/` with a `character.json`. See [characters/README.md](characters/README.md)
+blink patches or OpenClaw-style full frames. Each character has a `character.json`.
+Built-in sources live in `characters/<id>/`. Keep add-on sources and assets in a
+separate private repository. See [characters/README.md](characters/README.md)
 and `tools/character_pack.py` for the format. To check a pack:
 
 ```bash

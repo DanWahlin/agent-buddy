@@ -402,7 +402,19 @@ def discover_characters(root=ROOT):
     base = root / CHARACTERS
     if not base.is_dir():
         raise PackError("characters/ does not exist.")
-    return [path for path in sorted(base.iterdir()) if (path / "character.json").is_file()]
+    folders = [path for path in sorted(base.iterdir()) if path.is_dir()]
+    characters = [path for path in folders if (path / "character.json").is_file()]
+    roster = base / "built-in.json"
+    if roster.is_file():
+        ids = load_json(roster)
+        if (not isinstance(ids, list) or not ids
+                or any(not isinstance(pack_id, str) or not ID_PATTERN.fullmatch(pack_id) for pack_id in ids)
+                or len(set(ids)) != len(ids)):
+            raise PackError("characters/built-in.json must list unique valid character ids.")
+        if {path.name for path in folders} != set(ids) or len(characters) != len(ids):
+            raise PackError("Built-in character sources must match characters/built-in.json. "
+                            "Keep add-on character sources in a separate repository.")
+    return characters
 
 
 def write_if_changed(path, data):

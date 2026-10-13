@@ -16,7 +16,10 @@ else:
     from flash_release import IMAGE_NAMES, REQUIREMENTS, WARNING, sha256, validate_identity, validate_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
-
+# The desktop daemon downloads <RELEASE_NAME>-v<version>-firmware.zip from RELEASE_REPOSITORY.
+# Keep these the same as releaseName and releaseRepository in daemon/src/firmware-release.ts.
+RELEASE_NAME = "agent-buddy"
+RELEASE_REPOSITORY = "DanWahlin/agent-buddy"
 
 def checksum_file(files):
     return "".join(f"{sha256(data)}  {name}\n" for name, data in sorted(files.items())).encode("ascii")
@@ -32,17 +35,22 @@ def write_zip(path, files):
             archive.writestr(info, data)
 
 
-def package(root, version, name="esp32-agent-companion", output=None,
-            repository="DanWahlin/esp32-agent-companion"):
+def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_REPOSITORY):
     root = Path(root)
     validate_identity(name, version)
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository, flags=re.ASCII):
         raise ValueError("Repository must be an owner/repository pair.")
     firmware_artifacts.check(root)
+    board_id = json.loads((root / firmware_artifacts.BUNDLE).read_text())["inputs"]["board"]
+    board_data = firmware_artifacts.boards.load()
+    board = board_data["boards"][board_id]
     app, assets = firmware_artifacts.layout(root)
+    if not (root / character_pack.CHARACTERS / "built-in.json").is_file():
+        raise ValueError("characters/built-in.json is required for release packaging.")
     characters = {}
-    for path in sorted((root / character_pack.OUTPUT).glob("*.acpk")):
-        pack_id = path.stem
+    for source in character_pack.discover_characters(root):
+        pack_id = source.name
+        path = root / character_pack.OUTPUT / f"{pack_id}.acpk"
         data = path.read_bytes()
         if character_pack.decode(data, assets["size"])["id"] != pack_id:
             raise ValueError(f"Character pack {pack_id}.acpk has a different id.")
@@ -67,8 +75,8 @@ def package(root, version, name="esp32-agent-companion", output=None,
         data = path.read_bytes()
         files[filename] = data
         images.append(dict(file=filename, offset=offset, max_size=budget, size=len(data), sha256=sha256(data)))
-    manifest = dict(schema_version=1, name=name, version=version, chip="esp32s3", flash_size="16MB",
-                    asset_sha256=images[-1]["sha256"], images=images)
+    manifest = dict(schema_version=1, name=name, version=version, board=board_id,
+                    chip=board["chip"], flash_size=board["flash_size"], asset_sha256=images[-1]["sha256"], images=images)
     validate_manifest(manifest, files)
     files["manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     files["flash.py"] = (root / "tools/flash_release.py").read_bytes()
@@ -76,7 +84,10 @@ def package(root, version, name="esp32-agent-companion", output=None,
     if files["requirements.txt"] != REQUIREMENTS.encode():
         raise ValueError(f"requirements-flash.txt must be exactly: {REQUIREMENTS.strip()}")
     files["INSTALL.txt"] = (
-        f"{name} v{version} — ESP32-S3 / 16MB flash\n\n"
+        f"{name} v{version} — {board['name']} ({board_id})\n"
+        f"Chip: {board['chip']} / {board['flash_size']} flash\n"
+        f"Flash this firmware only to: {board.get('models') or board['name']}.\n"
+        "Firmware for a different board does not work and can stop the device until it is flashed again.\n\n"
         "Download both ZIPs and SHA256SUMS from a trusted release:\n"
         f"https://github.com/{repository}/releases/tag/v{version}\n"
         "Compare the ZIP SHA256 hashes with that release's SHA256SUMS before extracting.\n"
@@ -111,7 +122,9 @@ def package(root, version, name="esp32-agent-companion", output=None,
     files["SHA256SUMS"] = checksum_file(files)
     output = Path(output) if output is not None else root / "build/release"
     output.mkdir(parents=True, exist_ok=True)
-    firmware_zip = output / f"{name}-v{version}-firmware.zip"
+    # The default board keeps the original name, which the companion daemon downloads.
+    board_suffix = "" if board_id == board_data["default"] else f"-{board_id}"
+    firmware_zip = output / f"{name}-v{version}{board_suffix}-firmware.zip"
     characters_zip = output / f"{name}-v{version}-characters.zip"
     write_zip(firmware_zip, files)
     write_zip(characters_zip, characters)
@@ -124,10 +137,10 @@ def package(root, version, name="esp32-agent-companion", output=None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--name", default="esp32-agent-companion", help="Lowercase ASCII release slug")
+    parser.add_argument("--name", default=RELEASE_NAME, help="Lowercase ASCII release slug")
     parser.add_argument("--version", required=True, help="Stable SemVer without a v prefix")
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
-    parser.add_argument("--repository", default="DanWahlin/esp32-agent-companion",
+    parser.add_argument("--repository", default=RELEASE_REPOSITORY,
                         help="Owner/repository for INSTALL links")
     args = parser.parse_args(argv)
     try:

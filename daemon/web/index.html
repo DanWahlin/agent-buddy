@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Companion Settings</title>
+  <title>Agent Buddy</title>
   <script src="/theme.js"></script>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/onboarding.css">
   <link rel="icon" href="/logo.svg" type="image/svg+xml">
 </head>
 <body>
@@ -13,14 +14,227 @@
     <div class="brand">
       <img class="logo" src="/logo.svg" alt="" width="44" height="44">
       <div>
-        <h1>Agent Companion</h1>
+        <h1>Agent Buddy</h1>
         <p id="summary">Connecting to the companion service…</p>
       </div>
     </div>
-    <input id="theme-toggle" class="toggle theme-toggle" type="checkbox" role="switch" aria-label="Dark theme">
+    <div class="header-actions">
+      <button type="button" id="setup-restart" class="secondary" hidden>Run setup wizard</button>
+      <input id="theme-toggle" class="toggle theme-toggle" type="checkbox" role="switch" aria-label="Dark theme">
+    </div>
   </header>
 
-  <main>
+  <main id="onboarding" class="onboarding" aria-label="Agent Buddy setup" hidden>
+    <nav class="setup-progress" aria-label="Setup progress">
+      <ol>
+        <li data-step="welcome"><button type="button" id="ob-step-welcome" data-action="navigate-step" data-target-step="welcome">Welcome</button></li>
+        <li data-step="agents"><button type="button" id="ob-step-agents" data-action="navigate-step" data-target-step="agents">Agents</button></li>
+        <li data-step="character"><button type="button" id="ob-step-character" data-action="navigate-step" data-target-step="character">Character</button></li>
+        <li data-step="display"><button type="button" id="ob-step-display" data-action="navigate-step" data-target-step="display">Display</button></li>
+        <li data-step="firmware"><button type="button" id="ob-step-firmware" data-action="navigate-step" data-target-step="firmware">Device</button></li>
+        <li data-step="complete"><button type="button" id="ob-step-complete" data-action="navigate-step" data-target-step="complete">Ready</button></li>
+      </ol>
+    </nav>
+
+    <section class="onboard-screen welcome-screen" data-screen="welcome">
+      <div class="welcome-intro">
+        <h2 tabindex="-1">Meet <span class="gradient-text">Agent Buddy.</span></h2>
+        <p class="onboard-lede">See what your AI agents are doing.</p>
+      </div>
+      <div class="buddy-hero">
+        <div class="welcome-device">
+          <img id="ob-welcome-graphic" src="/welcome-device.webp" alt="Agent Buddy with the Copilot character in its round device case" width="600" height="600">
+          <video id="ob-welcome-animation" src="/welcome-idle.mp4" muted loop playsinline preload="metadata" aria-hidden="true"></video>
+        </div>
+        <button type="button" id="ob-welcome-play" class="secondary" hidden>Play animation</button>
+      </div>
+    </section>
+
+    <section class="onboard-screen" data-screen="agents" hidden>
+      <div id="ob-agent-selection">
+        <p class="eyebrow">Your agents. One buddy.</p>
+        <h2 tabindex="-1">Choose your agents.</h2>
+        <p class="onboard-lede">Select the agents you want to connect. You can change this later in Settings.</p>
+        <div id="ob-agents" class="agent-choice-grid" aria-label="Supported agents"></div>
+        <p id="ob-agent-result" class="guide-state" role="status" hidden></p>
+        <div class="choice-help">
+          <p class="hint">Agent Buddy uses small commands called hooks to receive activity from your selected agents. You can change your selection here. We will ask before installing, updating, or removing hooks.</p>
+          <details class="agent-connection-help">
+            <summary>How Agent Buddy works</summary>
+            <p>Agent Buddy automatically starts a background service to monitor your selected agents.</p>
+            <p>No account or subscription is required. Agent activity stays on your computer.</p>
+          </details>
+          <button type="button" class="secondary" data-action="rescan-agents">Rescan agents</button>
+        </div>
+      </div>
+      <div id="ob-agent-guide" hidden>
+        <p id="ob-guide-progress" class="eyebrow"></p>
+        <h2 id="ob-guide-title" tabindex="-1"></h2>
+        <div class="guide-card card">
+          <p id="ob-guide-state" class="guide-state" role="status"></p>
+          <ol id="ob-guide-steps" class="guide-steps"></ol>
+          <div id="ob-test-prompt" class="copy-field">
+            <div><span class="hint">Send a task that uses a tool</span><code>List the files in this folder.</code></div>
+            <button type="button" class="secondary" data-copy="List the files in this folder.">Copy prompt</button>
+          </div>
+          <p id="ob-guide-note" class="hint"></p>
+          <p id="ob-hook-error" class="notice" role="alert" hidden></p>
+          <button type="button" class="secondary" data-action="retry-hooks" id="ob-retry-hooks" hidden>Retry hook installation</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="onboard-screen" data-screen="character" hidden>
+      <p class="eyebrow">Make it yours</p>
+      <h2 tabindex="-1">Choose your buddy.</h2>
+      <p class="onboard-lede">Every character works with every supported agent.</p>
+      <div id="ob-characters" class="character-choice-grid" aria-label="Characters"></div>
+      <p id="ob-character-result" class="guide-state waiting" role="status" hidden></p>
+      <div class="choice-help"><button type="button" class="secondary" data-action="refresh-characters">Refresh characters</button></div>
+      <p class="hint centered">We will install your choice after the device firmware is ready.</p>
+    </section>
+
+    <section class="onboard-screen" data-screen="display" hidden>
+      <p class="eyebrow">At your desk</p>
+      <h2 tabindex="-1">Where will your buddy live?</h2>
+      <p class="onboard-lede">A device is optional. The desktop app works on its own.</p>
+      <div class="display-choice-grid">
+        <label class="choice-card display-choice" data-display="desktop">
+          <input type="radio" name="companion-display" value="desktop">
+          <span class="display-symbol" aria-hidden="true"><span id="ob-choice-desktop-scene" class="ready-connection-scene choice-scene"></span></span>
+          <strong>Desktop only</strong><span class="hint">No device needed.</span><span class="selection-mark" aria-hidden="true"></span>
+        </label>
+        <label class="choice-card display-choice" data-display="device">
+          <input type="radio" name="companion-display" value="device">
+          <span class="display-symbol" aria-hidden="true"><span id="ob-choice-device-scene" class="ready-connection-scene choice-scene"></span></span>
+          <strong>Device only</strong><span class="hint">Hide the desktop character.</span><span class="selection-mark" aria-hidden="true"></span>
+        </label>
+        <label class="choice-card display-choice" data-display="both">
+          <input type="radio" name="companion-display" value="both">
+          <span class="display-symbol" aria-hidden="true"><span id="ob-choice-both-scene" class="ready-connection-scene choice-scene"></span></span>
+          <strong>Both</strong><span class="hint">Desktop and device together.</span><span class="selection-mark" aria-hidden="true"></span>
+        </label>
+      </div>
+      <div class="device-detection">
+        <p id="ob-detection-message" class="detection-message" role="status">Connect your device, then select Detect Device.</p>
+        <div id="ob-display-scene" class="ready-connection-scene"></div>
+        <p id="ob-display-preview-fallback" class="hint" hidden>Still character preview unavailable.</p>
+        <div id="ob-device-detection" hidden>
+        <p class="supported-device"><strong>Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C</strong><br><span id="ob-device-connection-hint">Connect it with a USB data cable. A charge-only cable cannot detect the device.</span></p>
+        <button type="button" class="secondary" data-action="detect-device">Detect Device</button>
+        <label id="ob-port-label" class="port-field" hidden>Select the USB device
+          <select id="ob-port"></select>
+        </label>
+        <details class="device-help"><summary>Device not found?</summary>
+          <p>For a paired Wi-Fi device, keep it powered on and on the same network as this computer. Agent Buddy checks its connection automatically.</p>
+          <p>Try another USB data cable or USB port. Close any serial monitor that uses the device.</p>
+          <p>On Linux, check serial-port permissions. On Windows, connect USB to the Windows desktop app, not to a WSL terminal.</p>
+          <p>USB detection cannot confirm the board model. Only install firmware on the supported Waveshare device.</p>
+        </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="onboard-screen" data-screen="firmware" hidden>
+      <p class="eyebrow">Bring your device to life</p>
+      <h2 tabindex="-1">Prepare your device.</h2>
+      <p id="ob-firmware-lede" class="onboard-lede">Keep the USB cable connected until firmware and character installation finish.</p>
+      <div class="card device-install-card">
+        <div id="ob-firmware-scene" class="ready-connection-scene"></div>
+        <p id="ob-firmware-preview-fallback" class="hint" hidden>Still character preview unavailable.</p>
+        <p id="ob-firmware-state" class="guide-state" role="status"></p>
+        <p id="ob-character-install-note" class="hint" hidden></p>
+        <div id="ob-device-progress" class="install" hidden>
+          <div class="install-head"><strong id="ob-device-phase"></strong><span id="ob-device-percent"></span></div>
+          <div id="ob-device-bar" class="bar" role="progressbar" aria-labelledby="ob-device-phase" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+        </div>
+        <div id="ob-device-actions" class="device-install-actions">
+          <button type="button" id="ob-install-character" data-action="install-character" hidden>Install character</button>
+          <button type="button" class="secondary" data-action="detect-device">Detect Device</button>
+        </div>
+        <details id="ob-firmware-options" class="device-help firmware-options" hidden>
+          <summary id="ob-firmware-options-title">Install firmware</summary>
+          <p id="ob-firmware-plan" class="hint"></p>
+          <div class="device-install-actions">
+            <button type="button" id="ob-install-firmware" data-action="install-firmware">Install firmware</button>
+          </div>
+          <p class="hint">Firmware download needs internet access. The app includes the installer; Python and Node.js are not required.</p>
+          <p class="firmware-warning">Installing firmware replaces the device firmware and partition table. Back up anything you need from other firmware first.</p>
+        </details>
+        <details id="ob-device-help" class="device-help"><summary>Connection or download failed?</summary>
+          <p id="ob-firmware-retry-hint">Check your internet connection and USB data cable. Close serial monitors. If the board does not respond, hold BOOT while you reconnect USB, then release BOOT and detect it again.</p>
+          <p>If firmware installed but character setup failed, retry only the character installation.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="onboard-screen complete-screen" data-screen="complete" hidden>
+      <p class="eyebrow">Your buddy is ready</p>
+      <h2 tabindex="-1">Make something <span class="gradient-text">great.</span></h2>
+      <p class="onboard-lede">Agent Buddy will be here when your agents need you.</p>
+      <div id="ob-summary" class="setup-summary">
+        <figure class="ready-displays" aria-labelledby="ob-ready-display-title">
+          <div id="ob-ready-scene" class="ready-connection-scene">
+          <svg id="ob-ready-connection-art" class="connection-art ready-connection-art" viewBox="0 0 620 170" role="img" aria-label="Your chosen display">
+            <defs>
+              <linearGradient id="ob-ready-wallpaper" x1="0" y1="0" x2="1" y2="1">
+                <stop class="ready-wallpaper-start" offset="0"/><stop class="ready-wallpaper-end" offset="1"/>
+              </linearGradient>
+              <clipPath id="ob-ready-desktop-clip"><circle cx="208" cy="80" r="24.9627"/></clipPath>
+            </defs>
+            <rect class="laptop-screen" x="44" y="10" width="220" height="112" rx="10"/>
+            <rect class="laptop-display" x="56" y="22" width="196" height="88" rx="4" fill="url(#ob-ready-wallpaper)"/>
+            <circle class="laptop-camera" cx="154" cy="16" r="1.5"/>
+            <path class="laptop-hinge" d="M56 120h196"/>
+            <path class="laptop-deck" d="M44 122h220l22 34H22z"/>
+            <path class="laptop-keyboard" d="M66 128h176l10 12H56z"/>
+            <path class="laptop-keys" d="M63 132h182m-185 4h188M83 128l-2 12m24-12-1 12m23-12v12m23-12v12m23-12v12m23-12 1 12m22-12 2 12"/>
+            <path class="laptop-trackpad" d="M133 143h42l4 9h-50z"/>
+            <path class="laptop-base" d="M22 156h264l-8 7H30z"/>
+            <path class="laptop-base-highlight" d="M34 158h240"/>
+            <path class="usb-wire" d="M288 142h35c24 0 24 16 54 16h98q12 0 12-16"/>
+            <rect class="usb-plug" x="273" y="137" width="15" height="10" rx="2"/>
+            <g class="wifi-link" aria-hidden="true"><path d="M315 77q36-32 72 0m-61 14q25-22 50 0m-38 14q13-11 26 0"/><circle cx="351" cy="119" r="3"/></g>
+            <g id="ob-ready-desktop-preview" class="ready-desktop-app" aria-hidden="true">
+              <text x="70" y="46" class="ready-desktop-title">Agent Buddy</text>
+              <image class="ready-desktop-shell" x="178" y="50" width="60" height="60" href="/device-shell.webp"/>
+              <image id="ob-ready-desktop-character" x="183.034" y="55.034" width="49.926" height="49.926" clip-path="url(#ob-ready-desktop-clip)" preserveAspectRatio="xMidYMid meet" hidden/>
+            </g>
+          </svg>
+          <div id="ob-ready-device-preview" class="ready-device" aria-hidden="true">
+            <img id="ob-ready-device-shell" src="/device-shell.webp" alt="">
+            <div class="ready-device-screen">
+              <img id="ob-ready-device-character" alt="" hidden>
+              <canvas id="ob-ready-device-animation" aria-hidden="true" hidden></canvas>
+            </div>
+          </div>
+          </div>
+          <figcaption><strong id="ob-ready-display-title"></strong></figcaption>
+          <div class="ready-display-states">
+            <span id="ob-ready-desktop-state"></span>
+            <span id="ob-ready-device-state" hidden></span>
+          </div>
+          <p id="ob-ready-preview-fallback" class="hint" hidden>Still character preview unavailable.</p>
+        </figure>
+      </div>
+      <section class="ready-agents" aria-labelledby="ob-ready-agents-title">
+        <div class="ready-agents-heading"><h3 id="ob-ready-agents-title">Your agents</h3><p id="ob-ready-agents-state"></p></div>
+        <ul id="ob-ready-agents" class="ready-agent-grid"></ul>
+        <p id="ob-ready-agents-empty" class="hint centered" hidden>Add agents in Settings when you are ready.</p>
+      </section>
+      <p id="ob-pending-summary" class="hint"></p>
+      <p class="hint">Selecting Finish opens the Settings.</p>
+    </section>
+
+    <p id="ob-error" class="notice onboard-error" role="alert" hidden></p>
+    <footer class="onboard-footer">
+      <button type="button" id="ob-back" class="secondary">Back</button>
+      <button type="button" id="ob-skip" class="text-button">Set up later</button>
+      <button type="button" id="ob-next">Get Started</button>
+    </footer>
+  </main>
+
+  <main id="settings-content" hidden>
     <p id="token-error" class="notice" hidden>
       <strong id="token-error-title">This page needs its private link.</strong>
       Run <code>npm run settings</code> from the repository folder. It opens this page with the link that
@@ -28,48 +242,41 @@
     </p>
 
     <section id="setup" class="card setup" aria-labelledby="setup-title" hidden>
-      <h2 id="setup-title">Finish setting up your agents</h2>
+      <details class="setup-inline">
+      <summary id="setup-title">Finish connecting your agents</summary>
       <p class="hint">These go away on their own once each step is done.</p>
       <ol id="setup-steps" class="setup-steps"></ol>
+      <button type="button" class="secondary" id="setup-guides">Open setup guides</button>
+      </details>
     </section>
 
-    <section class="card" aria-labelledby="status-title">
-      <h2 id="status-title">Status</h2>
+    <section class="card status-card" aria-labelledby="status-title">
+      <h2 id="status-title" class="visually-hidden">Status</h2>
       <dl class="facts">
-        <div><dt>Device connection</dt><dd id="fact-connection">—</dd></div>
+        <div><dt>Activity</dt><dd id="fact-state">—</dd></div>
+        <div><dt>Device</dt><dd id="fact-connection">—</dd></div>
         <div><dt>Usage</dt><dd id="fact-usage">—</dd></div>
-        <div><dt>State</dt><dd id="fact-state">—</dd></div>
-        <div><dt>Versions</dt><dd id="fact-versions">—</dd></div>
       </dl>
-      <div class="connection-control">
-        <span id="modes-label" class="control-label">Device connection:</span>
-        <span class="help" id="mode-help">
-          <button type="button" class="help-button" aria-label="About device connection" aria-describedby="mode-hint">?</button>
-          <span role="tooltip" id="mode-hint" class="tooltip">
-            <span data-mode="auto"><strong>Auto:</strong> Uses USB when the cable is connected, otherwise Wi-Fi.</span>
-            <span data-mode="wifi"><strong>Wi-Fi:</strong> Always uses Wi-Fi. A connected USB cable only provides power.</span>
-            <span data-mode="usb"><strong>USB:</strong> Only uses USB.</span>
-          </span>
-        </span>
-        <div class="segmented" role="radiogroup" aria-labelledby="modes-label" aria-describedby="mode-hint" id="modes">
-          <button type="button" role="radio" aria-checked="false" data-mode="auto">Auto</button>
-          <button type="button" role="radio" aria-checked="false" data-mode="wifi">Wi-Fi</button>
-          <button type="button" role="radio" aria-checked="false" data-mode="usb">USB</button>
-        </div>
-      </div>
+      <details class="diagnostics"><summary>Connection details and versions</summary>
+        <dl class="facts">
+          <div><dt>Device address</dt><dd id="fact-address">—</dd></div>
+          <div><dt>Wi-Fi network</dt><dd id="fact-network">—</dd></div>
+          <div><dt>Versions</dt><dd id="fact-versions">—</dd></div>
+        </dl>
+      </details>
     </section>
 
     <div class="tabs" role="tablist" aria-label="Settings">
       <button type="button" role="tab" id="tab-characters" aria-controls="panel-characters" aria-selected="true">Characters</button>
       <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="false" tabindex="-1">Agents</button>
-      <button type="button" role="tab" id="tab-wifi" aria-controls="panel-wifi" aria-selected="false" tabindex="-1">Device</button>
+      <button type="button" role="tab" id="tab-wifi" aria-controls="panel-wifi" aria-selected="false" tabindex="-1">Device<span id="device-update-badge" class="update-dot" hidden><span class="visually-hidden">, firmware update available</span></span></button>
       <button type="button" role="tab" id="tab-desktop" aria-controls="panel-desktop" aria-selected="false" tabindex="-1">Desktop</button>
     </div>
 
     <section id="panel-characters" class="card panel" role="tabpanel" aria-labelledby="tab-characters" tabindex="0">
       <div class="card-head">
         <p class="hint">Install a character on the device, or add your own <code>.acpk</code> file.</p>
-        <label class="button secondary" for="upload">Add character…</label>
+        <label class="button secondary" for="upload">Add character pack</label>
         <input id="upload" type="file" accept=".acpk" class="visually-hidden">
       </div>
       <div id="install" class="install" hidden>
@@ -86,7 +293,7 @@
     </section>
 
     <section id="panel-agents" class="card panel" role="tabpanel" aria-labelledby="tab-agents" tabindex="0" hidden>
-      <section class="group usage-group" aria-labelledby="usage-title">
+      <section class="group" aria-labelledby="usage-title">
         <div class="group-head">
           <h3 id="usage-title">AI credits and tokens</h3>
           <span id="usage-preview" class="usage-preview" aria-live="polite"></span>
@@ -140,12 +347,34 @@
           </span>
           <input id="badges-toggle" class="toggle" type="checkbox" role="switch">
         </label>
-        <p class="hint">Setup installs hooks for the agents it finds. Turn one off below without editing its config.</p>
+        <p class="hint">Choose which agents to connect. Hooks are installed only when you approve them. Turn an agent off without editing its config.</p>
         <ul id="agents" class="agents" aria-live="polite"></ul>
       </section>
     </section>
 
     <section id="panel-wifi" class="card panel" role="tabpanel" aria-labelledby="tab-wifi" tabindex="0" hidden>
+      <label class="setting-row physical-device" for="physical-device-toggle">
+        <span><strong>Use a physical device</strong><span class="hint">Turn this off for desktop-only use. The USB port is released and device discovery stops.</span></span>
+        <input id="physical-device-toggle" class="toggle" type="checkbox" role="switch">
+      </label>
+      <div class="connection-control">
+        <div class="control-title">
+          <span id="modes-label" class="control-label">Connection mode</span>
+          <span class="help" id="mode-help">
+            <button type="button" class="help-button" aria-label="About connection mode" aria-describedby="mode-hint">?</button>
+            <span role="tooltip" id="mode-hint" class="tooltip">
+              <span data-mode="auto"><strong>Auto:</strong> Uses USB when the cable is connected, otherwise Wi-Fi.</span>
+              <span data-mode="wifi"><strong>Wi-Fi:</strong> Always uses Wi-Fi. A connected USB cable only provides power.</span>
+              <span data-mode="usb"><strong>USB:</strong> Only uses USB.</span>
+            </span>
+          </span>
+        </div>
+        <div class="segmented" role="radiogroup" aria-labelledby="modes-label" aria-describedby="mode-hint" id="modes">
+          <button type="button" role="radio" aria-checked="false" data-mode="auto">Auto</button>
+          <button type="button" role="radio" aria-checked="false" data-mode="wifi">Wi-Fi</button>
+          <button type="button" role="radio" aria-checked="false" data-mode="usb">USB</button>
+        </div>
+      </div>
       <p class="hint" id="wifi-hint">
         Connect the device over USB, then enter a 2.4 GHz network. The password goes straight to
         the device and isn't stored on this computer.
@@ -195,8 +424,14 @@
       </div>
       <details id="usb-firmware-recovery" class="firmware-recovery">
         <summary>USB release install or recovery</summary>
-        <p class="hint">This installs a published release, not the source build above.
-          Use it to set up a new device or deliberately replace its firmware.</p>
+        <p class="hint">Use this only to set up a new device or to repair one that does not answer.
+          To update a working device, use <strong>Device firmware</strong> above.</p>
+        <div class="usb-port-control">
+          <label for="usb-firmware-port">USB device</label>
+          <div class="field-row"><select id="usb-firmware-port"><option value="">Detect a device first</option></select>
+            <button type="button" class="secondary" id="usb-device-detect">Detect</button></div>
+          <p id="usb-device-message" class="hint" role="status"></p>
+        </div>
         <div class="setting-row static usb-firmware-row">
         <span>
           <strong>Published release <span id="usb-firmware-state" class="pill offline">Checking…</span></strong>
@@ -304,11 +539,20 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <dialog id="confirm" class="confirm" aria-labelledby="confirm-message">
+  <dialog id="confirm" class="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-message confirm-note">
     <form method="dialog">
+      <div class="confirm-header">
+        <div class="confirm-icon" aria-hidden="true">
+          <img id="confirm-logo" src="/logo.svg" alt="" width="48" height="48">
+          <canvas id="confirm-agent-icon" hidden></canvas>
+        </div>
+        <div><p id="confirm-context" class="confirm-context">Confirm change</p><h2 id="confirm-title"></h2></div>
+      </div>
       <p id="confirm-message"></p>
+      <p id="confirm-note" class="confirm-note" hidden></p>
+      <details id="confirm-details" hidden><summary>View affected configuration files</summary><pre id="confirm-file-list" tabindex="0" aria-label="Affected configuration files"></pre></details>
       <div class="confirm-actions">
-        <button type="submit" value="cancel" class="secondary">Cancel</button>
+        <button type="submit" value="cancel" class="secondary" id="confirm-cancel" autofocus>Cancel</button>
         <button type="submit" value="ok" id="confirm-ok" class="danger">Remove</button>
       </div>
     </form>

@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, PhysicalPosition, WebviewWindow};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct Placement {
@@ -23,6 +23,61 @@ pub struct Placement {
 
 /// What the window is configured to be, for when it cannot yet say.
 const FALLBACK_SIZE: (u32, u32) = (220, 220);
+
+pub const SETTINGS_SIZE: (f64, f64) = (1300.0, 1118.0);
+const SETTINGS_MINIMUM: (f64, f64) = (420.0, 480.0);
+const SCREEN_MARGIN: f64 = 24.0;
+
+#[derive(Debug)]
+pub struct SettingsBounds {
+    pub position: PhysicalPosition<i32>,
+    pub size: PhysicalSize<u32>,
+    pub minimum: PhysicalSize<u32>,
+}
+
+pub fn settings_bounds(
+    origin: PhysicalPosition<i32>,
+    work_area: PhysicalSize<u32>,
+    scale: f64,
+    frame: PhysicalSize<u32>,
+) -> Result<SettingsBounds, &'static str> {
+    if !scale.is_finite() || scale <= 0.0 || work_area.width <= frame.width || work_area.height <= frame.height {
+        return Err("the monitor has no usable window area");
+    }
+    let margin = (SCREEN_MARGIN * scale).round() as u32;
+    let horizontal = margin.min((work_area.width - frame.width - 1) / 2);
+    let vertical = margin.min((work_area.height - frame.height - 1) / 2);
+    let width = ((SETTINGS_SIZE.0 * scale).round() as u32).max(1)
+        .min(work_area.width - frame.width - 2 * horizontal);
+    let height = ((SETTINGS_SIZE.1 * scale).round() as u32).max(1)
+        .min(work_area.height - frame.height - 2 * vertical);
+    Ok(SettingsBounds {
+        position: PhysicalPosition::new(
+            origin.x + ((work_area.width - width - frame.width) / 2) as i32,
+            origin.y + ((work_area.height - height - frame.height) / 2) as i32,
+        ),
+        size: PhysicalSize::new(width, height),
+        minimum: PhysicalSize::new(
+            ((SETTINGS_MINIMUM.0 * scale).round() as u32).min(width),
+            ((SETTINGS_MINIMUM.1 * scale).round() as u32).min(height),
+        ),
+    })
+}
+
+pub fn fit_settings(window: &WebviewWindow, monitor: &tauri::Monitor) -> Result<(), String> {
+    let work = monitor.work_area();
+    window.set_position(work.position).map_err(|error| error.to_string())?;
+    let outer = window.outer_size().map_err(|error| error.to_string())?;
+    let inner = window.inner_size().map_err(|error| error.to_string())?;
+    let frame = PhysicalSize::new(outer.width.saturating_sub(inner.width), outer.height.saturating_sub(inner.height));
+    let bounds = settings_bounds(work.position, work.size, monitor.scale_factor(), frame)?;
+    window.set_min_size(Some(bounds.minimum)).map_err(|error| error.to_string())?;
+    window.set_size(bounds.size).map_err(|error| error.to_string())?;
+    window.set_position(bounds.position).map_err(|error| error.to_string())?;
+    println!("[settings] launch size {:.0}x{:.0}, fitted to the monitor work area",
+        bounds.size.width as f64 / monitor.scale_factor(), bounds.size.height as f64 / monitor.scale_factor());
+    Ok(())
+}
 
 fn file(window: &WebviewWindow) -> Option<PathBuf> {
     let directory = window.app_handle().path().app_data_dir().ok()?;
@@ -154,5 +209,39 @@ mod tests {
     #[test]
     fn with_no_monitors_at_all_nothing_is_visible() {
         assert!(!visible_on(&[], Placement { x: 0, y: 0 }, WINDOW));
+    }
+
+    #[test]
+    fn settings_launch_thirty_percent_larger_when_the_screen_has_room() {
+        let bounds = settings_bounds(PhysicalPosition::new(0, 0), PhysicalSize::new(2560, 1440),
+            1.0, PhysicalSize::new(0, 28)).unwrap();
+        assert_eq!(bounds.size, PhysicalSize::new(1300, 1118));
+        assert_eq!(bounds.minimum, PhysicalSize::new(420, 480));
+        assert_eq!(bounds.position, PhysicalPosition::new(630, 147));
+    }
+
+    #[test]
+    fn settings_fit_a_retina_laptop_work_area_including_the_title_bar() {
+        let origin = PhysicalPosition::new(0, 48);
+        let area = PhysicalSize::new(3024, 1840);
+        let frame = PhysicalSize::new(0, 56);
+        let bounds = settings_bounds(origin, area, 2.0, frame).unwrap();
+        assert_eq!(bounds.size.width, 2600);
+        assert_eq!(bounds.size.height, 1688);
+        assert!(bounds.position.y >= origin.y + 48);
+        assert!(bounds.position.y + (bounds.size.height + frame.height) as i32 <= origin.y + area.height as i32 - 48);
+    }
+
+    #[test]
+    fn settings_fit_small_and_negative_origin_screens_without_an_oversized_minimum() {
+        let origin = PhysicalPosition::new(-800, -600);
+        let area = PhysicalSize::new(640, 400);
+        let frame = PhysicalSize::new(12, 36);
+        let bounds = settings_bounds(origin, area, 1.0, frame).unwrap();
+        assert_eq!(bounds.size, PhysicalSize::new(580, 316));
+        assert_eq!(bounds.minimum, PhysicalSize::new(420, 316));
+        assert_eq!(bounds.position, PhysicalPosition::new(-776, -576));
+        assert!(settings_bounds(origin, area, 0.0, frame).is_err());
+        assert!(settings_bounds(origin, area, f64::NAN, frame).is_err());
     }
 }

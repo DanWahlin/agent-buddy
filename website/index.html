@@ -161,6 +161,14 @@
         </div>
         <div class="console" id="console">
           <fieldset>
+            <legend>Character</legend>
+            <div class="chips" id="live-chars">
+              <button class="chip is-on" aria-pressed="true" data-char="copilot">Copilot</button>
+              <button class="chip" aria-pressed="false" data-char="claude">Claude</button>
+              <button class="chip" aria-pressed="false" data-char="openclaw">OpenClaw</button>
+            </div>
+          </fieldset>
+          <fieldset>
             <legend>State</legend>
             <div class="chips" id="live-states">
               <button class="chip is-on" aria-pressed="true" data-mode="idle">Idle</button>
@@ -173,14 +181,6 @@
           <fieldset>
             <legend>Agents <span class="hint">up to four badges</span></legend>
             <div class="chips" id="live-agents"></div>
-          </fieldset>
-          <fieldset>
-            <legend>Character</legend>
-            <div class="chips" id="live-chars">
-              <button class="chip is-on" aria-pressed="true" data-char="copilot">Copilot</button>
-              <button class="chip" aria-pressed="false" data-char="claude">Claude</button>
-              <button class="chip" aria-pressed="false" data-char="openclaw">OpenClaw</button>
-            </div>
           </fieldset>
           <fieldset>
             <legend>Usage</legend>

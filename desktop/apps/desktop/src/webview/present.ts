@@ -8,6 +8,12 @@
  * fed by putImageData cost a new GPU surface every frame: about 400 MB of GPU
  * memory against 240 MB, and more CPU. It is kept only for a WebView without
  * WebGL.
+ *
+ * The system can take a WebGL context away (after sleep, or when the GPU process
+ * restarts). Every draw then does nothing, so the character vanishes inside the
+ * case while the engine runs on. The presenter asks for the context back, rebuilds
+ * its program and texture when it returns, and calls `onRestored` so the page
+ * sends a whole frame: the new texture starts empty.
  */
 
 export interface Presenter {
@@ -32,13 +38,15 @@ uniform sampler2D frame;
 varying vec2 uv;
 void main() { gl_FragColor = texture2D(frame, uv); }`;
 
-export function createPresenter(canvas: HTMLCanvasElement, width: number, height: number): Presenter {
+export function createPresenter(canvas: HTMLCanvasElement, width: number, height: number,
+                                onRestored: () => void = () => {}): Presenter {
   canvas.width = width;
   canvas.height = height;
-  return webgl(canvas, width, height) ?? canvas2d(canvas, width, height);
+  return webgl(canvas, width, height, onRestored) ?? canvas2d(canvas, width, height);
 }
 
-function webgl(canvas: HTMLCanvasElement, width: number, height: number): Presenter | null {
+function webgl(canvas: HTMLCanvasElement, width: number, height: number,
+               onRestored: () => void): Presenter | null {
   const options: WebGLContextAttributes = {
     alpha: true, antialias: false, depth: false, stencil: false,
     premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: 'low-power',
@@ -46,7 +54,46 @@ function webgl(canvas: HTMLCanvasElement, width: number, height: number): Presen
   const gl2 = canvas.getContext('webgl2', options);
   const gl = gl2 ?? canvas.getContext('webgl', options);
   if (!gl) return null;
+  // A context can already be lost when the window opens; it is set up when it returns.
+  let lost = gl.isContextLost();
+  if (!lost && !setUp(gl, gl2, width, height)) return null;
+  canvas.addEventListener('webglcontextlost', event => {
+    // Without preventDefault the context never comes back.
+    event.preventDefault();
+    lost = true;
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    lost = !setUp(gl, gl2, width, height);
+    if (!lost) onRestored();
+  });
 
+  return {
+    present(rgba, rects) {
+      if (lost || gl.isContextLost()) return;
+      if (gl2 && rects) {
+        for (let i = 0; i + 3 < rects.length; i += 4) {
+          const [x, y, w, h] = [rects[i], rects[i + 1], rects[i + 2], rects[i + 3]];
+          gl2.pixelStorei(gl2.UNPACK_SKIP_PIXELS, x);
+          gl2.pixelStorei(gl2.UNPACK_SKIP_ROWS, y);
+          gl2.texSubImage2D(gl2.TEXTURE_2D, 0, x, y, w, h, gl2.RGBA, gl2.UNSIGNED_BYTE, rgba);
+        }
+      } else {
+        if (gl2) {
+          gl2.pixelStorei(gl2.UNPACK_SKIP_PIXELS, 0);
+          gl2.pixelStorei(gl2.UNPACK_SKIP_ROWS, 0);
+        }
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+      }
+      // The drawing buffer is not preserved, so the whole quad is drawn every
+      // time, from the texture that keeps everything that did not change.
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    },
+  };
+}
+
+/** The program, quad and frame texture; again after a lost context returns. */
+function setUp(gl: WebGLRenderingContext | WebGL2RenderingContext, gl2: WebGL2RenderingContext | null,
+               width: number, height: number): boolean {
   const compile = (type: number, source: string) => {
     const shader = gl.createShader(type)!;
     gl.shaderSource(shader, source);
@@ -57,7 +104,7 @@ function webgl(canvas: HTMLCanvasElement, width: number, height: number): Presen
   gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX));
   gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT));
   gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return false;
   gl.useProgram(program);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -78,28 +125,7 @@ function webgl(canvas: HTMLCanvasElement, width: number, height: number): Presen
   gl.viewport(0, 0, width, height);
   // WebGL2 can upload a rectangle straight out of the whole frame.
   if (gl2) gl2.pixelStorei(gl2.UNPACK_ROW_LENGTH, width);
-
-  return {
-    present(rgba, rects) {
-      if (gl2 && rects) {
-        for (let i = 0; i + 3 < rects.length; i += 4) {
-          const [x, y, w, h] = [rects[i], rects[i + 1], rects[i + 2], rects[i + 3]];
-          gl2.pixelStorei(gl2.UNPACK_SKIP_PIXELS, x);
-          gl2.pixelStorei(gl2.UNPACK_SKIP_ROWS, y);
-          gl2.texSubImage2D(gl2.TEXTURE_2D, 0, x, y, w, h, gl2.RGBA, gl2.UNSIGNED_BYTE, rgba);
-        }
-      } else {
-        if (gl2) {
-          gl2.pixelStorei(gl2.UNPACK_SKIP_PIXELS, 0);
-          gl2.pixelStorei(gl2.UNPACK_SKIP_ROWS, 0);
-        }
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
-      }
-      // The drawing buffer is not preserved, so the whole quad is drawn every
-      // time, from the texture that keeps everything that did not change.
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    },
-  };
+  return true;
 }
 
 function canvas2d(canvas: HTMLCanvasElement, width: number, height: number): Presenter {

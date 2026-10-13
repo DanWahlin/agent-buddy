@@ -1,24 +1,33 @@
 #include "CharacterEffects.h"
 #include "CharacterModel.h"
+#include "Rgb565.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <initializer_list>
+#include <iterator>
 
 namespace copilot {
 namespace {
+constexpr double kPi = 3.14159265358979323846;
 // Largest ring that keeps a whole badge inside the 412 px frame, so it stays a true circle.
 constexpr int kOrbitRadius = 186;
 // Six trail steps of 0.16 rad put the head dot this far ahead of the orbit's base angle.
 constexpr double kOrbitLeadAngle = 6 * .16;
+constexpr int kMaxBadges = 4;
+constexpr int kBadgeRadius = 17;
+constexpr int kBadgeGlyphSize = 24;
 uint16_t color(int r, int g, int b, double brightness = 1) {
-  const uint16_t rgb = (static_cast<unsigned>(r * brightness) >> 3) << 11
-      | (static_cast<unsigned>(g * brightness) >> 2) << 5
-      | (static_cast<unsigned>(b * brightness) >> 3);
-  return static_cast<uint16_t>((rgb << 8) | (rgb >> 8));
+  return swapBytes(rgb565(static_cast<unsigned>(r * brightness), static_cast<unsigned>(g * brightness),
+                          static_cast<unsigned>(b * brightness)));
 }
+// Effect palette.
+uint16_t amber(double brightness = 1) { return color(255, 192, 86, brightness); }
+uint16_t teal(double brightness = 1) { return color(121, 229, 209, brightness); }
+uint16_t gold(double brightness = 1) { return color(247, 206, 118, brightness); }
+uint16_t lilac(double brightness = 1) { return color(190, 161, 247, brightness); }
 uint16_t darken(uint16_t swapped, double amount) {
-  const uint16_t rgb = static_cast<uint16_t>((swapped << 8) | (swapped >> 8));
+  const uint16_t rgb = swapBytes(swapped);
   const int r = ((rgb >> 11) & 31) * 255 / 31;
   const int g = ((rgb >> 5) & 63) * 255 / 63;
   const int b = (rgb & 31) * 255 / 31;
@@ -28,7 +37,7 @@ struct Rgb {
   float r, g, b;
 };
 Rgb unpack(uint16_t swapped) {
-  const uint16_t rgb = static_cast<uint16_t>((swapped << 8) | (swapped >> 8));
+  const uint16_t rgb = swapBytes(swapped);
   return {((rgb >> 11) & 31) * 255.0f / 31, ((rgb >> 5) & 63) * 255.0f / 63, (rgb & 31) * 255.0f / 31};
 }
 float coverage(float value) {
@@ -67,9 +76,10 @@ constexpr UsageGlyph kUsageFont[] = {
   {'s', {0x00, 0x00, 0x0F, 0x10, 0x0E, 0x01, 0x1E}},
 };
 const uint8_t* usageGlyph(char character) {
-  for (const auto& glyph : kUsageFont)
-    if (glyph.character == character) return glyph.rows;
-  return nullptr;
+  const auto* end = std::end(kUsageFont);
+  const auto* match = std::find_if(std::begin(kUsageFont), end,
+                                   [character](const UsageGlyph& glyph) { return glyph.character == character; });
+  return match == end ? nullptr : match->rows;
 }
 uint32_t hash(uint32_t value) {
   value ^= value >> 16;
@@ -77,6 +87,25 @@ uint32_t hash(uint32_t value) {
   value ^= value >> 15;
   value *= 0x846ca68bu;
   return value ^ (value >> 16);
+}
+static_assert(kAgentBadgeMaskBytes * 8 == kBadgeGlyphSize * kBadgeGlyphSize, "Badge masks are 24x24 bits.");
+// Calls paint(dx, dy) for each set pixel of a badge mask, relative to the badge center.
+template <typename Paint>
+void forEachMaskPixel(const AgentBadgeIcon& icon, Paint paint) {
+  constexpr int half = kBadgeGlyphSize / 2, rowBytes = kBadgeGlyphSize / 8;
+  for (int row = 0; row < kBadgeGlyphSize; ++row)
+    for (int column = 0; column < kBadgeGlyphSize; ++column)
+      if (icon.mask[row * rowBytes + column / 8] & (0x80 >> (column % 8))) paint(column - half, row - half);
+}
+AgentBadgeRole badgeRole(CharacterMode mode) {
+  if (mode == CharacterMode::Attention) return AgentBadgeRole::Attention;
+  if (mode == CharacterMode::Complete) return AgentBadgeRole::Complete;
+  return AgentBadgeRole::Working;
+}
+bool showsBadge(const AgentBadgesSnapshot& badges, AgentBadgeRole role) {
+  for (int i = 0; i < badges.activeCount; ++i)
+    if (badges.active[i].role == role) return true;
+  return false;
 }
 }
 
@@ -87,12 +116,11 @@ CharacterEffects::CharacterEffects(uint16_t* firstOutput, uint16_t* secondOutput
 AgentBadgePoint CharacterEffects::badgeAnchor(
     CharacterMode mode, AgentBadgeRole role, int index, int count, double seconds) {
   if (index < 0 || count <= 0) return {};
-  count = std::min(count, 4);
+  count = std::min(count, kMaxBadges);
   index = std::min(index, count - 1);
-  constexpr double pi = 3.14159265358979323846;
   if (mode == CharacterMode::Working && role == AgentBadgeRole::Working) {
     // The first badge replaces the head of the orbiting dot trail; others share the same ring.
-    const double angle = seconds * pi / 6 + kOrbitLeadAngle + index * 2 * pi / count;
+    const double angle = seconds * kPi / 6 + kOrbitLeadAngle + index * 2 * kPi / count;
     return {kFrameWidth / 2 + int(std::lround(kOrbitRadius * std::cos(angle))),
             kFrameHeight / 2 + int(std::lround(kOrbitRadius * std::sin(angle))), true};
   }
@@ -101,7 +129,7 @@ AgentBadgePoint CharacterEffects::badgeAnchor(
   if ((mode == CharacterMode::Attention && role == AgentBadgeRole::Attention)
       || (mode == CharacterMode::Complete && role == AgentBadgeRole::Complete)) {
     constexpr double steps[] = {0, 15, -15, 30};
-    const double angle = (-141 + steps[index]) * pi / 180;
+    const double angle = (-141 + steps[index]) * kPi / 180;
     constexpr int arcRadius = 200;
     const int displayX = kDisplaySize / 2 + int(std::lround(arcRadius * std::cos(angle)));
     const int displayY = kDisplaySize / 2 + int(std::lround(arcRadius * std::sin(angle)));
@@ -110,7 +138,7 @@ AgentBadgePoint CharacterEffects::badgeAnchor(
   return {};
 }
 
-int CharacterEffects::buffer(uint16_t* frame) {
+int CharacterEffects::buffer(const uint16_t* frame) {
   if (!outputs_[0] || !outputs_[1] || outputs_[0] == outputs_[1]) {
     error_ = "Effects require two distinct persistent output buffers.";
     return -1;
@@ -261,68 +289,47 @@ void CharacterEffects::overlayDisc(int x, int y, float outer, float ringWidth,
 }
 
 void CharacterEffects::badge(const AgentBadgeIcon& icon, AgentBadgeRole role, int x, int y, double seconds) {
-  constexpr int radius = 17;
+  const uint16_t fill = color(17, 20, 27), ring = darken(icon.color, .85);
   if (beginOverlay(x, y)) {
     if (role == AgentBadgeRole::Attention) {
-      const float breath = .72f + .24f * std::sin(static_cast<float>(seconds) * 3.14159265f);
-      overlayDisc(x, y, radius + 4.5f, 2, 0, color(255, 192, 86), breath);
+      const float breath = .72f + .24f * std::sin(static_cast<float>(seconds) * static_cast<float>(kPi));
+      overlayDisc(x, y, kBadgeRadius + 4.5f, 2, 0, amber(), breath);
     }
-    overlayDisc(x, y, radius + 1.5f, 1.6f, color(17, 20, 27), darken(icon.color, .85), 1);
-    for (int row = 0; row < 24; ++row)
-      for (int column = 0; column < 24; ++column)
-        if (icon.mask[row * 3 + column / 8] & (0x80 >> (column % 8)))
-          overlayPixel(x - 12 + column, y - 12 + row, icon.color, 1);
+    overlayDisc(x, y, kBadgeRadius + 1.5f, 1.6f, fill, ring, 1);
+    forEachMaskPixel(icon, [&](int dx, int dy) { overlayPixel(x + dx, y + dy, icon.color, 1); });
     return;
   }
   if (role == AgentBadgeRole::Attention) {
-    const double breath = .72 + .24 * std::sin(seconds * 3.14159265358979323846);
-    smoothDisc(x, y, radius + 4.5, 2, 0, color(255, 192, 86), breath);
+    const double breath = .72 + .24 * std::sin(seconds * kPi);
+    smoothDisc(x, y, kBadgeRadius + 4.5, 2, 0, amber(), breath);
   }
   // pixel() never overwrites what's already drawn, so paint front to back: glyph, fill, outline.
   // Every badge shares a near-black fill; the agent's color tints the glyph and the ring.
-  const uint16_t glyphColor = icon.color;
-  constexpr int glyphLeft = -12, glyphTop = -12;
-  for (int row = 0; row < 24; ++row) {
-    for (int column = 0; column < 24; ++column) {
-      const uint8_t byte = icon.mask[row * 3 + column / 8];
-      if (byte & (0x80 >> (column % 8))) pixel(x + glyphLeft + column, y + glyphTop + row, glyphColor);
-    }
-  }
-  smoothDisc(x, y, radius + 1.5, 1.6, color(17, 20, 27), darken(icon.color, .85), 1);
+  forEachMaskPixel(icon, [&](int dx, int dy) { pixel(x + dx, y + dy, icon.color); });
+  smoothDisc(x, y, kBadgeRadius + 1.5, 1.6, fill, ring, 1);
 }
 
-bool CharacterEffects::showsBadge(AgentBadgeRole role) const {
-  if (!badges_) return false;
-  const auto snapshot = badges_->snapshot();
-  for (int i = 0; i < snapshot.activeCount; ++i)
-    if (snapshot.active[i].role == role) return true;
-  return false;
+AgentBadgesSnapshot CharacterEffects::badgeSnapshot() const {
+  return badges_ ? badges_->snapshot() : AgentBadgesSnapshot{};
 }
 
-void CharacterEffects::agentBadges(const CharacterState& state) {
-  if (!badges_ || (state.mode != CharacterMode::Working && state.mode != CharacterMode::Attention
-      && state.mode != CharacterMode::Complete)) return;
-  const auto snapshot = badges_->snapshot();
-  AgentBadgeRole wanted = AgentBadgeRole::Working;
-  if (state.mode == CharacterMode::Attention) wanted = AgentBadgeRole::Attention;
-  else if (state.mode == CharacterMode::Complete) wanted = AgentBadgeRole::Complete;
-  const int limit = std::min<int>(snapshot.activeCount, 4);
+// Draws up to four badges for the agents whose role matches the current mode.
+void CharacterEffects::agentBadges(const CharacterState& state, const AgentBadgesSnapshot& badges) {
+  const AgentBadgeRole wanted = badgeRole(state.mode);
+  const int limit = std::min<int>(badges.activeCount, kMaxBadges);
   int matching = 0;
-  for (int i = 0; i < snapshot.activeCount; ++i)
-    if (snapshot.active[i].role == wanted) ++matching;
-  matching = std::min(matching, 4);
+  for (int i = 0; i < badges.activeCount; ++i)
+    if (badges.active[i].role == wanted) ++matching;
+  matching = std::min(matching, kMaxBadges);
   int rendered = 0;
   for (int i = 0; i < limit && rendered < matching; ++i) {
-    const auto& active = snapshot.active[i];
+    const auto& active = badges.active[i];
     if (active.role != wanted) continue;
-    const AgentBadgeIcon* icon = nullptr;
-    for (int j = 0; j < snapshot.iconCount; ++j) {
-      if (std::strcmp(snapshot.icons[j].id, active.id) == 0) {
-        icon = &snapshot.icons[j];
-        break;
-      }
-    }
-    if (!icon) continue;
+    const auto* iconsEnd = badges.icons + badges.iconCount;
+    const auto* icon = std::find_if(badges.icons, iconsEnd, [&active](const AgentBadgeIcon& candidate) {
+      return std::strcmp(candidate.id, active.id) == 0;
+    });
+    if (icon == iconsEnd) continue;
     const auto anchor = badgeAnchor(state.mode, wanted, rendered, matching, state.effectSeconds);
     if (anchor.visible) badge(*icon, wanted, anchor.x, anchor.y, state.effectSeconds);
     ++rendered;
@@ -348,8 +355,7 @@ void CharacterEffects::workingBits(double seconds) {
       const int travel = static_cast<int>(std::lround((bottom - top) * phase));
       const int y = lane < 2 ? top + travel : bottom - travel;
       const int x = kFrameWidth / 2 + lanes[lane];
-      const uint8_t* glyph = glyphs[(lane + slot) % 2];
-      this->glyph(glyph, 9, x, y, 1, rgb);
+      glyph(glyphs[(lane + slot) % 2], 9, x, y, 1, rgb);
     }
   }
 }
@@ -396,6 +402,94 @@ void CharacterEffects::usageText(const CharacterState& state) {
   }
 }
 
+// Orbiting dot trail; the first badge replaces its head dot.
+void CharacterEffects::working(const CharacterState& state) {
+  const AgentBadgesSnapshot badges = badgeSnapshot();
+  const bool badgeLeads = showsBadge(badges, AgentBadgeRole::Working);
+  const double t = state.effectSeconds;
+  double x = std::cos(t * kPi / 6), y = std::sin(t * kPi / 6);
+  constexpr double cosine = .9872272833756269, sine = .15931820661424598;
+  for (int i = 0; i < 7; ++i) {
+    if (i == 6 && badgeLeads) break;
+    dot(kFrameWidth / 2 + int(std::lround(kOrbitRadius * x)),
+        kFrameHeight / 2 + int(std::lround(kOrbitRadius * y)), i == 6 ? 5 : 2,
+        color(80, 215, 239, .30 + i * .108));
+    const double nextX = x * cosine - y * sine;
+    y = x * sine + y * cosine;
+    x = nextX;
+  }
+  workingBits(t);
+  agentBadges(state, badges);
+}
+
+// A breathing "?" in a dotted ring; the left dot is hidden when an attention badge shows.
+void CharacterEffects::attention(const CharacterState& state) {
+  const AgentBadgesSnapshot badges = badgeSnapshot();
+  const double breath = .78 + .17 * std::sin(state.effectSeconds * kPi / 2);
+  constexpr uint8_t question[] = {14, 17, 1, 2, 4, 0, 4};
+  double ringX = 1, ringY = 0;
+  for (int i = 0; i < 32; ++i) {
+    dot(348 + int(std::lround(23 * ringX)), 56 + int(std::lround(23 * ringY)), 1, amber(breath * .3));
+    const double nextX = ringX * .9807852804032304 - ringY * .19509032201612825;
+    ringY = ringX * .19509032201612825 + ringY * .9807852804032304;
+    ringX = nextX;
+  }
+  const uint16_t rgb = amber(breath);
+  for (int y = 0; y < 7; ++y)
+    for (int x = 0; x < 5; ++x)
+      if (question[y] & (1 << (4 - x)))
+        dot(340 + x * 4, 44 + y * 4, 2, rgb);
+  if (!showsBadge(badges, AgentBadgeRole::Attention)) dot(35, 70, 2, amber(breath * .45));
+  agentBadges(state, badges);
+}
+
+// Two fireworks and falling confetti during the first three seconds.
+void CharacterEffects::complete(const CharacterState& state) {
+  const double t = state.effectSeconds;
+  constexpr double xs[] = {1, .809017, .309017, -.309017, -.809017, -1, -.809017, -.309017, .309017, .809017};
+  constexpr double ys[] = {0, .587785, .951057, .951057, .587785, 0, -.587785, -.951057, -.951057, -.587785};
+  for (int side : {-1, 1}) {
+    const double launch = (t - .3) / .5;
+    if (launch >= 0 && launch < 1) {
+      const int x = 200 + side * (160 - int(20 * launch));
+      const int y = 278 - int(198 * (2 * launch - launch * launch));
+      dot(x, y, 2, color(255, 222, 154));
+      for (int tail = 3; tail < 11; ++tail)
+        pixel(x, y + tail, lilac((11 - tail) / 12.0));
+    }
+    const double age = t - .8;
+    if (age >= 0 && age < 1.5) {
+      const double radius = 80 * age / (1 + age);
+      const double brightness = 1 - age / 1.5;
+      const int centerX = 200 + side * 140, centerY = 80 + int(20 * age * age);
+      for (int ray = 0; ray < 10; ++ray) {
+        const int x = centerX + int(radius * xs[ray]), y = centerY + int(radius * ys[ray]);
+        dot(x, y, 1, ray % 2 ? teal(brightness) : gold(brightness));
+        pixel(centerX + int((radius - 4) * xs[ray]), centerY + int((radius - 4) * ys[ray]),
+              lilac(brightness * .5));
+      }
+    }
+  }
+  const double fade = t < 1.8 ? 1 : (3 - t) / 1.2;
+  for (uint32_t i = 0; i < 36; ++i) {
+    const uint32_t seed = hash(state.eventId * 37 + i);
+    const double age = t - (seed % 300) / 1000.0;
+    if (age < 0) continue;
+    const int side = i % 2 ? 1 : -1;
+    const int x = kFrameWidth / 2 + side * (154 + int((seed >> 8) % 32))
+        + int(side * 14 * age);
+    const int y = 42 + int((seed >> 16) % 65) - int(48 * age) + int(62 * age * age);
+    const uint16_t rgb = i % 3 == 0 ? teal(fade) : i % 3 == 1 ? gold(fade) : lilac(fade);
+    if (i % 7 == 0) spark(x, y, 3, rgb);
+    else {
+      pixel(x, y, rgb); pixel(x + 1, y, rgb);
+      pixel(x, y + 1, rgb); pixel(x + 1, y + 1, rgb);
+      pixel(x + 2, y, rgb); pixel(x + 2, y + 1, rgb);
+    }
+  }
+  agentBadges(state, badgeSnapshot());
+}
+
 bool CharacterEffects::render(const CharacterState& state, uint16_t* frame) {
   error_ = nullptr;
   const int index = buffer(frame);
@@ -413,89 +507,10 @@ bool CharacterEffects::render(const CharacterState& state, uint16_t* frame) {
   }
   active_ = index;
   const double t = state.effectSeconds;
-  constexpr double pi = 3.14159265358979323846;
-  if (state.mode == CharacterMode::Working) {
-    const bool badgeLeads = showsBadge(AgentBadgeRole::Working);
-    double x = std::cos(t * pi / 6), y = std::sin(t * pi / 6);
-    constexpr double cosine = .9872272833756269, sine = .15931820661424598;
-    for (int i = 0; i < 7; ++i) {
-      if (i == 6 && badgeLeads) break;
-      dot(kFrameWidth / 2 + int(std::lround(kOrbitRadius * x)),
-          kFrameHeight / 2 + int(std::lround(kOrbitRadius * y)), i == 6 ? 5 : 2,
-          color(80, 215, 239, .30 + i * .108));
-      const double nextX = x * cosine - y * sine;
-      y = x * sine + y * cosine;
-      x = nextX;
-    }
-    workingBits(t);
-    agentBadges(state);
-  } else if (state.mode == CharacterMode::Sleep) {
-    sleepingZs(t);
-  } else if (state.mode == CharacterMode::Attention) {
-    const double breath = .78 + .17 * std::sin(t * pi / 2);
-    constexpr uint8_t question[] = {14, 17, 1, 2, 4, 0, 4};
-    const uint16_t amber = color(255, 192, 86, breath);
-    double ringX = 1, ringY = 0;
-    for (int i = 0; i < 32; ++i) {
-      dot(348 + int(std::lround(23 * ringX)), 56 + int(std::lround(23 * ringY)), 1,
-          color(255, 192, 86, breath * .3));
-      const double nextX = ringX * .9807852804032304 - ringY * .19509032201612825;
-      ringY = ringX * .19509032201612825 + ringY * .9807852804032304;
-      ringX = nextX;
-    }
-    for (int y = 0; y < 7; ++y)
-      for (int x = 0; x < 5; ++x)
-        if (question[y] & (1 << (4 - x)))
-          dot(340 + x * 4, 44 + y * 4, 2, amber);
-    if (!showsBadge(AgentBadgeRole::Attention)) dot(35, 70, 2, color(255, 192, 86, breath * .45));
-    agentBadges(state);
-  } else if (state.mode == CharacterMode::Complete && t < 3) {
-    constexpr double xs[] = {1, .809017, .309017, -.309017, -.809017, -1, -.809017, -.309017, .309017, .809017};
-    constexpr double ys[] = {0, .587785, .951057, .951057, .587785, 0, -.587785, -.951057, -.951057, -.587785};
-    for (int side : {-1, 1}) {
-      const double launch = (t - .3) / .5;
-      if (launch >= 0 && launch < 1) {
-        const int x = 200 + side * (160 - int(20 * launch));
-        const int y = 278 - int(198 * (2 * launch - launch * launch));
-        dot(x, y, 2, color(255, 222, 154));
-        for (int tail = 3; tail < 11; ++tail)
-          pixel(x, y + tail, color(190, 161, 247, (11 - tail) / 12.0));
-      }
-      const double age = t - .8;
-      if (age >= 0 && age < 1.5) {
-        const double radius = 80 * age / (1 + age);
-        const double brightness = 1 - age / 1.5;
-        const int centerX = 200 + side * 140, centerY = 80 + int(20 * age * age);
-        for (int ray = 0; ray < 10; ++ray) {
-          const int x = centerX + int(radius * xs[ray]), y = centerY + int(radius * ys[ray]);
-          const uint16_t rgb = ray % 2 ? color(121, 229, 209, brightness)
-              : color(247, 206, 118, brightness);
-          dot(x, y, 1, rgb);
-          pixel(centerX + int((radius - 4) * xs[ray]), centerY + int((radius - 4) * ys[ray]),
-                color(190, 161, 247, brightness * .5));
-        }
-      }
-    }
-    const double fade = t < 1.8 ? 1 : (3 - t) / 1.2;
-    for (uint32_t i = 0; i < 36; ++i) {
-      const uint32_t seed = hash(state.eventId * 37 + i);
-      const double age = t - (seed % 300) / 1000.0;
-      if (age < 0) continue;
-      const int side = i % 2 ? 1 : -1;
-      const int x = kFrameWidth / 2 + side * (154 + int((seed >> 8) % 32))
-          + int(side * 14 * age);
-      const int y = 42 + int((seed >> 16) % 65) - int(48 * age) + int(62 * age * age);
-      const uint16_t rgb = i % 3 == 0 ? color(121, 229, 209, fade)
-          : i % 3 == 1 ? color(247, 206, 118, fade) : color(190, 161, 247, fade);
-      if (i % 7 == 0) spark(x, y, 3, rgb);
-      else {
-        pixel(x, y, rgb); pixel(x + 1, y, rgb);
-        pixel(x, y + 1, rgb); pixel(x + 1, y + 1, rgb);
-        pixel(x + 2, y, rgb); pixel(x + 2, y + 1, rgb);
-      }
-    }
-    agentBadges(state);
-  }
+  if (state.mode == CharacterMode::Working) working(state);
+  else if (state.mode == CharacterMode::Sleep) sleepingZs(t);
+  else if (state.mode == CharacterMode::Attention) attention(state);
+  else if (state.mode == CharacterMode::Complete && t < 3) complete(state);
   // Immediate, quiet acknowledgement even while a surprise waits for center.
   if (state.eventId && t < .5 && (state.requestedMode == CharacterMode::Surprise
       || state.mode == CharacterMode::Surprise)) {

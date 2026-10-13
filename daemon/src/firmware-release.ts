@@ -24,7 +24,12 @@ export interface FirmwareReleaseOptions {
   fetch?: Fetcher;
 }
 
-export const releaseRepository = 'DanWahlin/esp32-agent-companion';
+// Keep these the same as RELEASE_NAME and RELEASE_REPOSITORY in tools/package_release.py.
+export const releaseName = 'agent-buddy';
+export const releaseRepository = 'DanWahlin/agent-buddy';
+// The board that the release firmware ZIP is built for: the default board in firmware/boards.json.
+// Other boards get their own ZIP, which this updater does not download.
+export const releaseBoard = 'waveshare-amoled-175';
 const imageNames = ['bin/bootloader.bin', 'bin/partitions.bin', 'bin/boot_app0.bin', 'bin/application.bin',
   'bin/character-copilot.acpk'] as const;
 const bundleNames = ['manifest.json', ...imageNames];
@@ -39,7 +44,7 @@ export function releaseFirmwareDirectory(): string {
 }
 
 export function firmwareAssetName(version: string): string {
-  return `esp32-agent-companion-v${version}-firmware.zip`;
+  return `${releaseName}-v${version}-firmware.zip`;
 }
 
 // Downloads the firmware of one release from GitHub, checks it against the release's SHA256SUMS
@@ -80,9 +85,7 @@ export class FirmwareReleases {
     if (!expected) throw new Error(`Release v${version} has no SHA256 for ${asset}.`);
     const zip = await this.#download(`v${version}/${asset}`, maxZipBytes, progress);
     if (sha256(zip) !== expected) throw new Error(`SHA256 mismatch: ${asset}.`);
-    const files = unzip(zip, new Set([...bundleNames, 'SHA256SUMS']));
-    checkInnerSums(files);
-    validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version);
+    const files = unpackBundle(zip, version);
 
     const staging = `${dir}.partial-${process.pid}`;
     await rm(staging, {recursive: true, force: true});
@@ -122,6 +125,19 @@ export class FirmwareReleases {
   }
 }
 
+// The ID the device reports when it runs the firmware in this release ZIP. The desktop build
+// records it, so the service knows the release firmware without a download.
+export function releaseFirmwareId(zip: Buffer, version: string): string {
+  return parseFirmwareImage(unpackBundle(zip, version).get('bin/application.bin')!).id;
+}
+
+function unpackBundle(zip: Buffer, version: string): Map<string, Buffer> {
+  const files = unzip(zip, new Set([...bundleNames, 'SHA256SUMS']));
+  checkInnerSums(files);
+  validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version);
+  return files;
+}
+
 async function readBundle(dir: string, version: string): Promise<ReleaseFirmware> {
   const files = new Map<string, Buffer>();
   for (const name of bundleNames) files.set(name, await readFile(join(dir, name)));
@@ -155,11 +171,14 @@ function checkInnerSums(files: Map<string, Buffer>): void {
 export function validateManifest(manifest: unknown, files: Map<string, Buffer>, version: string): void {
   if (typeof manifest !== 'object' || manifest === null) throw new Error('Manifest must be an object.');
   const value = manifest as Record<string, unknown>;
-  if (value.name !== 'esp32-agent-companion' || value.version !== version)
-    throw new Error(`The firmware is not esp32-agent-companion v${version}.`);
+  if (value.name !== releaseName || value.version !== version)
+    throw new Error(`The firmware is not ${releaseName} v${version}.`);
   if (value.schema_version !== 1) throw new Error('Unsupported manifest schema.');
   if (value.chip !== 'esp32s3' || value.flash_size !== '16MB')
     throw new Error('Unsupported chip or flash size; expected ESP32-S3 with 16MB.');
+  // Bundles from before the board layer have no board field; they are for the release board.
+  if (value.board !== undefined && value.board !== releaseBoard)
+    throw new Error(`The firmware is for board ${String(value.board)}, not ${releaseBoard}.`);
   const images = value.images;
   if (!Array.isArray(images) || images.length !== imageNames.length)
     throw new Error('Manifest must contain exactly the five supported images.');

@@ -1,7 +1,6 @@
 #include "AudioPlayer.h"
 
 #include <Arduino.h>
-#include <ESP_I2S.h>
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -9,7 +8,7 @@
 #include "../generated/audio_assets.h"
 #include "Config.h"
 #include "SpeechWire.h"
-#include "audio/es8311.h"
+#include "boards/BoardDrivers.h"
 
 namespace copilot {
 namespace {
@@ -18,10 +17,8 @@ struct AudioAsset {
   uint32_t count;
 };
 
-I2SClass i2s;
 QueueHandle_t cueQueue = nullptr;
 StreamBufferHandle_t speechStream = nullptr;
-es8311_handle_t codec = nullptr;
 std::atomic<uint8_t> currentVolume{kDefaultSoundVolume};
 std::atomic<bool> ready{false};
 std::atomic<bool> speechReserved{false};
@@ -47,43 +44,23 @@ AudioAsset assetForCue(AudioCue cue) {
   return {nullptr, 0};
 }
 
-int codecVolume(uint8_t volume) {
-  return kAudioMinimumCodecVolume +
-         (volume * (kAudioMaximumCodecVolume - kAudioMinimumCodecVolume) + 50) / 100;
-}
-
-bool writeAll(const uint8_t* data, size_t size) {
-  while (size > 0) {
-    const size_t written = i2s.write(data, size);
-    if (written == 0) return false;
-    data += written;
-    size -= written;
-  }
-  return true;
-}
-
 bool startOutput() {
   const uint8_t volume = soundVolume();
   if (volume == 0) return false;
-  if (es8311_voice_volume_set(codec, codecVolume(volume), nullptr) != ESP_OK) {
+  if (!board::audioOutput().enable(volume)) {
     Serial.println("AUDIO error=codec-output");
     return false;
   }
-  digitalWrite(kAudioAmplifierPin, HIGH);
-  delay(4);
-  if (es8311_voice_mute(codec, false) == ESP_OK) return true;
-  digitalWrite(kAudioAmplifierPin, LOW);
-  Serial.println("AUDIO error=codec-output");
-  return false;
+  return true;
 }
 
 void stopOutput() {
   constexpr size_t kSilenceFrames = 96;
   static int16_t silence[kSilenceFrames * 2] = {};
-  writeAll(reinterpret_cast<const uint8_t*>(silence), sizeof(silence));
-  es8311_voice_mute(codec, true);
-  delay(2);
-  digitalWrite(kAudioAmplifierPin, LOW);
+  auto& output = board::audioOutput();
+  if (!output.write(reinterpret_cast<const uint8_t*>(silence), sizeof(silence)))
+    Serial.println("AUDIO error=i2s-write");
+  output.disable();
 }
 
 bool playCue(AudioCue cue, AudioCue& replacement) {
@@ -93,6 +70,7 @@ bool playCue(AudioCue cue, AudioCue& replacement) {
   if (!asset.samples || asset.count == 0) return true;
 
   if (!startOutput()) return true;
+  auto& output = board::audioOutput();
 
   constexpr size_t kChunkFrames = 512;
   static int16_t stereo[kChunkFrames * 2];
@@ -114,7 +92,7 @@ bool playCue(AudioCue cue, AudioCue& replacement) {
       stereo[frame * 2] = asset.samples[offset + frame];
       stereo[frame * 2 + 1] = asset.samples[offset + frame];
     }
-    if (!writeAll(reinterpret_cast<const uint8_t*>(stereo), frames * 4)) {
+    if (!output.write(reinterpret_cast<const uint8_t*>(stereo), frames * 4)) {
       Serial.println("AUDIO error=i2s-write");
       break;
     }
@@ -157,7 +135,7 @@ void playSpeech() {
         stereo[frame * 2] = sample;
         stereo[frame * 2 + 1] = sample;
       }
-      if (!writeAll(reinterpret_cast<const uint8_t*>(stereo), frames * 4)) {
+      if (!board::audioOutput().write(reinterpret_cast<const uint8_t*>(stereo), frames * 4)) {
         Serial.println("AUDIO error=i2s-write");
         speechAborted.store(true);
         break;
@@ -171,7 +149,7 @@ void playSpeech() {
     played += received;
   }
   if (output) stopOutput();
-  else digitalWrite(kAudioAmplifierPin, LOW);
+  else board::audioOutput().disable();
   if (!speechAborted.load() && (played != expected || pending != 0))
     Serial.printf("AUDIO error=speech-short played=%u expected=%u\n",
                   static_cast<unsigned>(played), static_cast<unsigned>(expected));
@@ -185,38 +163,8 @@ void playSpeech() {
 }
 
 void audioTask(void*) {
-  pinMode(kAudioAmplifierPin, OUTPUT);
-  digitalWrite(kAudioAmplifierPin, LOW);
-  i2s.setPins(kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin, -1,
-              kAudioMclkPin);
-  if (!i2s.begin(I2S_MODE_STD, kAudioSampleRate, I2S_DATA_BIT_WIDTH_16BIT,
-                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
-    Serial.println("AUDIO error=i2s-init");
-    vTaskDelete(nullptr);
-    return;
-  }
-
-  codec = es8311_create(0, ES8311_ADDRESS_0);
-  const es8311_clock_config_t clock = {
-      .mclk_inverted = false,
-      .sclk_inverted = false,
-      .mclk_from_mclk_pin = true,
-      .mclk_frequency = static_cast<int>(kAudioSampleRate * 256),
-      .sample_frequency = static_cast<int>(kAudioSampleRate),
-  };
-  if (!codec ||
-      es8311_init(codec, &clock, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) !=
-          ESP_OK ||
-      es8311_sample_frequency_config(codec, clock.mclk_frequency,
-                                     clock.sample_frequency) != ESP_OK ||
-      es8311_voice_fade(codec, ES8311_FADE_64LRCK) != ESP_OK ||
-      es8311_voice_mute(codec, true) != ESP_OK) {
-    Serial.println("AUDIO error=codec-init");
-    if (codec) {
-      es8311_delete(codec);
-      codec = nullptr;
-    }
-    i2s.end();
+  if (const char* error = board::audioOutput().begin(kAudioSampleRate)) {
+    Serial.printf("AUDIO error=%s\n", error);
     vTaskDelete(nullptr);
     return;
   }

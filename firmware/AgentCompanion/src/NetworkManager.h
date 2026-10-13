@@ -33,7 +33,7 @@ class NetworkManager {
              const SpeechUpload* speech = nullptr);
   void update();
   bool startSetup();
-  bool configure(const char* ssid, const char* password);
+  bool configure(const char* name, const char* password);
   // Scans for nearby networks without blocking; update() reports each result line through report.
   bool startScan(void (*report)(const char* line));
 
@@ -64,11 +64,12 @@ class NetworkManager {
 
  private:
   void configureRoutes();
+  void startServices();
+  void handleStatus();
   void connect();
   void handleConfigure();
   void handlePair();
   void handleState();
-  void handleIcon();
   void handleBadge(const char* fallback);
   void handleCharacterBody();
   void handleCharacterResponse();
@@ -86,6 +87,8 @@ class NetworkManager {
   void ensureIdentity();
   void setChanged();
   bool authorized() const;
+  // Sends 401 when the request lacks the device token.
+  bool requireAuthorized() const;
   bool setupClient() const;
 
   CommandHandler commandHandler_ = nullptr;

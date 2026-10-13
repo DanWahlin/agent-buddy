@@ -39,7 +39,7 @@ An optional `COPILOT_SESSION_ID` adds Copilot attribution/session trailers.
 | --- | --- |
 | `<repo>-v<version>-firmware.zip` | Python installer, checksums, and all matching flash `.bin` files |
 | `<repo>-v<version>-characters.zip` | Every built-in character pack (`copilot.acpk`, `openclaw.acpk`) |
-| `SHA256SUMS` | Checksums for the downloadable ZIP files |
+| `SHA256SUMS` | Checksums for every other release file, including the desktop apps |
 
 The installer validates the included files and writes each at its declared
 address, including the default Copilot pack in the character partition. It does

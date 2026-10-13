@@ -317,7 +317,11 @@ function resize(): void {
   drawInstall();
   if (engine) {
     if (!presenter) {
-      presenter = createPresenter(stage, engine._ac_width(), engine._ac_height());
+      presenter = createPresenter(stage, engine._ac_width(), engine._ac_height(), () => {
+        // The restored texture is empty: send the whole frame, now.
+        dirty = true;
+        schedule();
+      });
       dirty = true;
     }
     const screen = (UNITS - SCREEN) / 2;

@@ -30,13 +30,13 @@ class CharacterEffects {
   const char* error() const { return error_; }
 
  private:
-  int buffer(uint16_t* frame);
+  int buffer(const uint16_t* frame);
   void pixel(int x, int y, uint16_t color);
   void dot(int x, int y, int radius, uint16_t color);
   void spark(int x, int y, int radius, uint16_t color);
   void glyph(const uint8_t* rows, int rowCount, int x, int y, int scale, uint16_t color);
-  void agentBadges(const CharacterState& state);
-  bool showsBadge(AgentBadgeRole role) const;
+  AgentBadgesSnapshot badgeSnapshot() const;
+  void agentBadges(const CharacterState& state, const AgentBadgesSnapshot& badges);
   void badge(const AgentBadgeIcon& icon, AgentBadgeRole role, int x, int y, double seconds);
   void smoothDisc(int x, int y, double outer, double ringWidth, uint16_t fill, uint16_t ringColor, double ringAlpha);
   bool beginOverlay(int x, int y);
@@ -46,6 +46,9 @@ class CharacterEffects {
     int16_t x, y;
     uint8_t width, height;
   };
+  void working(const CharacterState& state);
+  void attention(const CharacterState& state);
+  void complete(const CharacterState& state);
   void workingBits(double seconds);
   void sleepingZs(double seconds);
   void usageText(const CharacterState& state);

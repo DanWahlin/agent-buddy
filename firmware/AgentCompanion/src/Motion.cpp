@@ -1,5 +1,6 @@
 #include "Motion.h"
 #include "Config.h"
+#include "MotionMath.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -7,8 +8,7 @@
 namespace copilot {
 float smoother(float t) {
   t = std::max(0.0f, std::min(1.0f, t));
-  return std::max(0.0f, std::min(1.0f,
-      t * t * t * (t * (t * 6 - 15) + 10)));
+  return std::max(0.0f, std::min(1.0f, quintic(t)));
 }
 
 Motion::Motion(uint32_t seed) : rng_(seed ? seed : 0xC0F1107u) {
@@ -16,10 +16,7 @@ Motion::Motion(uint32_t seed) : rng_(seed ? seed : 0xC0F1107u) {
 }
 
 float Motion::random(float low, float high) {
-  rng_ ^= rng_ << 13;
-  rng_ ^= rng_ >> 17;
-  rng_ ^= rng_ << 5;
-  return low + (high - low) * (rng_ >> 8) / 16777216.0f;
+  return low + (high - low) * (xorshift32(rng_) >> 8) / 16777216.0f;
 }
 
 void Motion::chooseTarget(double now) {

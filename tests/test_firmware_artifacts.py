@@ -1,7 +1,9 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 from tools.firmware_artifacts import BINARIES, BUNDLE, check, layout, record, snapshot
 
 
@@ -37,6 +39,21 @@ class FirmwareBundleTests(unittest.TestCase):
         self.assertIn("firmware/AgentCompanion/AgentCompanion.ino", bundle["inputs"]["files"])
         for key in [*bundle["inputs"]["files"], *bundle["binaries"]]:
             self.assertNotIn("\\", key)
+
+    def test_records_the_board_and_rejects_a_different_board(self):
+        snapshot(self.root)
+        record(self.root)
+        bundle = json.loads((self.root / BUNDLE).read_text())
+        self.assertEqual(bundle["inputs"]["board"], "waveshare-amoled-175")
+        bundle["inputs"]["board"] = "other-board"
+        self.put(BUNDLE, json.dumps(bundle))
+        with self.assertRaisesRegex(ValueError, "built for board other-board"):
+            check(self.root)
+
+    def test_unknown_board_is_rejected(self):
+        with mock.patch.dict(os.environ, {"BOARD": "no-such-board"}), \
+                self.assertRaisesRegex(ValueError, "Unknown board"):
+            snapshot(self.root)
 
     def test_source_changed_during_build(self):
         snapshot(self.root)

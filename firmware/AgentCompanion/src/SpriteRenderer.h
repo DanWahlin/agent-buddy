@@ -1,12 +1,17 @@
 #pragma once
 #include "Config.h"
 #include "SpriteMotion.h"
-#include "CharacterPack.h"
+#include "SpriteStorage.h"
 #include <cstddef>
 #include <cstdint>
 
 namespace copilot {
-using InflateSprite = bool (*)(uint8_t*, size_t, const uint8_t*, size_t, size_t, size_t);
+// A blink blend shows the next blink level from the middle row outward. Rows this many rows or more
+// from the middle show the next level; blend 255 shows it on about half of the rows.
+inline int blinkRevealHalfHeight(uint8_t blend, int height) {
+  const int half = static_cast<int>((static_cast<unsigned>(blend) * (height + 1) / 2 + 254) / 255);
+  return half > 1 ? half : 1;
+}
 
 // Renders base/patch packs: one base image per pose plus blink patches around the eyes.
 class SpriteRenderer {

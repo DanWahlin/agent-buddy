@@ -1,10 +1,10 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "boards/BoardConfig.h"
 
+// Board pins, panel size, and chip addresses are in boards/<board>/BoardConfig.h.
 namespace copilot {
-constexpr int kDisplaySize = 466;
-constexpr int kDisplayCsPin = 12;
 constexpr int kFrameWidth = 400;
 constexpr int kFrameHeight = 352;
 constexpr int kFrameX = (kDisplaySize - kFrameWidth) / 2;
@@ -14,23 +14,9 @@ constexpr int kCharacterFrameWidth = 412;
 constexpr int kCharacterFrameX = (kDisplaySize - kCharacterFrameWidth) / 2;
 constexpr int kCharacterArtX = (kCharacterFrameWidth - kFrameWidth) / 2;
 constexpr int kTargetFps = 30;
-constexpr int kSpriteDrawWidth = 396;
-constexpr int kBrightness = 155;
-constexpr int kAudioMclkPin = 42;
-constexpr int kAudioBclkPin = 9;
-constexpr int kAudioWordSelectPin = 45;
-constexpr int kAudioDataOutPin = 8;
-constexpr int kAudioAmplifierPin = 46;
 constexpr unsigned kAudioSampleRate = 24000;
 constexpr uint8_t kDefaultSoundVolume = 50;
-constexpr int kAudioMinimumCodecVolume = 68;
-constexpr int kAudioMaximumCodecVolume = 82;
 constexpr size_t kSpeechStreamBufferBytes = 16 * 1024;
-constexpr int kSpiFrequency = 80000000;
-constexpr int kTouchSda = 15;
-constexpr int kTouchScl = 14;
-constexpr int kTouchInterrupt = 11;
-constexpr int kTouchReset = 40;
 constexpr unsigned kTouchDebounceMs = 180;
 constexpr int kTouchTapTravelPixels = 24;
 constexpr unsigned kTouchTapMaxMs = 650;
@@ -38,9 +24,6 @@ constexpr int kTouchSwipePixels = 72;
 constexpr unsigned kTouchSwipeMaxMs = 1200;
 constexpr unsigned kTouchSweepMs = 250;
 constexpr unsigned kOrientationPollMs = 16;
-constexpr uint32_t kOrientationI2cFrequency = 400000;
-// The BOOT button. Held at power-on it starts the ROM downloader; after that it is free to read.
-constexpr int kBootButtonPin = 0;
 constexpr unsigned kButtonDebounceMs = 30;
 constexpr unsigned kSettingsIdleTimeoutMs = 30000;
 constexpr unsigned kCharacterUploadStallMs = 500;

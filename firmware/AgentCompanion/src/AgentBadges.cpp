@@ -1,8 +1,29 @@
 #include "AgentBadges.h"
+#include "Rgb565.h"
+#include <algorithm>
 #include <cstring>
+#include <iterator>
 
 namespace copilot {
 namespace {
+// Holds the badge lock for one scope. Host builds are single-threaded, so it does nothing there.
+class CriticalSection {
+ public:
+#if defined(ARDUINO)
+  explicit CriticalSection(portMUX_TYPE& lock) : lock_(lock) { portENTER_CRITICAL(&lock_); }
+  ~CriticalSection() { portEXIT_CRITICAL(&lock_); }
+#else
+  explicit CriticalSection(const AgentBadges::Lock&) {}
+#endif
+  CriticalSection(const CriticalSection&) = delete;
+  CriticalSection& operator=(const CriticalSection&) = delete;
+
+ private:
+#if defined(ARDUINO)
+  portMUX_TYPE& lock_;
+#endif
+};
+
 bool validIdChar(char c) {
   return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
 }
@@ -34,8 +55,7 @@ bool parseColor(const char* text, uint16_t& color) {
   const int r = values[0] * 16 + values[1];
   const int g = values[2] * 16 + values[3];
   const int b = values[4] * 16 + values[5];
-  const uint16_t rgb = static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
-  color = static_cast<uint16_t>((rgb << 8) | (rgb >> 8));
+  color = swapBytes(rgb565(r, g, b));
   return true;
 }
 
@@ -73,7 +93,7 @@ bool decodeBase64(const char* input, uint8_t* output, size_t outputSize) {
         | static_cast<uint32_t>(values[3]);
     const int bytes = 3 - padding;
     if (out + bytes > outputSize) return false;
-    if (bytes >= 1) output[out++] = static_cast<uint8_t>(combined >> 16);
+    output[out++] = static_cast<uint8_t>(combined >> 16);
     if (bytes >= 2) output[out++] = static_cast<uint8_t>(combined >> 8);
     if (bytes >= 3) output[out++] = static_cast<uint8_t>(combined);
   }
@@ -96,43 +116,38 @@ bool parseRole(char c, AgentBadgeRole& role) {
 bool AgentBadges::setIconPacket(const char* payload) {
   error_ = nullptr;
   if (!payload) {
-    setError("missing icon packet");
+    fail("missing icon packet");
     return false;
   }
   AgentBadgeIcon parsed;
   const char* cursor = payload;
   if (!parseId(cursor, parsed.id) || *cursor++ != ':') {
-    setError("invalid icon id");
+    fail("invalid icon id");
     return false;
   }
   if (std::strlen(cursor) < 7 || !parseColor(cursor, parsed.color) || cursor[6] != ':') {
-    setError("invalid icon color");
+    fail("invalid icon color");
     return false;
   }
   cursor += 7;
   if (!decodeBase64(cursor, parsed.mask, sizeof(parsed.mask))) {
-    setError("invalid icon mask");
+    fail("invalid icon mask");
     return false;
   }
   parsed.used = true;
-#if defined(ARDUINO)
-  portENTER_CRITICAL(&lock_);
-#endif
-  int slot = findIcon(parsed.id);
-  if (slot < 0) {
-    for (size_t i = 0; i < kMaxAgentIcons; ++i) {
-      if (!icons_[i].used) { slot = static_cast<int>(i); break; }
+  int slot;
+  {
+    const CriticalSection guard(lock_);
+    slot = findIcon(parsed.id);
+    for (size_t i = 0; slot < 0 && i < kMaxAgentIcons; ++i)
+      if (!icons_[i].used) slot = static_cast<int>(i);
+    if (slot >= 0) {
+      icons_[slot] = parsed;
+      ++revision_;
     }
   }
-  if (slot >= 0) {
-    icons_[slot] = parsed;
-    ++revision_;
-  }
-#if defined(ARDUINO)
-  portEXIT_CRITICAL(&lock_);
-#endif
   if (slot < 0) {
-    setError("icon table full");
+    fail("icon table full");
     return false;
   }
   return true;
@@ -141,7 +156,7 @@ bool AgentBadges::setIconPacket(const char* payload) {
 bool AgentBadges::setActivePacket(const char* payload) {
   error_ = nullptr;
   if (!payload) {
-    setError("missing agents packet");
+    fail("missing agents packet");
     return false;
   }
   ActiveAgentBadge parsed[kMaxActiveAgentBadges] = {};
@@ -151,98 +166,67 @@ bool AgentBadges::setActivePacket(const char* payload) {
     for (;;) {
       if (count == kMaxActiveAgentBadges || !parseId(cursor, parsed[count].id) || *cursor++ != '='
           || !parseRole(*cursor++, parsed[count].role)) {
-        setError("invalid agents packet");
+        fail("invalid agents packet");
         return false;
       }
       ++count;
       if (*cursor == '\0') break;
       if (*cursor++ != ',') {
-        setError("invalid agents separator");
+        fail("invalid agents separator");
         return false;
       }
     }
   }
-#if defined(ARDUINO)
-  portENTER_CRITICAL(&lock_);
-#endif
-  std::memset(active_, 0, sizeof(active_));
-  for (uint8_t i = 0; i < count; ++i) active_[i] = parsed[i];
+  const CriticalSection guard(lock_);
+  std::copy(std::begin(parsed), std::end(parsed), std::begin(active_));
   activeCount_ = count;
   ++revision_;
-#if defined(ARDUINO)
-  portEXIT_CRITICAL(&lock_);
-#endif
   return true;
-}
-
-void AgentBadges::clearActive() {
-#if defined(ARDUINO)
-  portENTER_CRITICAL(&lock_);
-#endif
-  std::memset(active_, 0, sizeof(active_));
-  activeCount_ = 0;
-  ++revision_;
-#if defined(ARDUINO)
-  portEXIT_CRITICAL(&lock_);
-#endif
 }
 
 bool AgentBadges::setUsagePacket(const char* payload) {
   error_ = nullptr;
   if (!payload) {
-    setError("missing usage packet");
+    fail("missing usage packet");
     return false;
   }
   UsageLines parsed;
   if (*payload) {
     for (const char* cursor = payload;; ++cursor) {
       if (parsed.count == kMaxUsageLines) {
-        setError("too many usage lines");
+        fail("too many usage lines");
         return false;
       }
       char* line = parsed.text[parsed.count];
       size_t length = 0;
       for (; *cursor && *cursor != '|'; ++cursor) {
         if (!validUsageChar(*cursor) || length == kUsageLineMax) {
-          setError("invalid usage line");
+          fail("invalid usage line");
           return false;
         }
         line[length++] = *cursor;
       }
       if (length == 0) {
-        setError("empty usage line");
+        fail("empty usage line");
         return false;
       }
       ++parsed.count;
       if (*cursor == '\0') break;
     }
   }
-#if defined(ARDUINO)
-  portENTER_CRITICAL(&lock_);
-#endif
+  const CriticalSection guard(lock_);
   usage_ = parsed;
-#if defined(ARDUINO)
-  portEXIT_CRITICAL(&lock_);
-#endif
   return true;
 }
 
 UsageLines AgentBadges::usage() const {
-#if defined(ARDUINO)
-  portENTER_CRITICAL(&lock_);
-#endif
-  const UsageLines result = usage_;
-#if defined(ARDUINO)
-  portEXIT_CRITICAL(&lock_);
-#endif
-  return result;
+  const CriticalSection guard(lock_);
+  return usage_;
 }
 
 AgentBadgesSnapshot AgentBadges::snapshot() const {
   AgentBadgesSnapshot result;
-#if defined(ARDUINO)
-  portENTER_CRITICAL(&lock_);
-#endif
+  const CriticalSection guard(lock_);
   for (size_t i = 0; i < kMaxAgentIcons; ++i) {
     if (!icons_[i].used) continue;
     result.icons[result.iconCount++] = icons_[i];
@@ -250,9 +234,6 @@ AgentBadgesSnapshot AgentBadges::snapshot() const {
   for (uint8_t i = 0; i < activeCount_; ++i) result.active[i] = active_[i];
   result.activeCount = activeCount_;
   result.revision = revision_;
-#if defined(ARDUINO)
-  portEXIT_CRITICAL(&lock_);
-#endif
   return result;
 }
 

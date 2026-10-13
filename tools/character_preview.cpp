@@ -10,7 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <dirent.h>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -18,6 +18,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 using namespace copilot;
 
@@ -63,17 +67,17 @@ bool selectPack(const std::string& character) {
 }
 
 bool loadPacks() {
-  DIR* directory = opendir("build/characters");
-  if (!directory) {
+  std::error_code error;
+  const std::filesystem::directory_iterator directory("build/characters", error);
+  if (error) {
     std::cerr << "Cannot open build/characters. Run python3 tools/character_pack.py build.\n";
     return false;
   }
   std::vector<std::string> names;
-  while (dirent* entry = readdir(directory)) {
-    const std::string name(entry->d_name);
+  for (const auto& entry : directory) {
+    const std::string name = entry.path().filename().string();
     if (hasSuffix(name, ".acpk")) names.push_back(name);
   }
-  closedir(directory);
   std::sort(names.begin(), names.end());
   for (const std::string& name : names) {
     const std::string id = name.substr(0, name.size() - 5);
@@ -98,6 +102,12 @@ bool loadPacks() {
 }  // namespace
 
 int main() {
+#ifdef _WIN32
+  if (_setmode(_fileno(stdout), _O_BINARY) == -1) {
+    std::cerr << "Cannot use binary output for character frames.\n";
+    return 1;
+  }
+#endif
   if (!loadPacks() || !selectPack("copilot")) {
     std::cerr << (spriteStorageError() ? spriteStorageError() : "Copilot pack is missing.") << '\n';
     return 1;

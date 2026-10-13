@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {needsFirmwareApproval, waitForFirmwareApproval, type FirmwareApproval} from '../src/wifi-transport.js';
+import {
+  assertReleaseBoard, deviceBoard, needsFirmwareApproval, waitForFirmwareApproval, type FirmwareApproval,
+} from '../src/wifi-transport.js';
 
 function reads(...values: Array<FirmwareApproval | null | Error>): () => Promise<FirmwareApproval | null> {
   return async () => {
@@ -25,4 +27,12 @@ test('the wait fails when the device stops waiting', async () => {
 
 test('the wait fails after the timeout', async () => {
   await assert.rejects(waitForFirmwareApproval(reads('waiting'), 20, 5), /Nobody pressed the BOOT button/);
+});
+
+test('release firmware goes only to the release board', () => {
+  assert.equal(deviceBoard(undefined), 'waveshare-amoled-175');
+  assert.equal(deviceBoard('../bad'), 'waveshare-amoled-175');
+  assert.equal(deviceBoard('other-board'), 'other-board');
+  assertReleaseBoard(deviceBoard(undefined));
+  assert.throws(() => assertReleaseBoard('other-board'), /BOARD=other-board/);
 });

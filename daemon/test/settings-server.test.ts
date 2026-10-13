@@ -4,6 +4,9 @@ import {request} from 'node:http';
 import {createServer as createNetServer} from 'node:net';
 import test from 'node:test';
 import {createSettingsServer} from '../src/settings-server.js';
+import {initialOnboarding, SetupError, type OnboardingChange, type OnboardingStep} from '../src/onboarding.js';
+import {isHookCurrent} from '../src/agents/hook-config.js';
+import type {AgentId, HookStatus} from '../src/agents/types.js';
 
 const token = 'a'.repeat(48);
 
@@ -36,6 +39,12 @@ class FakeService extends EventEmitter {
               usb: this.usbFirmware};
   firmwareUpdates = 0;
   usbInstalls = 0;
+  usbInstallPorts: Array<string | undefined> = [];
+  setup = initialOnboarding();
+  setupActions: string[] = [];
+  setupBusy = false;
+  hookStatus: HookStatus = 'installed';
+  hookApprovals: AgentId[][] = [];
   status() {
     return {state: 'idle', transport: 'usb', connected: this.connected, port: '/dev/test', character: 'copilot',
             mode: 'auto', sessions: 0, wifiPaired: false, firmware: this.firmware,
@@ -48,7 +57,7 @@ class FakeService extends EventEmitter {
   }
   agentStatuses() {
     return [{id: 'copilot', name: 'GitHub Copilot', detected: true, installed: true,
-             hookStatus: 'installed', enabled: true, activeSessions: 0, driving: false}];
+             hookStatus: this.hookStatus, enabled: true, activeSessions: 0, driving: false}];
   }
   async setAgentEnabled(id: string, enabled: boolean) {
     this.agentActions.push(`${enabled ? 'enable' : 'disable'}:${id}`);
@@ -117,8 +126,60 @@ class FakeService extends EventEmitter {
   async updateFirmware() {
     this.firmwareUpdates += 1;
   }
-  async installFirmwareOverUsb() {
+  async installFirmwareOverUsb(port?: string) {
     this.usbInstalls += 1;
+    this.usbInstallPorts.push(port);
+  }
+  onboardingStatus() {
+    return {...this.setup, busy: this.setupBusy, phase: null, error: null};
+  }
+  async updateOnboarding(change: OnboardingChange) {
+    this.setup = {...this.setup, ...change};
+    if (!this.setup.visitedSteps.includes(this.setup.step)) this.setup.visitedSteps.push(this.setup.step);
+    return this.setup;
+  }
+  async navigateOnboarding(step: OnboardingStep) {
+    if (this.setupBusy) throw new SetupError('Wait for the current installation to finish.');
+    if (!this.setup.visitedSteps.includes(step)) throw new SetupError('This step has not been reached.');
+    this.setupActions.push(`navigate:${step}`);
+    return this.updateOnboarding({step, ...(step === 'agents' ? {agentStage: 'select'} : {})});
+  }
+  async restartOnboarding() {
+    this.setup = initialOnboarding();
+    return this.setup;
+  }
+  async installOnboardingAgents(approved: AgentId[] = []) {
+    if (!isHookCurrent(this.hookStatus) && !approved.includes('copilot'))
+      throw new SetupError('Hooks changed. Review and approve the required installation.');
+    this.hookApprovals.push(approved);
+    this.setupActions.push('hooks');
+    return this.setup.agents.map(id => ({id, ok: true}));
+  }
+  async rescanAgents() {
+    this.setupActions.push('rescan');
+    return this.agentStatuses();
+  }
+  async removeOnboardingAgent(id: AgentId) {
+    this.setupActions.push(`remove:${id}`);
+    this.setup.agents = this.setup.agents.filter(agent => agent !== id);
+    return {state: this.setup};
+  }
+  async detectUsbDevices() {
+    return {ports: [{path: '/dev/test', pid: 0x1001}], connected: this.connected ? '/dev/test' : null};
+  }
+  async applyOnboardingDisplay() {
+    this.setupActions.push('display');
+  }
+  setupDeviceProblem = false;
+  setupOnboardingDevice(flash: boolean) {
+    if (this.setupDeviceProblem) throw new SetupError('The companion service is stopping.');
+    this.setupActions.push(flash ? 'flash' : 'existing-firmware');
+    return Promise.resolve();
+  }
+  async finishOnboarding() {
+    this.setupActions.push('finish');
+    this.setup.completed = true;
+    return this.setup;
   }
   serviceStops = 0;
   serviceRestarts = 0;
@@ -144,7 +205,9 @@ async function withServer(run: (call: Call, service: FakeService) => Promise<voi
   const server = createSettingsServer({
     service: service as never, port, token,
     thumbnail: async id => id === 'copilot' ? Buffer.from('png') : null,
+    previewPack: async id => Buffer.from(`pack:${id}`),
   });
+
   await new Promise<void>(resolve => server.listen(port, '127.0.0.1', resolve));
   const call: Call = (path, options = {}) => new Promise((resolve, reject) => {
     const headers: Record<string, string> = {Host: options.host ?? `127.0.0.1:${port}`, ...options.headers};
@@ -177,6 +240,84 @@ async function withServer(run: (call: Call, service: FakeService) => Promise<voi
 type Call = (path: string, options?: {
   method?: string; host?: string; token?: string | false; headers?: Record<string, string>; body?: string | Buffer;
 }) => Promise<{status: number; headers: Record<string, string | string[] | undefined>; body: string}>;
+
+test('onboarding hook APIs allow checks without consent and restrict installations to approved agents', async () => {
+  await withServer(async (call, service) => {
+    const post = (body: unknown) => call('/api/onboarding/hooks', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    service.setup.agents = ['copilot'];
+    assert.equal((await post({confirmed: false, agents: ['copilot'], installAgents: []})).status, 200);
+    assert.deepEqual(service.hookApprovals, [[]]);
+    service.setupActions = [];
+    service.hookApprovals = [];
+    service.hookStatus = 'outdated';
+    assert.equal((await post({confirmed: false, agents: ['copilot'], installAgents: []})).status, 409);
+    assert.equal((await post({confirmed: true, agents: ['copilot'], installAgents: []})).status, 409);
+    for (const installAgents of [['copilot', 'copilot'], ['unknown'], ['codex'], 'copilot', null])
+      assert.equal((await post({confirmed: true, agents: ['copilot'], installAgents})).status, 400);
+    assert.equal((await post({confirmed: false, agents: ['copilot'], installAgents: ['copilot']})).status, 400);
+    assert.deepEqual(service.setupActions, []);
+    assert.deepEqual(service.hookApprovals, []);
+    assert.equal((await post({confirmed: true, agents: ['copilot'], installAgents: ['copilot']})).status, 200);
+    assert.deepEqual(service.hookApprovals, [['copilot']]);
+  });
+
+});
+
+test('step navigation requires authentication and a reached step, and refuses installation-time changes', async () => {
+  await withServer(async (call, service) => {
+    const navigate = (step: unknown, authenticated = true) => call('/api/onboarding/navigate', {
+      method: 'POST', token: authenticated ? token : false,
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({step}),
+    });
+    assert.equal((await navigate('welcome', false)).status, 401);
+    assert.equal((await navigate('missing')).status, 400);
+    assert.equal((await navigate('character')).status, 409);
+    await service.updateOnboarding({step: 'agents', agents: ['copilot']});
+    await service.updateOnboarding({step: 'character', character: 'claude'});
+    assert.equal((await navigate('agents')).status, 200);
+    assert.deepEqual(service.setup.agents, ['copilot']);
+    assert.equal(service.setup.character, 'claude');
+    assert.equal((await navigate('character')).status, 200);
+    service.setupBusy = true;
+    assert.equal((await navigate('agents')).status, 409);
+    assert.equal(service.setup.step, 'character');
+    assert.deepEqual(service.setupActions, ['navigate:agents', 'navigate:character']);
+  });
+});
+
+test('a rejected device operation returns a conflict rather than an accepted installation', async () => {
+  await withServer(async (call, service) => {
+    service.setup.display = 'both';
+    service.setup.port = '/dev/test';
+    service.setupDeviceProblem = true;
+    const response = await call('/api/onboarding/device', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirmed: true, flash: false, port: '/dev/test', display: 'both', character: 'copilot'}),
+    });
+    assert.equal(response.status, 409);
+    assert.match(JSON.parse(response.body).error, /service is stopping/);
+    assert.deepEqual(service.setupActions, []);
+  });
+});
+
+test('non-object JSON bodies produce clear errors and cannot change setup or Settings', async () => {
+  await withServer(async (call, service) => {
+    for (const path of ['/api/onboarding', '/api/onboarding/hooks', '/api/onboarding/device', '/api/wifi',
+      '/api/connection', '/api/desktop', '/api/orientation', '/api/badges', '/api/usage', '/api/uninstall']) {
+      for (const body of ['null', '[]', '"value"', 'false']) {
+        const response = await call(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body});
+        assert.equal(response.status, 400, `${path}: ${body}`);
+        assert.equal(JSON.parse(response.body).error, 'Request body must be a JSON object.');
+      }
+    }
+    assert.deepEqual(service.setupActions, []);
+    assert.deepEqual(service.desktop, []);
+    assert.deepEqual(service.wifi, []);
+    assert.deepEqual(service.modes, []);
+    assert.deepEqual(service.uninstalls, []);
+  });
+});
 
 test('orientation settings are authenticated, bounded, confirmed, and report unavailable devices', async () => {
   await withServer(async (call, service) => {
@@ -212,7 +353,37 @@ test('serves the page with strict security headers', async () => {
     assert.match(String(page.headers['content-security-policy']), /default-src 'self'/);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     assert.equal((await call('/app.js', {token: false})).status, 200);
+    const welcome = await call('/welcome-device.webp', {token: false});
+    assert.equal(welcome.status, 200);
+    assert.equal(welcome.headers['content-type'], 'image/webp');
+    assert.match(page.body, /id="ob-welcome-graphic" src="\/welcome-device\.webp"/);
+    const shell = await call('/device-shell.webp', {token: false});
+    assert.equal(shell.status, 200);
+    assert.equal(shell.headers['content-type'], 'image/webp');
+    const engine = await call('/character-engine.js', {token: false});
+    assert.equal(engine.status, 200);
+    assert.match(engine.body, /var createEngine=/);
+    assert.equal((await call('/character-preview.js', {token: false})).status, 200);
+    assert.match(String(page.headers['content-security-policy']), /script-src 'self' 'wasm-unsafe-eval'/);
+    assert.doesNotMatch(String(page.headers['content-security-policy']), /(?:^| )'unsafe-eval'/);
     assert.equal((await call('/../package.json', {token: false})).status, 404);
+  });
+});
+
+test('animation packs require the private token and a registered character without installing it', async () => {
+  await withServer(async (call, service) => {
+    assert.equal((await call('/api/characters/copilot/preview-pack', {token: false})).status, 401);
+    assert.equal((await call(`/api/characters/copilot/preview-pack?token=${token}`, {token: false})).status, 401);
+    assert.equal((await call('/api/characters/copilot/preview-pack', {headers: {Origin: 'https://evil.example'}})).status, 403);
+    assert.equal((await call('/api/characters/missing/preview-pack')).status, 404);
+    assert.equal((await call('/api/characters/..%2f..%2fsecret/preview-pack')).status, 404);
+    const preview = await call('/api/characters/copilot/preview-pack');
+    assert.equal(preview.status, 200);
+    assert.equal(preview.headers['content-type'], 'application/octet-stream');
+    assert.equal(preview.body, 'pack:copilot');
+    assert.equal(Number(preview.headers['content-length']), Buffer.byteLength(preview.body));
+    assert.deepEqual(service.installs, []);
+    assert.deepEqual(service.setupActions, []);
   });
 });
 
@@ -226,6 +397,29 @@ test('rejects foreign hosts, foreign origins, and missing tokens', async () => {
     assert.equal((await call(`/api/status?token=${token}`, {token: false})).status, 401);
     const ok = await call('/api/status', {headers: {Origin: 'http://localhost:1'}});
     assert.equal(ok.status, 403);
+  });
+});
+
+test('welcome animation supports byte ranges and HEAD requests for WebKit playback', async () => {
+  await withServer(async call => {
+    const head = await call('/welcome-idle.mp4', {method: 'HEAD', token: false});
+    assert.equal(head.status, 200);
+    assert.equal(head.headers['content-type'], 'video/mp4');
+    assert.equal(head.headers['accept-ranges'], 'bytes');
+    const size = Number(head.headers['content-length']);
+    assert.ok(size > 0);
+    const first = await call('/welcome-idle.mp4', {token: false, headers: {Range: 'bytes=0-1'}});
+    assert.equal(first.status, 206);
+    assert.equal(first.headers['content-length'], '2');
+    assert.equal(first.headers['content-range'], `bytes 0-1/${size}`);
+    const suffix = await call('/welcome-idle.mp4', {token: false, headers: {Range: 'bytes=-4'}});
+    assert.equal(suffix.status, 206);
+    assert.equal(suffix.headers['content-range'], `bytes ${size - 4}-${size - 1}/${size}`);
+    for (const range of [`bytes=${size}-`, 'bytes=9-1', 'bytes=-0', 'bytes=0-1,3-4', 'invalid']) {
+      const response = await call('/welcome-idle.mp4', {token: false, headers: {Range: range}});
+      assert.equal(response.status, 416);
+      assert.equal(response.headers['content-range'], `bytes */${size}`);
+    }
   });
 });
 
@@ -341,10 +535,14 @@ test('validates and performs actions', async () => {
     assert.match(JSON.parse((await call('/api/firmware/update', {method: 'POST'})).body).error, /Wi-Fi/);
     assert.equal(service.firmwareUpdates, 1);
     assert.equal((await call('/api/firmware/usb', {method: 'POST', token: false})).status, 401);
-    assert.equal((await call('/api/firmware/usb', {method: 'POST'})).status, 202);
+    assert.equal((await call('/api/firmware/usb', {method: 'POST', headers: json, body: '{}'})).status, 400);
+    assert.equal(service.usbInstalls, 0);
+    assert.equal((await call('/api/firmware/usb', {method: 'POST', headers: json,
+      body: '{"confirmed":true,"port":"/dev/test"}'})).status, 202);
     assert.equal(service.usbInstalls, 1);
+    assert.deepEqual(service.usbInstallPorts, ['/dev/test']);
     service.firmware = {...service.firmware, usb: {...service.usbFirmware, flasher: false}};
-    const noApp = await call('/api/firmware/usb', {method: 'POST'});
+    const noApp = await call('/api/firmware/usb', {method: 'POST', headers: json, body: '{"confirmed":true}'});
     assert.equal(noApp.status, 409);
     assert.match(JSON.parse(noApp.body).error, /desktop app/);
     assert.equal(service.usbInstalls, 1);
@@ -362,5 +560,51 @@ test('validates and performs actions', async () => {
       method: 'POST', headers: {'Content-Type': 'application/octet-stream', 'Content-Length': String(17 * 1024 * 1024)},
     })).status, 413);
     assert.equal((await call('/api/characters/custom', {method: 'DELETE'})).status, 200);
+  });
+});
+
+test('onboarding APIs require authentication, valid choices, and explicit install approval', async () => {
+  await withServer(async (call, service) => {
+    const post = (path: string, body: unknown, authenticated = true) =>
+      call(path, {method: 'POST', token: authenticated ? token : false,
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    assert.equal((await call('/onboarding.js', {token: false})).status, 200);
+    assert.equal((await call('/onboarding.css', {token: false})).status, 200);
+    assert.equal((await call('/api/onboarding', {token: false})).status, 401);
+    assert.equal((await post('/api/onboarding', {agents: ['copilot']}, false)).status, 401);
+    for (const choice of [{completed: true}, {agents: ['unknown']}, {display: 'cloud'}, {step: 'missing'}])
+      assert.equal((await post('/api/onboarding', choice)).status, 400);
+    assert.deepEqual(service.setupActions, []);
+    assert.equal((await post('/api/onboarding', {agents: ['copilot'], step: 'agents'})).status, 200);
+    assert.equal((await post('/api/onboarding/hooks', {confirmed: false})).status, 400);
+    assert.deepEqual(service.setupActions, []);
+    assert.equal((await post('/api/onboarding/hooks', {confirmed: true, agents: ['codex']})).status, 409);
+    assert.deepEqual(service.setupActions, []);
+    assert.equal((await post('/api/onboarding/hooks', {confirmed: true, agents: ['copilot']})).status, 200);
+    assert.deepEqual(service.setupActions, ['hooks']);
+    assert.equal((await call('/api/devices', {token: false})).status, 401);
+    assert.deepEqual(JSON.parse((await call('/api/devices')).body).ports, [{path: '/dev/test', pid: 0x1001}]);
+    assert.equal((await post('/api/onboarding/device', {flash: true})).status, 400);
+    assert.equal((await post('/api/onboarding/device', {flash: 'true', confirmed: true})).status, 400);
+    service.setupBusy = true;
+    assert.equal((await post('/api/onboarding/device', {flash: true, confirmed: true})).status, 409);
+    service.setupBusy = false;
+    service.setup.display = 'both';
+    service.setup.port = '/dev/test';
+    assert.equal((await post('/api/onboarding/device', {flash: false, confirmed: true,
+      port: '/dev/other', character: 'copilot', display: 'both'})).status, 409);
+    assert.deepEqual(service.setupActions, ['hooks']);
+    assert.equal((await post('/api/onboarding/device', {flash: false, confirmed: true,
+      port: '/dev/test', character: 'copilot', display: 'both'})).status, 202);
+    assert.deepEqual(service.setupActions, ['hooks', 'existing-firmware']);
+    assert.equal((await post('/api/onboarding/remove-agent', {agent: 'copilot', confirmed: false, agents: ['copilot']})).status, 400);
+    assert.equal((await post('/api/onboarding/remove-agent', {agent: 'copilot', confirmed: true, agents: ['codex']})).status, 409);
+    assert.deepEqual(service.setup.agents, ['copilot']);
+    assert.equal((await post('/api/onboarding/remove-agent', {agent: 'copilot', confirmed: true, agents: ['copilot']})).status, 200);
+    assert.deepEqual(service.setup.agents, []);
+    assert.equal((await call('/api/onboarding/rescan', {method: 'POST'})).status, 200);
+    assert.deepEqual(service.setupActions, ['hooks', 'existing-firmware', 'remove:copilot', 'rescan']);
+    assert.equal((await call('/api/onboarding/finish', {method: 'POST'})).status, 200);
+    assert.equal(service.setup.completed, true);
   });
 });
