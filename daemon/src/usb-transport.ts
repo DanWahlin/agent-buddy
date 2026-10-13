@@ -521,8 +521,8 @@ export class UsbTransport {
                  timeoutMs = this.#requestTimeoutMs): Promise<string> {
     const response = this.#waitFor(match, timeoutMs);
     try {
-      await this.#write(text);
-      const line = await response;
+      // Wait for both together: the answer can time out while the write is still pending.
+      const [, line] = await Promise.all([this.#write(text), response]);
       this.#timeouts = 0;
       return line;
     } catch (error) {
@@ -543,10 +543,9 @@ export class UsbTransport {
     const port = this.#port;
     if (!port?.isOpen) throw new Error('USB device is not connected.');
     await new Promise<void>((resolve, reject) => {
-      port.write(text, error => {
-        if (error) reject(error);
-        else port.drain(drainError => drainError ? reject(drainError) : resolve());
-      });
+      // No drain: on macOS, tcdrain blocks a libuv thread for good when the device stops reading,
+      // and then the process cannot exit. Every request waits for an answer, which is enough.
+      port.write(text, error => error ? reject(error) : resolve());
     });
   }
 

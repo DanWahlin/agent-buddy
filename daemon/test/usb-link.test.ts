@@ -12,13 +12,16 @@ const openPort = MockBinding.open.bind(MockBinding);
 
 // A device on the mock port that answers INFO, orientation, state, and upload requests. After
 // an upload it restarts, and `silentAfterRestart` makes it stop answering, as a wedged USB link does.
-function fakeDevice(options: {silentAfterRestart: boolean; silent?: boolean}) {
+function fakeDevice(options: {silentAfterRestart: boolean; silent?: boolean; stuckDrain?: boolean}) {
   MockBinding.reset();
   MockBinding.createPort(path, {echo: false, record: false, vendorId: '303a', productId: '1001'});
   const state = {character: 'copilot', silent: options.silent ?? false, received: 0, uploading: false};
   MockBinding.open = async openOptions => {
     const binding: MockPortBinding = await openPort(openOptions);
     const write = binding.write.bind(binding);
+    // Like tcdrain on macOS when the device stops reading its USB port: it never returns.
+    const drain = binding.drain.bind(binding);
+    binding.drain = () => state.silent && options.stuckDrain ? new Promise<void>(() => undefined) : drain();
     const reply = (line: string): void => { setImmediate(() => binding.isOpen && binding.emitData(`${line}\n`)); };
     binding.write = async (buffer: Buffer) => {
       await write(buffer);
@@ -119,6 +122,26 @@ test('an open USB port does not count as connected until the device answers', as
     // Only the unanswered-port notice changes; a silent port never reports a connect or disconnect.
     assert.ok(changes <= 1);
   } finally {
+    await usb.stop();
+  }
+});
+
+test('a request to a device that stops reading fails at its timeout and does not crash the service', {timeout: 10_000}, async () => {
+  fakeDevice({silentAfterRestart: true, stuckDrain: true});
+  const unhandled: unknown[] = [];
+  const record = (reason: unknown) => unhandled.push(reason);
+  process.on('unhandledRejection', record);
+  const usb = new UsbTransport(undefined, undefined, {serial: SerialPortMock, requestTimeoutMs: 50});
+  try {
+    usb.start();
+    await until(() => usb.connected);
+    await usb.installCharacter(Buffer.alloc(8));
+    for (const state of ['working', 'idle', 'working'] as const) usb.setState(state);
+    await until(() => !usb.connected);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', record);
     await usb.stop();
   }
 });
