@@ -42,8 +42,8 @@ These are not part of the MIT License. They belong to their owners:
   renders, previews, videos, and images that show them. See
   [Artwork](docs/development.md#artwork) for the Copilot source and GitHub's
   brand guidance.
-- **Agent names and marks.** GitHub Copilot, Claude Code, Codex CLI, Grok
-  Build, Hermes Agent, and OpenClaw are trademarks of their owners. The agent
+- **Agent names and marks.** GitHub Copilot, Claude Code, Codex CLI, Cursor,
+  Grok Build, Hermes Agent, and OpenClaw are trademarks of their owners. The agent
   badges refer to these agents. They do not mean that the owners endorse this
   project.
 

@@ -20,6 +20,30 @@ const uploadIdleTimeoutMs = 30000;
 // The device waits this long for the BOOT press; the daemon waits a little longer.
 const firmwareApprovalMs = 62000;
 const firmwareApprovalPollMs = 500;
+const speechProtocol = 13;
+// Protocol 14 and later firmware can call Deepgram itself: /speech-config and /speak-text.
+export const deepgramDeviceProtocol = 14;
+// A device-side line downloads from Deepgram, then plays for up to 15 seconds.
+const deviceSpeechTimeoutMs = 45_000;
+const deviceSpeechPollMs = 250;
+
+// What the device reports about its own Deepgram speech.
+export interface DeviceDeepgramStatus {
+  configured: boolean;
+  speaking: boolean;
+  error: string | null;
+}
+
+export function parseDeviceDeepgram(value: unknown): DeviceDeepgramStatus | null {
+  if (!value || typeof value !== 'object') return null;
+  const status = value as Record<string, unknown>;
+  if (typeof status.configured !== 'boolean' || typeof status.speaking !== 'boolean') return null;
+  return {
+    configured: status.configured,
+    speaking: status.speaking,
+    error: typeof status.error === 'string' && status.error ? status.error.slice(0, 200) : null,
+  };
+}
 
 export type FirmwareApproval = 'none' | 'waiting' | 'allowed';
 
@@ -79,6 +103,7 @@ export class WifiTransport {
   #ssidBase64: string | undefined;
   #installing = false;
   #buttons: ButtonCount | null = null;
+  #deepgram: DeviceDeepgramStatus | null = null;
   readonly #changed: () => void;
   readonly #button: (presses: number) => void;
 
@@ -107,6 +132,11 @@ export class WifiTransport {
 
   get orientation(): DeviceOrientation | null {
     return this.#connected ? this.#orientation : null;
+  }
+
+  // The device's own Deepgram speech; null when its firmware can't call Deepgram.
+  get deepgram(): DeviceDeepgramStatus | null {
+    return this.#connected ? this.#deepgram : null;
   }
 
   get adaptivePatchRam(): boolean {
@@ -150,6 +180,27 @@ export class WifiTransport {
         console.error(`[wifi] ${this.#message(error)}`);
         this.#setConnection(false, null);
       });
+  }
+
+  async setStateConfirmed(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('Wi-Fi device is not connected.');
+    this.#desired = state;
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => {
+      console.error(`[wifi] ${this.#message(error)}`);
+      this.#setConnection(false, null);
+    });
+    await command;
+  }
+
+  async sendTransientState(state: CharacterState): Promise<void> {
+    if (!this.connected) throw new Error('Wi-Fi device is not connected.');
+    const command = this.#commands.then(() => this.#sendState(state));
+    this.#commands = command.catch(error => {
+      console.error(`[wifi] ${this.#message(error)}`);
+      this.#setConnection(false, null);
+    });
+    await command;
   }
 
   setAgentBadges(icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[]): void {
@@ -197,7 +248,7 @@ export class WifiTransport {
       const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
                                                patchRam?: string; ssidBase64?: string; firmware?: string;
                                                buttonPresses?: number; orientationOffsetTenths?: unknown;
-                                               board?: unknown};
+                                               board?: unknown; deepgram?: unknown};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
       const protocol = Number.isInteger(status.protocol) ? Number(status.protocol) : 0;
@@ -217,6 +268,7 @@ export class WifiTransport {
         ? status.firmware : null;
       this.#ssidBase64 = typeof status.ssidBase64 === 'string' ? status.ssidBase64 : undefined;
       this.#board = deviceBoard(status.board);
+      this.#deepgram = protocol >= deepgramDeviceProtocol ? parseDeviceDeepgram(status.deepgram) : null;
       const needsSync = !this.#connected || endpoint !== this.#endpoint || status.boot !== this.#boot;
       // Protocol 10 and later count BOOT button presses.
       if (Number.isInteger(status.buttonPresses) && Number(status.buttonPresses) >= 0) {
@@ -244,6 +296,94 @@ export class WifiTransport {
 
   async installCharacter(pack: Buffer, progress: InstallProgress = () => undefined): Promise<string> {
     return parseUploadResponse(await this.#upload('/character', pack, {}, progress));
+  }
+
+  async speak(packet: Buffer): Promise<void> {
+    if (!this.#config || !this.#endpoint || !this.#connected)
+      throw new Error('Speech needs the Agent Companion to be reachable over Wi-Fi.');
+    if (this.#protocol < speechProtocol)
+      throw new Error('Update the device firmware before using speech.');
+    const endpoint = new URL(`${this.#endpoint}/speech`);
+    const token = this.#config.token;
+    const response = await new Promise<{status: number; body: string}>((resolve, reject) => {
+      const request = httpRequest(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/vnd.agent-companion.pcm',
+          'Content-Length': packet.length,
+        },
+      }, result => {
+        let body = '';
+        result.setEncoding('utf8');
+        result.on('data', chunk => {
+          if (body.length < 4096) body += chunk.slice(0, 4096 - body.length);
+        });
+        result.on('end', () => resolve({status: result.statusCode ?? 0, body}));
+        result.on('error', reject);
+      });
+      request.setTimeout(uploadIdleTimeoutMs, () =>
+        request.destroy(new Error('Wi-Fi speech upload timed out.')));
+      request.on('error', reject);
+      void (async () => {
+        for (let sent = 0; sent < packet.length; sent += uploadChunkBytes) {
+          const chunk = packet.subarray(sent, sent + uploadChunkBytes);
+          if (!request.write(chunk))
+            await new Promise(drained => request.once('drain', drained));
+        }
+        request.end();
+      })().catch(reject);
+    });
+    parseSpeechResponse(response.status, response.body);
+  }
+
+  // Stores the Deepgram key and voice in the device's flash; an empty key removes them.
+  async configureDeepgram(key: string, model: string): Promise<void> {
+    if (!this.#config || !this.#endpoint || !this.#connected)
+      throw new Error('Connect the Agent Companion over Wi-Fi first.');
+    if (this.#protocol < deepgramDeviceProtocol)
+      throw new Error('Update the device firmware before using Deepgram on the device.');
+    const response = await fetch(`${this.#endpoint}/speech-config`, {
+      method: 'POST',
+      headers: {Authorization: `Bearer ${this.#config.token}`, 'Content-Type': 'text/plain; charset=utf-8'},
+      body: `${key}\n${model}`,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(await deviceError(response, 'The device rejected the Deepgram settings'));
+    this.#deepgram = {configured: key !== '', speaking: this.#deepgram?.speaking ?? false, error: null};
+  }
+
+  // Asks the device to fetch the line from Deepgram and play it, and waits until it has.
+  async speakText(text: string): Promise<void> {
+    if (!this.#config || !this.#endpoint || !this.#connected)
+      throw new Error('Speech needs the Agent Companion to be reachable over Wi-Fi.');
+    if (this.#protocol < deepgramDeviceProtocol)
+      throw new Error('Update the device firmware before using Deepgram on the device.');
+    const endpoint = this.#endpoint;
+    const token = this.#config.token;
+    const response = await fetch(`${endpoint}/speak-text`, {
+      method: 'POST',
+      headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=utf-8'},
+      body: text,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.status === 412) throw new DeviceDeepgramUnconfigured();
+    if (response.status !== 202) throw new Error(await deviceError(response, 'The device rejected speech'));
+    const deadline = Date.now() + deviceSpeechTimeoutMs;
+    for (;;) {
+      await new Promise(resolve => setTimeout(resolve, deviceSpeechPollMs));
+      const status = await fetch(`${endpoint}/status`, {
+        headers: {Authorization: `Bearer ${token}`},
+        signal: AbortSignal.timeout(1200),
+      }).then(result => result.ok ? result.json() as Promise<{deepgram?: unknown}> : null).catch(() => null);
+      const deepgram = parseDeviceDeepgram(status?.deepgram);
+      if (deepgram && !deepgram.speaking) {
+        this.#deepgram = deepgram;
+        if (deepgram.error) throw new Error(deepgram.error);
+        return;
+      }
+      if (Date.now() >= deadline) throw new Error('The device did not finish speaking in time.');
+    }
   }
 
   async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
@@ -459,7 +599,38 @@ export function parseUploadResponse(body: string): string {
   } catch {
     throw new Error(`Device returned an invalid upload response: ${body.slice(0, 120)}`);
   }
+
   if (!result.ok)
     throw new Error(`Device rejected the character: ${String(result.error ?? 'unknown error')}`);
   return typeof result.character === 'string' ? result.character : 'unknown';
+}
+
+// The device answered /speak-text with 412: it has no Deepgram key yet.
+export class DeviceDeepgramUnconfigured extends Error {
+  constructor() {
+    super('The device has no Deepgram API key yet.');
+  }
+}
+
+async function deviceError(response: Response, fallback: string): Promise<string> {
+  const body = await response.text().catch(() => '');
+  try {
+    const parsed = JSON.parse(body) as {error?: unknown};
+    if (typeof parsed.error === 'string') return parsed.error;
+  } catch {
+    // Plain text from an older handler.
+  }
+  return body.trim() ? body.trim().slice(0, 200) : `${fallback} (${response.status}).`;
+}
+
+export function parseSpeechResponse(status: number, body: string): void {
+  let result: {ok?: unknown; error?: unknown};
+  try {
+    result = JSON.parse(body) as typeof result;
+  } catch {
+    throw new Error(`The device returned an invalid speech response (${status}).`);
+  }
+  if (status !== 202 || result.ok !== true)
+    throw new Error(typeof result.error === 'string'
+      ? result.error : `The device rejected speech (${status}).`);
 }

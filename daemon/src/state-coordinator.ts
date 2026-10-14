@@ -1,5 +1,5 @@
 import type {CharacterState, HookEvent, HookPayload} from './protocol.js';
-import type {AgentId} from './agents/types.js';
+import {agentIds, type AgentId} from './agents/types.js';
 import type {AgentBadgeActive} from './agent-badges.js';
 
 export interface PersistedSubagent {
@@ -80,6 +80,27 @@ export class StateCoordinator {
 
   get sessionCount(): number {
     return this.#sessions.size;
+  }
+
+  setLeaseState(leaseId: string, state: CharacterState): boolean {
+    const payload = {sessionId: `lease:${leaseId}`, timestamp: this.#now()};
+    switch (state) {
+      case 'working':
+        return this.handle('preToolUse', payload);
+      case 'attention':
+        return this.handle('notification', payload);
+      case 'complete':
+        this.handle('preToolUse', payload);
+        return this.handle('agentStop', payload);
+      case 'idle':
+        this.#cancelComplete();
+        return this.handle('sessionEnd', payload);
+      case 'surprise':
+        return false;
+      default:
+        state satisfies never;
+        return false;
+    }
   }
 
   get drivingAgents(): AgentId[] {
@@ -457,8 +478,7 @@ export class StateCoordinator {
 
   #agentFromSession(sessionId: string): AgentId | undefined {
     const prefix = sessionId.split(':', 1)[0] ?? '';
-    return ['copilot', 'claude', 'codex', 'grok', 'hermes', 'openclaw'].includes(prefix)
-      ? prefix as AgentId : undefined;
+    return (agentIds as readonly string[]).includes(prefix) ? prefix as AgentId : undefined;
   }
 }
 

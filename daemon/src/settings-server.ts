@@ -11,7 +11,10 @@ import {settingsInfoPath} from './paths.js';
 import {isAgentId} from './agents/types.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 import {isOrientationOffset} from './orientation-settings.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
 import {isOnboardingChange, isOnboardingStep, SetupError} from './onboarding.js';
+import {isSpeechProvider} from './speech-route.js';
+import {isDeepgramKey, isFluxVoice} from './deepgram-speech.js';
 
 export const defaultSettingsPort = 4667;
 const maxJsonBytes = 64 * 1024;
@@ -44,7 +47,7 @@ export interface SettingsServerOptions {
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
-    | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
+    | 'setVoiceNotifications' | 'setSpeechProvider' | 'setDeepgramKey' | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
     | 'restartOnboarding' | 'navigateOnboarding' | 'installOnboardingAgents' | 'detectUsbDevices' | 'applyOnboardingDisplay'
     | 'setupOnboardingDevice' | 'finishOnboarding' | 'removeOnboardingAgent' | 'rescanAgents' | 'on' | 'off'>;
   port: number;
@@ -319,6 +322,31 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'Badge setting must be true or false.');
       await service.setAgentBadgesEnabled(body.enabled);
       return json(response, 200, {ok: true, enabled: body.enabled});
+    }
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'voice') {
+      const body = await readJson(request) as {mode?: unknown};
+      if (!isVoiceNotificationMode(body.mode))
+        throw new HttpError(400, 'Voice notifications must be off, milestones, chatty, or contextual.');
+      await service.setVoiceNotifications(body.mode);
+      return json(response, 200, {ok: true, mode: body.mode});
+    }
+    if (method === 'POST' && segments.length === 1 && segments[0] === 'speech') {
+      const body = await readJson(request) as {provider?: unknown; voice?: unknown};
+      if (!isSpeechProvider(body.provider))
+        throw new HttpError(400, 'The speech provider must be system, deepgram, or deepgram-device.');
+      if (body.voice !== undefined && !isFluxVoice(body.voice))
+        throw new HttpError(400, 'Choose one of the Deepgram Flux voices.');
+      await service.setSpeechProvider(body.provider, body.voice);
+      return json(response, 200, {ok: true, provider: body.provider});
+    }
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'speech' && segments[1] === 'key') {
+      const body = await readJson(request) as {key?: unknown};
+      if (typeof body.key !== 'string') throw new HttpError(400, 'Send the Deepgram API key as text.');
+      const key = body.key.trim();
+      if (key !== '' && !isDeepgramKey(key))
+        throw new HttpError(400, 'The Deepgram API key must be 20 to 128 characters with no spaces.');
+      await service.setDeepgramKey(key === '' ? null : key);
+      return json(response, 200, {ok: true, keySaved: key !== ''});
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'desktop') {
       const body = await readJson(request) as {visible?: unknown; backdrop?: unknown; sounds?: unknown; volume?: unknown;

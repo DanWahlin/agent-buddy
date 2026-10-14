@@ -32,6 +32,9 @@ class FakeService extends EventEmitter {
   badges: boolean[] = [];
   desktop: Array<{visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}> = [];
   usage: Array<{enabled?: boolean; window?: string}> = [];
+  voice: string[] = [];
+  speech: Array<{provider: string; voice?: string}> = [];
+  deepgramKeys: Array<string | null> = [];
   usbFirmware = {release: '0.7.0', releaseId: null, flasher: true, port: '/dev/test', unanswered: false,
                  installing: null, last: null};
   firmware = {device: 'aaaaaaaaaaaaaaaa', built: 'bbbbbbbbbbbbbbbb', canUpdate: true, updating: null, last: null,
@@ -51,6 +54,7 @@ class FakeService extends EventEmitter {
             drivingAgents: [], agents: this.agentStatuses(),
             badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
             desktop: {visible: true, backdrop: 'device', sounds: false, volume: 30, character: 'copilot', pack: null},
+            voice: {mode: 'off', supported: true},
             usage: {enabled: true, window: 'today', aic: 902, tokens: null, lines: ['AIC: 902'], summary: ['AIC: 902']}} as never;
   }
   agentStatuses() {
@@ -117,6 +121,15 @@ class FakeService extends EventEmitter {
   }
   async setUsage(change: {enabled?: boolean; window?: string}) {
     this.usage.push(change);
+  }
+  async setVoiceNotifications(mode: string) {
+    this.voice.push(mode);
+  }
+  async setSpeechProvider(provider: string, voice?: string) {
+    this.speech.push(voice === undefined ? {provider} : {provider, voice});
+  }
+  async setDeepgramKey(key: string | null) {
+    this.deepgramKeys.push(key);
   }
   async updateFirmware() {
     this.firmwareUpdates += 1;
@@ -459,6 +472,25 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/badges', {method: 'POST', headers: json, body: '{"enabled":"yes"}'})).status, 400);
     assert.equal((await call('/api/badges', {method: 'POST', headers: json, body: '{"enabled":false}'})).status, 200);
     assert.deepEqual(service.badges, [false]);
+    assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"loud"}'})).status, 400);
+    assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"milestones"}'})).status, 200);
+    assert.equal((await call('/api/voice', {method: 'POST', headers: json, body: '{"mode":"contextual"}'})).status, 200);
+    assert.deepEqual(service.voice, ['milestones', 'contextual']);
+    assert.equal((await call('/api/speech', {method: 'POST', headers: json, body: '{"provider":"cloud"}'})).status, 400);
+    assert.equal((await call('/api/speech', {method: 'POST', headers: json,
+                                            body: '{"provider":"deepgram","voice":"aura-2-thalia-en"}'})).status, 400);
+    assert.equal((await call('/api/speech', {method: 'POST', headers: json, body: '{"provider":"deepgram"}'})).status, 200);
+    assert.equal((await call('/api/speech', {method: 'POST', headers: json,
+                                            body: '{"provider":"deepgram-device","voice":"flux-cole-en"}'})).status, 200);
+    assert.deepEqual(service.speech, [{provider: 'deepgram'}, {provider: 'deepgram-device', voice: 'flux-cole-en'}]);
+    assert.equal((await call('/api/speech/key', {method: 'POST', headers: json, body: '{"key":42}'})).status, 400);
+    assert.equal((await call('/api/speech/key', {method: 'POST', headers: json, body: '{"key":"short"}'})).status, 400);
+    assert.equal((await call('/api/speech/key', {method: 'POST', headers: json, body: '{"key":"has a space in it, so no"}'})).status, 400);
+    const saved = await call('/api/speech/key', {method: 'POST', headers: json, body: `{"key":" ${'a1'.repeat(20)} "}`});
+    assert.equal(saved.status, 200);
+    assert.deepEqual(JSON.parse(saved.body), {ok: true, keySaved: true});
+    assert.equal((await call('/api/speech/key', {method: 'POST', headers: json, body: '{"key":""}'})).status, 200);
+    assert.deepEqual(service.deepgramKeys, ['a1'.repeat(20), null]);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":"no"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);

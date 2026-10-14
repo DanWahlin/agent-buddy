@@ -29,6 +29,18 @@ function fixture(overrides: StateCoordinatorOptions = {}) {
   };
 }
 
+test('maps external plugin leases into aggregate session state', () => {
+  const {coordinator, states} = fixture();
+  coordinator.setLeaseState('copilot-app:test', 'working');
+  assert.equal(coordinator.state, 'working');
+  coordinator.setLeaseState('copilot-app:test', 'attention');
+  assert.equal(coordinator.state, 'attention');
+  coordinator.setLeaseState('copilot-app:test', 'idle');
+  assert.equal(coordinator.state, 'idle');
+  assert.deepEqual(states, ['working', 'attention', 'idle']);
+  coordinator.close();
+});
+
 test('tracks main and subagent work before completing', async () => {
   const {coordinator, states, payload} = fixture({completeMs: 5});
   coordinator.handle('sessionStart', payload('one'));

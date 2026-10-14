@@ -1,6 +1,6 @@
 import type {CharacterState, DeviceNetwork, InstallProgress, WifiNetwork} from './protocol.js';
 import {UsbTransport, type UsbPort} from './usb-transport.js';
-import {WifiTransport} from './wifi-transport.js';
+import {WifiTransport, type DeviceDeepgramStatus} from './wifi-transport.js';
 import type {WifiConfig} from './wifi-config.js';
 import type {ConnectionMode} from './connection-mode.js';
 import type {AgentBadgeActive, AgentBadgeIconDefinition} from './agent-badges.js';
@@ -20,6 +20,7 @@ export class DeviceTransport {
   #activeBadges: readonly AgentBadgeActive[] = [];
   #usage: readonly string[] = [];
   #installing = false;
+  #speaking = false;
   #mode: ConnectionMode = 'auto';
   #enabled = true;
   #lastPress: {presses: number; at: number} | null = null;
@@ -128,6 +129,21 @@ export class DeviceTransport {
     this.#route();
   }
 
+  async setStateConfirmed(state: CharacterState): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    this.#desired = state;
+    if (this.#usb.connected) await this.#usb.setStateConfirmed(state);
+    else if (this.#wifi.connected) await this.#wifi.setStateConfirmed(state);
+    else throw new Error('Connect the Agent Companion first.');
+  }
+
+  async sendTransientState(state: CharacterState): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    if (this.#usb.connected) await this.#usb.sendTransientState(state);
+    else if (this.#wifi.connected) await this.#wifi.sendTransientState(state);
+    else throw new Error('Connect the Agent Companion first.');
+  }
+
   setAgentBadges(icons: readonly AgentBadgeIconDefinition[], active: readonly AgentBadgeActive[]): void {
     this.#badgeIcons = icons;
     this.#activeBadges = active;
@@ -186,6 +202,39 @@ export class DeviceTransport {
       if (usb) await this.#usb.setEnabled(true);
       this.#installing = false;
       this.#route();
+    }
+  }
+
+  async speak(packet: Buffer): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    if (this.#speaking) throw new Error('Speech playback is already in progress.');
+    this.#speaking = true;
+    try {
+      await this.#wifi.speak(packet);
+    } finally {
+      this.#speaking = false;
+    }
+  }
+
+  // The device's own Deepgram speech over Wi-Fi; null when its firmware can't call Deepgram.
+  get deepgram(): DeviceDeepgramStatus | null {
+    return this.#wifi.deepgram;
+  }
+
+  configureDeepgram(key: string, model: string): Promise<void> {
+    if (this.#installing) return Promise.reject(new Error('Wait for the current installation to finish.'));
+    return this.#wifi.configureDeepgram(key, model);
+  }
+
+  // Resolves once the device has fetched the line from Deepgram and played it.
+  async speakText(text: string): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    if (this.#speaking) throw new Error('Speech playback is already in progress.');
+    this.#speaking = true;
+    try {
+      await this.#wifi.speakText(text);
+    } finally {
+      this.#speaking = false;
     }
   }
 

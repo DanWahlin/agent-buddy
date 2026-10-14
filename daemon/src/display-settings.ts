@@ -3,6 +3,9 @@ import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {displaySettingsPath} from './paths.js';
 import {isUsageWindow, type UsageWindow} from './usage-tracker.js';
+import {isVoiceNotificationMode, type VoiceNotificationMode} from './voice-notifications.js';
+import {isSpeechProvider, type SpeechProvider} from './speech-route.js';
+import {defaultFluxVoice, isFluxVoice, type FluxVoice} from './deepgram-speech.js';
 
 // How the desktop character is framed: as the device itself, or on its own.
 export const desktopBackdrops = ['device', 'none'] as const;
@@ -21,6 +24,11 @@ export interface DisplaySettings {
   // AI credits and tokens at the bottom of the screen, on the device and the desktop.
   showUsage: boolean;
   usageWindow: UsageWindow;
+  // Spoken, privacy-safe state notifications sent to the device over Wi-Fi.
+  voiceNotifications: VoiceNotificationMode;
+  // What turns text into speech; the Deepgram key itself lives in deepgram.json.
+  speechProvider: SpeechProvider;
+  deepgramVoice: FluxVoice;
 }
 
 export const defaultDisplaySettings: DisplaySettings = {
@@ -32,6 +40,9 @@ export const defaultDisplaySettings: DisplaySettings = {
   desktopVolume: 30,
   showUsage: true,
   usageWindow: 'today',
+  voiceNotifications: 'off',
+  speechProvider: 'system',
+  deepgramVoice: defaultFluxVoice,
 };
 
 export function isDesktopVolume(value: unknown): value is number {
@@ -56,6 +67,11 @@ export function loadDisplaySettingsSync(path = displaySettingsPath()): DisplaySe
       desktopVolume: isDesktopVolume(parsed.desktopVolume) ? parsed.desktopVolume : defaultDisplaySettings.desktopVolume,
       showUsage: parsed.showUsage !== false,
       usageWindow: isUsageWindow(parsed.usageWindow) ? parsed.usageWindow : defaultDisplaySettings.usageWindow,
+      voiceNotifications: isVoiceNotificationMode(parsed.voiceNotifications)
+        ? parsed.voiceNotifications : defaultDisplaySettings.voiceNotifications,
+      speechProvider: isSpeechProvider(parsed.speechProvider)
+        ? parsed.speechProvider : defaultDisplaySettings.speechProvider,
+      deepgramVoice: isFluxVoice(parsed.deepgramVoice) ? parsed.deepgramVoice : defaultDisplaySettings.deepgramVoice,
     };
   } catch {
     return {...defaultDisplaySettings};

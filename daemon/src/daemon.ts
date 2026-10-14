@@ -13,7 +13,11 @@ import {isAgentId} from './agents/types.js';
 import {defaultAgentContext, normalizeAgentHook, otherAgentLocations} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
 import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
+import {createSpeechSynthesizer, type SpeechSynthesizer, validateSpeechText} from './speech.js';
+import {isSpeechProvider, type SpeechRoute} from './speech-route.js';
+import {isFluxVoice} from './deepgram-speech.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
@@ -37,7 +41,11 @@ export async function runDaemon(): Promise<void> {
   agentContext.locations = otherAgentLocations(agentContext);
   const badgeIcons = await loadAgentBadgeIcons(agentContext.dataDir);
   // While the service stops on request, the device stays idle.
-  const coordinator = new StateCoordinator(state => { if (!service?.stopping) transport.setState(state); }, {
+  const coordinator = new StateCoordinator(state => {
+    if (service?.stopping) return;
+    transport.setState(state);
+    service?.announceState(state);
+  }, {
     restored,
     onMutation: state => {
       store.schedule(state);
@@ -142,6 +150,25 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
       } else if (request.type === 'send' && characterStates.includes(request.state)) {
         transport.setState(request.state);
         respond(socket, {ok: true, state: request.state});
+      } else if (request.type === 'lease' && characterStates.includes(request.state)) {
+        validateLeaseId(request.leaseId);
+        if (!transport.connected) throw new Error('Connect the Agent Companion first.');
+        if (request.state === 'surprise') {
+          reply(transport.sendTransientState('surprise')
+            .then(() => ({ok: true, state: 'surprise', persistentState: coordinator.state})));
+        } else {
+          coordinator.setLeaseState(request.leaseId, request.state);
+          reply(transport.setStateConfirmed(coordinator.state).then(() => ({ok: true, state: coordinator.state})));
+        }
+      } else if (request.type === 'test') {
+        if (!transport.connected) throw new Error('Connect the Agent Companion first.');
+        reply(transport.setStateConfirmed(coordinator.state).then(() => service.status()));
+      } else if (request.type === 'speak') {
+        socket.setTimeout(60_000, () => socket.destroy());
+        reply(speakWith(request.text, service.speechRoute));
+      } else if (request.type === 'narrate') {
+        socket.setTimeout(60_000, () => socket.destroy());
+        reply(service.narrate(request.text).then(() => ({ok: true})));
       } else if (request.type === 'status') {
         const command = request.client === 'desktop'
           ? service.desktopSeen({
@@ -170,6 +197,12 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         reply(service.setConnection(mode).then(() => ({ok: true, mode})));
       } else if (request.type === 'badges' && typeof request.enabled === 'boolean') {
         reply(service.setAgentBadgesEnabled(request.enabled).then(() => ({ok: true, enabled: request.enabled})));
+      } else if (request.type === 'voice' && isVoiceNotificationMode(request.mode)) {
+        reply(service.setVoiceNotifications(request.mode).then(() => ({ok: true, mode: request.mode})));
+      } else if (request.type === 'speech' && isSpeechProvider(request.provider)
+          && (request.voice === undefined || isFluxVoice(request.voice))) {
+        reply(service.setSpeechProvider(request.provider, request.voice)
+          .then(() => ({ok: true, provider: request.provider})));
       } else if (request.type === 'desktop') {
         if (request.visible !== undefined && typeof request.visible !== 'boolean')
           throw new Error('Desktop visibility must be true or false.');
@@ -218,6 +251,28 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
       respond(socket, {ok: false, error: error instanceof Error ? error.message : String(error)});
     }
   };
+}
+
+function validateLeaseId(value: string): void {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 128
+      || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error('Invalid lease ID.');
+  }
+}
+
+export async function speakText(
+    text: unknown, transport: Pick<DeviceTransport, 'speak'>,
+    synthesizer: SpeechSynthesizer = createSpeechSynthesizer()): Promise<{ok: true}> {
+  const packet = await synthesizer.synthesize(validateSpeechText(text));
+  await transport.speak(packet);
+  return {ok: true};
+}
+
+// Speaks through the provider chosen in Settings: macOS say, or Deepgram from this computer or the device.
+export async function speakWith(text: unknown, route: SpeechRoute): Promise<{ok: true}> {
+  const speech = await route.prepare(validateSpeechText(text));
+  await speech.play();
+  return {ok: true};
 }
 
 function respond(socket: Socket, response: unknown): void {

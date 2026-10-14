@@ -180,6 +180,9 @@ const commands = {
     console.log('\nTry:');
     console.log('  npm run settings');
     console.log('  npm run status');
+    console.log('  npm run speak "Hello from your companion"');
+    console.log('  npm run narrate "Let me check that for you"');
+    console.log('  npm run voice milestones');
     console.log('  npm run wifi "Your Wi-Fi name"');
     console.log('  npm run character openclaw');
     console.log('  npm run badges off');
@@ -224,6 +227,64 @@ const commands = {
       console.log('\nAgents that need a one-time step:');
       printAgentActions(pending);
     }
+  },
+
+  async speak(args) {
+    const text = args.join(' ').trim();
+    if (!text) throw new Error('Usage: npm run speak "Hello from your companion"');
+    await cli(['speak', text], {quiet: true});
+    console.log('Speech sent to the companion.');
+  },
+
+  async narrate(args) {
+    const text = args.join(' ').trim();
+    if (!text) throw new Error('Usage: npm run narrate "Let me check that for you"');
+    await cli(['narrate', text], {quiet: true});
+    console.log('Contextual narration sent to the companion.');
+  },
+
+  async speech(args) {
+    const provider = args[0]?.toLowerCase();
+    const voice = args[1]?.toLowerCase();
+    if (!['system', 'deepgram', 'deepgram-device'].includes(provider))
+      throw new Error('Usage: npm run speech system|deepgram|deepgram-device [flux-haley-en]');
+    await cli(['speech', provider, ...(voice ? [voice] : [])], {quiet: true});
+    console.log(provider === 'system' ? 'Speech uses the macOS system voice.'
+      : provider === 'deepgram' ? 'Speech uses Deepgram Flux from this computer.'
+      : 'Speech uses Deepgram Flux from the device.');
+    if (provider !== 'system') console.log('Add the Deepgram API key on the Device tab: npm run settings');
+  },
+
+  // Gives Claude Code or Codex the narrate tool. Their hooks already drive the display, so the
+  // server runs narrate-only and never takes a state lease of its own.
+  async narration(args) {
+    const [action, agent] = args.map(value => value?.toLowerCase());
+    if (!['add', 'remove'].includes(action) || !['claude', 'codex'].includes(agent))
+      throw new Error('Usage: npm run narration add|remove claude|codex');
+    const name = 'agent-companion-voice';
+    const server = join(root, 'plugins', 'copilot-app-companion', 'server', 'index.mjs');
+    const scope = agent === 'claude' ? ['--scope', 'user'] : [];
+    await run(agent, action === 'add'
+      ? ['mcp', 'add', ...scope, name, '--', process.execPath, server, '--narrate-only']
+      : ['mcp', 'remove', ...scope, name]);
+    const product = agent === 'claude' ? 'Claude Code' : 'Codex';
+    if (action === 'remove') {
+      console.log(`${product} no longer narrates through the companion.`);
+      return;
+    }
+    console.log(`${product} can narrate through the companion. Start a new ${product} session to load it.`);
+    console.log('Narration plays only in Contextual mode: npm run voice contextual');
+  },
+
+  async voice(args) {
+    const mode = args[0]?.toLowerCase();
+    if (!['off', 'milestones', 'chatty', 'contextual'].includes(mode))
+      throw new Error('Usage: npm run voice off|milestones|chatty|contextual');
+    await cli(['voice', mode], {quiet: true});
+    console.log(mode === 'off' ? 'Voice notifications are off.'
+      : mode === 'milestones' ? 'Voice notifications announce milestones.'
+      : mode === 'chatty' ? 'Voice notifications announce activity and milestones.'
+      : 'Voice notifications include agent-written contextual narration.');
   },
 
   async agents(args) {
@@ -314,7 +375,7 @@ const commands = {
 const [name, ...args] = process.argv.slice(2);
 const command = commands[name];
 if (!command) {
-  console.error('Usage: npm run setup | settings | status | agents | wifi [NAME] | pair CODE | character [NAME|PATH] | connection [auto|wifi|usb] | badges [on|off]');
+  console.error('Usage: npm run setup | settings | status | speak TEXT | narrate TEXT | voice [off|milestones|chatty|contextual] | speech [system|deepgram|deepgram-device] [VOICE] | narration add|remove claude|codex | agents | wifi [NAME] | pair CODE | character [NAME|PATH] | connection [auto|wifi|usb] | badges [on|off]');
   process.exit(2);
 }
 command(args).catch(error => {

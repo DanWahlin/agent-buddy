@@ -58,6 +58,8 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext(text.replace(/^import \{Onboarding\} from '\.\/onboarding\.js';\s*/, ''), context);
   assert.equal(runInContext('typeof renderOrientation', context), 'function');
   assert.equal(element('orientation-right').listeners.get('click'), 1);
+  assert.equal(element('voice-mode').listeners.get('change'), 1);
+  assert.equal(element('badges-toggle').listeners.get('change'), 1);
   runInContext('renderOrientation()', context);
   assert.equal(element('orientation-offset').disabled, true);
   runInContext('status = {connected: true, transport: "wifi", state: "idle", character: "copilot", '

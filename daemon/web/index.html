@@ -318,6 +318,24 @@
           </select>
         </div>
       </section>
+      <section class="group" aria-labelledby="voice-title">
+        <div class="group-head">
+          <h3 id="voice-title">Voice notifications</h3>
+        </div>
+        <p class="hint">Speak short, varied status lines through the device. Contextual mode also lets the active agent contribute a purpose-written line without reading raw prompts aloud.</p>
+        <div class="setting-row static">
+          <span>
+            <strong id="voice-mode-label">Announcement level</strong>
+            <span class="hint">Milestones announces questions and completed work. Chatty adds activity. Contextual also allows short agent-written lines for meaningful actions.</span>
+          </span>
+          <select id="voice-mode" aria-labelledby="voice-mode-label">
+            <option value="off">Off</option>
+            <option value="milestones">Milestones</option>
+            <option value="chatty">Chatty</option>
+            <option value="contextual">Contextual</option>
+          </select>
+        </div>
+      </section>
       <section class="group" aria-labelledby="agents-title">
         <div class="group-head">
           <h3 id="agents-title">Agents</h3>
@@ -394,6 +412,50 @@
             <button type="button" id="orientation-reset" class="secondary" disabled>Reset</button>
           </span>
         </div>
+      </section>
+      <section class="group" aria-labelledby="speech-title">
+        <h3 id="speech-title">Speech</h3>
+        <p class="hint" id="speech-hint">Choose what turns spoken lines into audio for the device speaker.</p>
+        <div class="setting-row static">
+          <span>
+            <strong id="speech-provider-label">Voice provider</strong>
+            <span class="hint">The system voice stays on this Mac. Deepgram sends each spoken line to Deepgram.</span>
+          </span>
+          <select id="speech-provider" aria-labelledby="speech-provider-label">
+            <option value="system">System voice (macOS)</option>
+            <option value="deepgram">Deepgram Flux (from this computer)</option>
+            <option value="deepgram-device">Deepgram Flux (from the device)</option>
+          </select>
+        </div>
+        <div class="setting-row static">
+          <span>
+            <strong id="speech-voice-label">Deepgram voice</strong>
+            <span class="hint">A Flux TTS voice.</span>
+          </span>
+          <select id="speech-voice" aria-labelledby="speech-voice-label">
+            <option value="flux-haley-en">Haley</option>
+            <option value="flux-cole-en">Cole</option>
+            <option value="flux-heather-en">Heather</option>
+            <option value="flux-priya-en">Priya</option>
+            <option value="flux-jack-en">Jack</option>
+            <option value="flux-bruce-en">Bruce</option>
+            <option value="flux-rufus-en">Rufus</option>
+            <option value="flux-drew-en">Drew</option>
+          </select>
+        </div>
+        <form id="deepgram-key-form" class="form">
+          <label>Deepgram API key <span id="deepgram-key-state" class="pill offline">No key</span>
+            <input id="deepgram-key" name="deepgram-key" type="password" maxlength="128" autocomplete="off"
+                   placeholder="Paste a key to save or replace it">
+          </label>
+          <span class="row-actions">
+            <button type="submit" class="button">Save key</button>
+            <button type="button" id="deepgram-key-remove" class="secondary">Remove key</button>
+          </span>
+          <p class="hint">No key yet?
+            <a href="https://console.deepgram.com/signup?product=tts&amp;jump=keys&amp;utm_source=github&amp;utm_medium=referral&amp;utm_campaign=danwahlin-agent-buddy&amp;utm_content=settings-speech"
+               target="_blank" rel="noopener">Get a free Deepgram API key</a>.</p>
+        </form>
       </section>
       <div class="setting-row static firmware-row">
         <span>

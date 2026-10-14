@@ -6,8 +6,12 @@ import {characterRequestValue} from './character-pack.js';
 import {isConnectionMode} from './connection-mode.js';
 import {pairWifi} from './wifi-config.js';
 import {defaultAgentContext, normalizeAgentHook, shouldIgnoreGrokClaudeHook, type AgentId} from './agents/index.js';
+import {cursorHookResponse} from './agents/cursor.js';
 import {agentRunsHeadless} from './agents/headless.js';
 import {isAgentId} from './agents/types.js';
+import {isVoiceNotificationMode} from './voice-notifications.js';
+import {isSpeechProvider} from './speech-route.js';
+import {fluxVoices, isFluxVoice} from './deepgram-speech.js';
 
 async function main(): Promise<void> {
   const [command, argument, file, ...options] = process.argv.slice(2);
@@ -29,11 +33,32 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(await requestDaemon({type: 'send', state: argument as typeof characterStates[number]})));
     return;
   }
+  if (command === 'speak') {
+    const text = [argument, file, ...options].filter((value): value is string => value !== undefined).join(' ');
+    const response = checked(await requestDaemon({type: 'speak', text}, 60_000));
+    console.log(JSON.stringify(response));
+    return;
+  }
+  if (command === 'narrate') {
+    const text = [argument, file, ...options].filter((value): value is string => value !== undefined).join(' ');
+    const response = checked(await requestDaemon({type: 'narrate', text}, 60_000));
+    console.log(JSON.stringify(response));
+    return;
+  }
   if (command === 'hook') {
+    let cursorEvent: string | undefined;
+    let responded = false;
+    const allowCursor = () => {
+      if (cursorEvent === undefined || responded) return;
+      responded = true;
+      process.stdout.write(cursorHookResponse(cursorEvent));
+    };
     try {
       const parsed = parseHookArguments(argument, file);
       if (!parsed) return;
+      if (parsed.agent === 'cursor') cursorEvent = parsed.nativeEvent ?? '';
       const input = await readStdin(4 * 1024 * 1024);
+      allowCursor();
       const payload = input.trim() ? parseHookPayload(input) : {};
       if (parsed.agent === 'claude' && shouldIgnoreGrokClaudeHook(process.env, payload, defaultAgentContext().home)) return;
       let headless: boolean | undefined;
@@ -41,7 +66,9 @@ async function main(): Promise<void> {
         .filter(hook => hook.event !== 'notification' || !(headless ??= agentRunsHeadless(parsed.agent)));
       for (const hook of hooks) await requestDaemon({type: 'hook', agent: parsed.agent, event: hook.event, payload: hook.payload}, 300);
     } catch {
-      // Hooks are notifications only; a missing device or daemon must never block Copilot.
+      // Hooks are notifications only; a missing device or daemon must never block the agent.
+      // Cursor blocks a permission hook that prints nothing, so answer before giving up.
+      allowCursor();
     }
     return;
   }
@@ -72,6 +99,19 @@ async function main(): Promise<void> {
     if (argument !== 'on' && argument !== 'off') throw new Error('Usage: agent-companion badges on|off');
     const enabled = argument === 'on';
     console.log(JSON.stringify(checked(await requestDaemon({type: 'badges', enabled}, 2000))));
+    return;
+  }
+  if (command === 'voice') {
+    if (!isVoiceNotificationMode(argument))
+      throw new Error('Usage: agent-companion voice off|milestones|chatty|contextual');
+    console.log(JSON.stringify(checked(await requestDaemon({type: 'voice', mode: argument}, 2000))));
+    return;
+  }
+  if (command === 'speech') {
+    const voice = file;
+    if (!isSpeechProvider(argument) || (voice !== undefined && !isFluxVoice(voice)))
+      throw new Error(`Usage: agent-companion speech system|deepgram|deepgram-device [${fluxVoices.join('|')}]`);
+    console.log(JSON.stringify(checked(await requestDaemon({type: 'speech', provider: argument, voice}, 10_000))));
     return;
   }
   if (command === 'list-characters') {
@@ -134,7 +174,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage: agent-companion {daemon|status|send STATE|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
+    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|narrate TEXT|voice off|milestones|chatty|contextual|speech system|deepgram|deepgram-device [VOICE]|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
 }
 
 function parseHookArguments(first: string | undefined, second: string | undefined):
