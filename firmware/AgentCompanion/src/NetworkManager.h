@@ -81,6 +81,8 @@ class NetworkManager {
   void handleOrientation();
   void handleSpeechBody();
   void handleSpeechResponse();
+  void handleSpeechConfig();
+  void handleSpeakText();
   void confirmFirmware();
   void handleDiscovery();
   void updateConnection();

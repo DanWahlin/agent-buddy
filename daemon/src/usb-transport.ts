@@ -27,7 +27,7 @@ import {
 
 const networkRefreshMs = 5000;
 // The newest firmware protocol this daemon knows; see kDeviceProtocol in DeviceCommands.h.
-const maxProtocol = 13;
+const maxProtocol = 14;
 // Requests in a row without an answer before the port counts as dead. A device that restarts
 // can leave the old port open but silent; closing it lets discovery or Wi-Fi take over.
 const deadLinkTimeouts = 3;

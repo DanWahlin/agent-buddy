@@ -60,6 +60,7 @@ export type DaemonRequest =
   | {type: 'setConnection'; mode: ConnectionMode}
   | {type: 'badges'; enabled: boolean}
   | {type: 'voice'; mode: 'off' | 'milestones' | 'chatty' | 'contextual'}
+  | {type: 'speech'; provider: 'system' | 'deepgram' | 'deepgram-device'; voice?: string}
   | {type: 'desktop'; visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string;
      deviceEnabled?: boolean}
   | {type: 'usage'; enabled?: boolean; window?: string}

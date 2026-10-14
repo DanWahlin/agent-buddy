@@ -1,5 +1,6 @@
 import type {CharacterState} from './protocol.js';
-import {createSpeechSynthesizer, speechSampleRate, validateSpeechText, type SpeechSynthesizer} from './speech.js';
+import {createSpeechSynthesizer, validateSpeechText, type SpeechSynthesizer} from './speech.js';
+import {packetRoute, type PreparedSpeech, type SpeechRoute} from './speech-route.js';
 
 export const voiceNotificationModes = ['off', 'milestones', 'chatty', 'contextual'] as const;
 export type VoiceNotificationMode = typeof voiceNotificationModes[number];
@@ -67,6 +68,8 @@ const playbackMarginMs = 250;
 
 export interface VoiceNotifierOptions {
   synthesizer?: SpeechSynthesizer;
+  // How lines reach the device; when absent, the synthesizer's audio goes to the output.
+  route?: SpeechRoute;
   random?: () => number;
   available?: () => boolean;
   log?: (message: string) => void;
@@ -87,17 +90,15 @@ export class VoiceNotifier {
   #suppressWorkingUntil = -Infinity;
   #narrationsPending = 0;
   #playbackUntil = 0;
-  readonly #output: VoiceOutput;
-  readonly #synthesizer: SpeechSynthesizer;
+  readonly #route: SpeechRoute;
   readonly #random: () => number;
   readonly #available: () => boolean;
   readonly #log: (message: string) => void;
   readonly #error: (message: string) => void;
 
   constructor(output: VoiceOutput, mode: VoiceNotificationMode, options: VoiceNotifierOptions = {}) {
-    this.#output = output;
     this.#mode = mode;
-    this.#synthesizer = options.synthesizer ?? createSpeechSynthesizer();
+    this.#route = options.route ?? packetRoute(options.synthesizer ?? createSpeechSynthesizer(), output);
     this.#random = options.random ?? Math.random;
     this.#available = options.available ?? (() => true);
     this.#log = options.log ?? (message => console.log(message));
@@ -128,10 +129,10 @@ export class VoiceNotifier {
       await this.#waitForPlayback();
       if (this.#mode !== 'contextual') throw new Error('Contextual narration was disabled.');
       if (!this.#available()) throw new Error('The device is no longer connected over Wi-Fi.');
-      const packet = await this.#synthesizer.synthesize(text);
+      const speech = await this.#route.prepare(text);
       if (this.#mode !== 'contextual') throw new Error('Contextual narration was disabled.');
       if (!this.#available()) throw new Error('The device is no longer connected over Wi-Fi.');
-      await this.#send(packet);
+      await this.#send(speech);
       this.#log('[voice] contextual narration sent');
     }).finally(() => {
       this.#narrationsPending--;
@@ -178,9 +179,9 @@ export class VoiceNotifier {
           await this.#waitForPlayback();
           if (!this.#relevant(event)) return;
           const phrase = this.#choose(event.state);
-          const packet = await this.#synthesizer.synthesize(phrase);
+          const speech = await this.#route.prepare(phrase);
           if (!this.#relevant(event)) return;
-          await this.#send(packet);
+          await this.#send(speech);
           this.#lastPhrase.set(event.state, phrase);
           if (event.state === 'working') this.#workingAnnounced = true;
           this.#log(`[voice] ${event.state}: ${phrase}`);
@@ -216,12 +217,12 @@ export class VoiceNotifier {
     if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, delay));
   }
 
-  async #send(packet: Buffer): Promise<void> {
-    await this.#output.speak(packet);
+  async #send(speech: PreparedSpeech): Promise<void> {
+    const remainingMs = await speech.play();
     this.#lastSpeechAt = Date.now();
-    // /speech acknowledges acceptance, not playback completion. Leave time for
-    // this ACSP clip to finish before sending another notifier-owned clip.
-    this.#playbackUntil = Date.now() + packet.readUInt32LE(8) / speechSampleRate * 1000 + playbackMarginMs;
+    // The device can accept a line before it finishes playing. Leave time for
+    // this clip to finish before sending another notifier-owned clip.
+    this.#playbackUntil = Date.now() + remainingMs + playbackMarginMs;
   }
 
   #shouldAnnounce(state: CharacterState, previous: CharacterState): state is Exclude<CharacterState, 'surprise'> {

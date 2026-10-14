@@ -5,6 +5,7 @@ import {
   createSpeechSynthesizer,
   maxSpeechFrames,
   speechHeaderBytes,
+  speechPacketFromPcm,
   speechPacketFromWave,
   speechSampleRate,
   validateSpeechText,
@@ -85,4 +86,12 @@ test('does not mask synthesis or transport failures', async () => {
   }}, {
     synthesize: async () => Buffer.from('packet'),
   }), /device rejected speech/);
+});
+
+test('wraps raw PCM in the same packet as a WAV file', () => {
+  const pcm = Buffer.from([1, 2, 3, 4]);
+  assert.deepEqual(speechPacketFromPcm(pcm), speechPacketFromWave(wave(pcm)));
+  assert.throws(() => speechPacketFromPcm(Buffer.alloc(0)), /empty or misaligned/);
+  assert.throws(() => speechPacketFromPcm(Buffer.alloc(3)), /empty or misaligned/);
+  assert.throws(() => speechPacketFromPcm(Buffer.alloc((maxSpeechFrames + 1) * 2)), /15 seconds/);
 });

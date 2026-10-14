@@ -243,6 +243,18 @@ const commands = {
     console.log('Contextual narration sent to the companion.');
   },
 
+  async speech(args) {
+    const provider = args[0]?.toLowerCase();
+    const voice = args[1]?.toLowerCase();
+    if (!['system', 'deepgram', 'deepgram-device'].includes(provider))
+      throw new Error('Usage: npm run speech system|deepgram|deepgram-device [flux-haley-en]');
+    await cli(['speech', provider, ...(voice ? [voice] : [])], {quiet: true});
+    console.log(provider === 'system' ? 'Speech uses the macOS system voice.'
+      : provider === 'deepgram' ? 'Speech uses Deepgram Flux from this computer.'
+      : 'Speech uses Deepgram Flux from the device.');
+    if (provider !== 'system') console.log('Add the Deepgram API key on the Device tab: npm run settings');
+  },
+
   async voice(args) {
     const mode = args[0]?.toLowerCase();
     if (!['off', 'milestones', 'chatty', 'contextual'].includes(mode))
@@ -342,7 +354,7 @@ const commands = {
 const [name, ...args] = process.argv.slice(2);
 const command = commands[name];
 if (!command) {
-  console.error('Usage: npm run setup | settings | status | speak TEXT | narrate TEXT | voice [off|milestones|chatty|contextual] | agents | wifi [NAME] | pair CODE | character [NAME|PATH] | connection [auto|wifi|usb] | badges [on|off]');
+  console.error('Usage: npm run setup | settings | status | speak TEXT | narrate TEXT | voice [off|milestones|chatty|contextual] | speech [system|deepgram|deepgram-device] [VOICE] | agents | wifi [NAME] | pair CODE | character [NAME|PATH] | connection [auto|wifi|usb] | badges [on|off]');
   process.exit(2);
 }
 command(args).catch(error => {

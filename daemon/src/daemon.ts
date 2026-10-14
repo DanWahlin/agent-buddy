@@ -16,6 +16,8 @@ import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-se
 import {isVoiceNotificationMode} from './voice-notifications.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 import {createSpeechSynthesizer, type SpeechSynthesizer, validateSpeechText} from './speech.js';
+import {isSpeechProvider, type SpeechRoute} from './speech-route.js';
+import {isFluxVoice} from './deepgram-speech.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
@@ -163,7 +165,7 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         reply(transport.setStateConfirmed(coordinator.state).then(() => service.status()));
       } else if (request.type === 'speak') {
         socket.setTimeout(60_000, () => socket.destroy());
-        reply(speakText(request.text, transport));
+        reply(speakWith(request.text, service.speechRoute));
       } else if (request.type === 'narrate') {
         socket.setTimeout(60_000, () => socket.destroy());
         reply(service.narrate(request.text).then(() => ({ok: true})));
@@ -197,6 +199,10 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         reply(service.setAgentBadgesEnabled(request.enabled).then(() => ({ok: true, enabled: request.enabled})));
       } else if (request.type === 'voice' && isVoiceNotificationMode(request.mode)) {
         reply(service.setVoiceNotifications(request.mode).then(() => ({ok: true, mode: request.mode})));
+      } else if (request.type === 'speech' && isSpeechProvider(request.provider)
+          && (request.voice === undefined || isFluxVoice(request.voice))) {
+        reply(service.setSpeechProvider(request.provider, request.voice)
+          .then(() => ({ok: true, provider: request.provider})));
       } else if (request.type === 'desktop') {
         if (request.visible !== undefined && typeof request.visible !== 'boolean')
           throw new Error('Desktop visibility must be true or false.');
@@ -259,6 +265,13 @@ export async function speakText(
     synthesizer: SpeechSynthesizer = createSpeechSynthesizer()): Promise<{ok: true}> {
   const packet = await synthesizer.synthesize(validateSpeechText(text));
   await transport.speak(packet);
+  return {ok: true};
+}
+
+// Speaks through the provider chosen in Settings: macOS say, or Deepgram from this computer or the device.
+export async function speakWith(text: unknown, route: SpeechRoute): Promise<{ok: true}> {
+  const speech = await route.prepare(validateSpeechText(text));
+  await speech.play();
   return {ok: true};
 }
 

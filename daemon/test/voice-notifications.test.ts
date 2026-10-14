@@ -3,6 +3,7 @@ import test, {type TestContext} from 'node:test';
 import {speechSampleRate} from '../src/speech.js';
 import {StateCoordinator} from '../src/state-coordinator.js';
 import {VoiceNotifier, type VoiceNotificationMode} from '../src/voice-notifications.js';
+import {deviceRoute} from '../src/speech-route.js';
 
 function packet(text: string, durationMs = 100): Buffer {
   const frames = speechSampleRate * durationMs / 1000;
@@ -427,4 +428,35 @@ test('contextual narration still validates and requires opt-in plus Wi-Fi', asyn
   assert.throws(() => voice.narrate('https://example.com'), /URLs/);
   assert.throws(() => voice.narrate('first line\nsecond line'), /single spoken line/);
   assert.throws(() => voice.narrate('a'.repeat(181)), /180 characters/);
+});
+
+test('the device route sends only text, and the next line waits for the device to finish', async t => {
+  t.mock.timers.enable({apis: ['Date', 'setTimeout'], now: 100_000});
+  const sent: string[] = [];
+  let finish!: () => void;
+  const voice = new VoiceNotifier({speak: async () => assert.fail('no audio leaves this computer')}, 'contextual', {
+    random: () => 0,
+    route: deviceRoute({
+      speakText: text => {
+        sent.push(text);
+        return new Promise<void>(resolve => { finish = resolve; });
+      },
+    }),
+    log: () => undefined,
+    error: message => assert.fail(message),
+  });
+  const first = voice.narrate('Let me check the calendar for you');
+  await flush();
+  assert.deepEqual(sent, ['Let me check the calendar for you']);
+  const second = voice.narrate('Now sending that note');
+  await flush();
+  assert.deepEqual(sent, ['Let me check the calendar for you']);
+  finish();
+  await first;
+  // Device playback has ended, so only the small margin separates the lines.
+  t.mock.timers.tick(250);
+  await flush();
+  assert.deepEqual(sent, ['Let me check the calendar for you', 'Now sending that note']);
+  finish();
+  await second;
 });

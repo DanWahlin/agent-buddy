@@ -52,7 +52,13 @@ export function speechPacketFromWave(wave: Buffer): Buffer {
   if (!format || format.encoding !== 1 || format.channels !== 1
       || format.sampleRate !== speechSampleRate || format.bits !== 16)
     throw new Error('Speech audio must be mono 24 kHz signed 16-bit PCM.');
-  if (!pcm || pcm.length === 0 || (pcm.length & 1) !== 0)
+  if (!pcm) throw new Error('Speech audio is empty or misaligned.');
+  return speechPacketFromPcm(pcm);
+}
+
+// Wraps raw mono 24 kHz signed 16-bit little-endian samples in the device's ACSP header.
+export function speechPacketFromPcm(pcm: Buffer): Buffer {
+  if (pcm.length === 0 || (pcm.length & 1) !== 0)
     throw new Error('Speech audio is empty or misaligned.');
   const frames = pcm.length / 2;
   if (frames > maxSpeechFrames)

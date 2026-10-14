@@ -10,6 +10,8 @@ import {cursorHookResponse} from './agents/cursor.js';
 import {agentRunsHeadless} from './agents/headless.js';
 import {isAgentId} from './agents/types.js';
 import {isVoiceNotificationMode} from './voice-notifications.js';
+import {isSpeechProvider} from './speech-route.js';
+import {fluxVoices, isFluxVoice} from './deepgram-speech.js';
 
 async function main(): Promise<void> {
   const [command, argument, file, ...options] = process.argv.slice(2);
@@ -105,6 +107,13 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(checked(await requestDaemon({type: 'voice', mode: argument}, 2000))));
     return;
   }
+  if (command === 'speech') {
+    const voice = file;
+    if (!isSpeechProvider(argument) || (voice !== undefined && !isFluxVoice(voice)))
+      throw new Error(`Usage: agent-companion speech system|deepgram|deepgram-device [${fluxVoices.join('|')}]`);
+    console.log(JSON.stringify(checked(await requestDaemon({type: 'speech', provider: argument, voice}, 10_000))));
+    return;
+  }
   if (command === 'list-characters') {
     // Listing can wait on a character pack rebuild after an update.
     console.log(JSON.stringify(await requestDaemon({type: 'listCharacters'}, 30_000)));
@@ -165,7 +174,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|narrate TEXT|voice off|milestones|chatty|contextual|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
+    'Usage: agent-companion {daemon|status|send STATE|speak TEXT|narrate TEXT|voice off|milestones|chatty|contextual|speech system|deepgram|deepgram-device [VOICE]|hook [AGENT] EVENT|agents [enable|disable|install|uninstall AGENT]|setup-wifi SSID|pair-wifi CODE [--host ADDRESS]|setup-character NAME|PATH|connection [auto|usb|wifi]|badges on|off}');
 }
 
 function parseHookArguments(first: string | undefined, second: string | undefined):

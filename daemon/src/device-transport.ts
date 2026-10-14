@@ -1,6 +1,6 @@
 import type {CharacterState, DeviceNetwork, InstallProgress, WifiNetwork} from './protocol.js';
 import {UsbTransport, type UsbPort} from './usb-transport.js';
-import {WifiTransport} from './wifi-transport.js';
+import {WifiTransport, type DeviceDeepgramStatus} from './wifi-transport.js';
 import type {WifiConfig} from './wifi-config.js';
 import type {ConnectionMode} from './connection-mode.js';
 import type {AgentBadgeActive, AgentBadgeIconDefinition} from './agent-badges.js';
@@ -211,6 +211,28 @@ export class DeviceTransport {
     this.#speaking = true;
     try {
       await this.#wifi.speak(packet);
+    } finally {
+      this.#speaking = false;
+    }
+  }
+
+  // The device's own Deepgram speech over Wi-Fi; null when its firmware can't call Deepgram.
+  get deepgram(): DeviceDeepgramStatus | null {
+    return this.#wifi.deepgram;
+  }
+
+  configureDeepgram(key: string, model: string): Promise<void> {
+    if (this.#installing) return Promise.reject(new Error('Wait for the current installation to finish.'));
+    return this.#wifi.configureDeepgram(key, model);
+  }
+
+  // Resolves once the device has fetched the line from Deepgram and played it.
+  async speakText(text: string): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    if (this.#speaking) throw new Error('Speech playback is already in progress.');
+    this.#speaking = true;
+    try {
+      await this.#wifi.speakText(text);
     } finally {
       this.#speaking = false;
     }

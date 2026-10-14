@@ -4,6 +4,8 @@
 #include "DeviceCommands.h"
 #include "OrientationSettings.h"
 #include "SpeechWire.h"
+#include "DeepgramSpeech.h"
+#include "DeepgramWire.h"
 
 #include <Arduino.h>
 #include <DNSServer.h>
@@ -149,6 +151,8 @@ void NetworkManager::configureRoutes() {
             [this] { handleCharacterBody(); });
   server.on("/speech", HTTP_POST, [this] { handleSpeechResponse(); },
             [this] { handleSpeechBody(); });
+  server.on("/speech-config", HTTP_POST, [this] { handleSpeechConfig(); });
+  server.on("/speak-text", HTTP_POST, [this] { handleSpeakText(); });
   server.on("/firmware/approval", HTTP_POST, [this] { handleFirmwareApproval(); });
   server.on("/firmware", HTTP_POST, [this] { handleFirmwareResponse(); },
             [this] { handleFirmwareBody(); });
@@ -274,20 +278,70 @@ void NetworkManager::handleStatus() {
     const int length = usbDiagnostics_(usb, sizeof(usb));
     if (length < 0 || static_cast<size_t>(length) >= sizeof(usb)) std::strcpy(usb, "null");
   }
-  char response[704];
+  // Errors are fixed strings without quotes, so they need no JSON escaping.
+  const char* deepgramFailure = deepgramError();
+  char deepgramErrorJson[96] = "null";
+  if (deepgramFailure) snprintf(deepgramErrorJson, sizeof(deepgramErrorJson), "\"%s\"", deepgramFailure);
+  char response[832];
   snprintf(response, sizeof(response),
            "{\"deviceId\":\"%s\",\"hostname\":\"%s\",\"connected\":%s,\"boot\":%u,\"protocol\":%u,"
            "\"character\":\"%s\",\"patchRam\":\"adaptive\",\"ssidBase64\":\"%s\",\"firmware\":\"%s\","
            "\"buttonPresses\":%u,\"firmwareApproval\":\"%s\",\"orientationOffsetTenths\":%s,"
-           "\"board\":\"%s\",\"usb\":%s}",
+           "\"board\":\"%s\",\"usb\":%s,"
+           "\"deepgram\":{\"configured\":%s,\"speaking\":%s,\"error\":%s}}",
            deviceId_, hostname_, connected_ ? "true" : "false",
            static_cast<unsigned>(bootId_), static_cast<unsigned>(kDeviceProtocol),
            upload_ ? upload_->installedId() : "none", encodedName, firmwareId_,
            static_cast<unsigned>(buttonPresses_),
            approval == FirmwareApproval::Waiting ? "waiting"
                : approval == FirmwareApproval::Allowed ? "allowed" : "none", orientation,
-           board::kId, usb);
+           board::kId, usb, deepgramConfigured() ? "true" : "false",
+           deepgramSpeaking() ? "true" : "false", deepgramErrorJson);
   server.send(200, "application/json", response);
+}
+
+void NetworkManager::handleSpeechConfig() {
+  if (!requireAuthorized()) return;
+  const String body = server.arg("plain");
+  char key[kMaxDeepgramKeyBytes + 1];
+  char model[kMaxDeepgramModelBytes + 1];
+  const char* error = parseDeepgramConfig(body.c_str(), body.length(), key, sizeof(key),
+                                          model, sizeof(model));
+  if (!error) error = setDeepgramConfig(key, model);
+  std::memset(key, 0, sizeof(key));
+  if (error) {
+    char response[96];
+    snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}", error);
+    server.send(400, "application/json", response);
+    return;
+  }
+  server.send(204, "application/json", "");
+}
+
+void NetworkManager::handleSpeakText() {
+  if (!requireAuthorized()) return;
+  const String text = server.arg("plain");
+  switch (requestDeepgramSpeech(text.c_str(), text.length())) {
+    case DeepgramRequest::Accepted:
+      server.send(202, "application/json", "{\"ok\":true,\"speaking\":true}");
+      return;
+    case DeepgramRequest::Busy:
+      server.send(409, "application/json",
+                  "{\"ok\":false,\"error\":\"Speech playback is already in progress.\"}");
+      return;
+    case DeepgramRequest::Unconfigured:
+      server.send(412, "application/json",
+                  "{\"ok\":false,\"error\":\"Add a Deepgram API key in Settings.\"}");
+      return;
+    case DeepgramRequest::Invalid:
+      server.send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"Speech text must be 1 to 500 bytes on one line.\"}");
+      return;
+    case DeepgramRequest::Unavailable:
+      server.send(503, "application/json",
+                  "{\"ok\":false,\"error\":\"Audio output is unavailable.\"}");
+      return;
+  }
 }
 
 void NetworkManager::handleOrientation() {

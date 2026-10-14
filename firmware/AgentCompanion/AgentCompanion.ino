@@ -19,6 +19,7 @@
 #include "src/SpriteStorage.h"
 #include "src/CharacterMotion.h"
 #include "src/AudioPlayer.h"
+#include "src/DeepgramSpeech.h"
 #include "src/AgentBadges.h"
 #include "src/CharacterEffects.h"
 #include "src/CharacterFrame.h"
@@ -1166,6 +1167,7 @@ void setup() {
   settings.setSoundVolume(storedSoundVolume);
   setSoundVolume(storedSoundVolume);
   beginAudio();
+  beginDeepgramSpeech();
   transferBuffer = static_cast<uint8_t*>(heap_caps_aligned_alloc(
       16, kTransferBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
   if (!transferBuffer) fatal("DMA staging allocation failed.");

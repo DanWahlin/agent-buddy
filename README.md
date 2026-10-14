@@ -748,17 +748,45 @@ mode** on the settings page's **Device** tab, or with `npm run connection auto|w
 
 ## Speech
 
-On macOS, the companion can speak a short phrase through the device speaker:
+The companion can speak a short phrase through the device speaker:
 
 ```bash
 npm run speak "Hello from your Agent Companion"
 ```
 
-The background service uses macOS `say` and `afconvert` locally, converts the
-result to mono 24 kHz signed 16-bit PCM, and streams up to 15 seconds to the
-paired device over Wi-Fi. Speech requires current firmware and a reachable
-Wi-Fi connection even when USB is also connected. Linux and Windows currently
-report that no speech provider is available rather than claiming success.
+By default, the background service uses macOS `say` and `afconvert` locally,
+converts the result to mono 24 kHz signed 16-bit PCM, and streams up to 15
+seconds to the paired device over Wi-Fi. Speech requires current firmware and a
+reachable Wi-Fi connection even when USB is also connected. On Linux and
+Windows, the system voice reports that it is unavailable; choose Deepgram
+instead.
+
+**Deepgram Flux voices.** Speech can also come from
+[Deepgram Flux TTS](https://deepgram.com/product/text-to-speech/flux), on any
+operating system. Open **Settings → Device → Speech**, paste a Deepgram API key
+(the **Get a free Deepgram API key** link there opens the Deepgram Console),
+and pick a provider and voice, or use the command line:
+
+```bash
+npm run speech deepgram               # this computer calls Deepgram
+npm run speech deepgram-device        # the device calls Deepgram itself
+npm run speech deepgram flux-cole-en  # also choose a voice
+npm run speech system                 # back to the macOS system voice
+```
+
+| Provider | Who calls Deepgram | Where the key is kept |
+| --- | --- | --- |
+| **System voice** (default) | Nobody; macOS speaks locally | None needed |
+| **Deepgram Flux (from this computer)** | The background service, then it streams the audio to the device | `deepgram.json` in the companion's data folder, readable only by you |
+| **Deepgram Flux (from the device)** | The device, over HTTPS from its own Wi-Fi | The device's flash, plus the same file on this computer |
+
+Both Deepgram providers request raw 24 kHz linear16 audio from the batch
+`POST /v2/speak` endpoint, so nothing is converted on the way to the speaker.
+The device checks Deepgram's certificate against the pinned ISRG roots in
+`firmware/AgentCompanion/src/DeepgramRootCa.h`. Device-side speech needs
+firmware protocol 14 or later. Switching providers takes effect with the next
+line, without a restart. Settings and status only ever report whether a key is
+saved, never the key itself.
 
 Speech preempts a cue that is already playing. Cues requested while speech is
 playing are serialized behind it, and a second speech request is rejected until
@@ -819,12 +847,15 @@ events or dropped by their cooldown. Generic working speech is suppressed while
 narration is pending and for 15 seconds afterwards; an accepted narration also
 counts as the working announcement for that work stretch.
 
-The text is passed only to the operating system's local speech synthesizer. The
-generated audio is held in a temporary file on the computer, deleted after
-conversion, and streamed through a bounded device buffer rather than retained
-as a recording. The authenticated request stays on the local network, but like
-the rest of the Wi-Fi control protocol it uses plain HTTP, so use speech only on
-a trusted network.
+With the system voice, the text is passed only to the operating system's local
+speech synthesizer. The generated audio is held in a temporary file on the
+computer, deleted after conversion, and streamed through a bounded device buffer
+rather than retained as a recording. With either Deepgram provider, each spoken
+line is sent to Deepgram over TLS. The authenticated request to the device stays
+on the local network, but like the rest of the Wi-Fi control protocol it uses
+plain HTTP, so use speech only on a trusted network. With **Deepgram Flux (from
+the device)**, that includes the API key, which crosses the local network once
+each time it is saved.
 
 ## Update
 
@@ -878,9 +909,10 @@ Run these from the repository folder.
 | `npm run setup` | Installs or updates the daemon, agent hooks, and background service. Add `-- --no-open` to skip opening the browser. |
 | `npm run settings` | Opens the settings page |
 | `npm run status` | Shows the connection, character, state, and any pending agent steps |
-| `npm run speak "<text>"` | Speaks up to 15 seconds of locally synthesized audio over Wi-Fi (macOS) |
+| `npm run speak "<text>"` | Speaks up to 15 seconds through the device with the chosen provider (macOS voice or Deepgram) |
 | `npm run narrate "<text>"` | Sends a validated contextual line when Contextual mode is enabled |
 | `npm run voice off\|milestones\|chatty\|contextual` | Controls automatic and contextual spoken notifications |
+| `npm run speech system\|deepgram\|deepgram-device [VOICE]` | Chooses the speech provider and, optionally, a Deepgram Flux voice |
 | `npm run agents` | Lists agents with their versions and hook status |
 | `npm run agents enable\|disable <agent>` | Lets an agent drive the device, or stops it |
 | `npm run agents install\|uninstall <agent>` | Installs or removes one agent's hook |

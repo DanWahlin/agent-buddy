@@ -78,6 +78,12 @@ export function wifiConfigPath(): string {
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'wifi.json');
 }
 
+// The Deepgram API key, kept apart from display.json so status never carries it.
+export function deepgramConfigPath(): string {
+  if (process.env.AGENT_COMPANION_DEEPGRAM_CONFIG) return process.env.AGENT_COMPANION_DEEPGRAM_CONFIG;
+  return join(defaultDataDirectory(process.platform, homedir(), process.env), 'deepgram.json');
+}
+
 export function connectionPreferencePath(): string {
   if (process.env.AGENT_COMPANION_CONNECTION_CONFIG) return process.env.AGENT_COMPANION_CONNECTION_CONFIG;
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'connection.json');

@@ -328,9 +328,9 @@ function renderStatus() {
   if (voiceMode && !voicePending) {
     voiceMode.value = status.voice?.mode ?? 'off';
     voiceMode.disabled = status.voice?.supported === false;
-    voiceMode.title = status.voice?.supported === false
-      ? 'Voice notifications currently require macOS.' : '';
+    voiceMode.title = status.voice?.supported === false ? speechUnavailable(status.voice) : '';
   }
+  renderSpeech();
 
   for (const button of document.querySelectorAll('#modes button')) {
     button.setAttribute('aria-checked', String(button.dataset.mode === status.mode));
@@ -1295,6 +1295,79 @@ $('voice-mode')?.addEventListener('change', async event => {
     voicePending = false;
   }
 });
+
+// Why the chosen voice provider can't speak yet, for the Agents tab tooltip and the Device tab hint.
+function speechUnavailable(voice) {
+  if (voice?.provider === 'deepgram' || voice?.provider === 'deepgram-device') {
+    if (!voice.keySaved) return 'Add a Deepgram API key on the Device tab.';
+    if (voice.provider === 'deepgram-device' && !voice.deviceDeepgram)
+      return 'Deepgram on the device needs current firmware and a Wi-Fi connection.';
+    return '';
+  }
+  return 'The system voice requires macOS. Choose Deepgram on the Device tab instead.';
+}
+
+let speechPending = false;
+
+function renderSpeech() {
+  const voice = status?.voice;
+  if (!voice || speechPending) return;
+  $('speech-provider').value = voice.provider ?? 'system';
+  $('speech-voice').value = voice.voice ?? 'flux-haley-en';
+  $('speech-voice').disabled = voice.provider === 'system';
+  const state = $('deepgram-key-state');
+  state.textContent = voice.keySaved ? 'Key saved' : 'No key';
+  state.className = `pill ${voice.keySaved ? 'usb' : 'offline'}`;
+  $('deepgram-key-remove').disabled = !voice.keySaved;
+  $('speech-hint').textContent = voice.supported
+    ? voice.provider === 'deepgram-device'
+      ? 'The device asks Deepgram for each line itself, over its own Wi-Fi.'
+      : voice.provider === 'deepgram'
+        ? 'This computer asks Deepgram for each line, then streams it to the device over Wi-Fi.'
+        : 'This Mac speaks each line with its built-in voice, then streams it to the device over Wi-Fi.'
+    : speechUnavailable(voice);
+}
+
+async function saveSpeech() {
+  speechPending = true;
+  try {
+    await api('/api/speech', {
+      method: 'POST', type: 'application/json',
+      body: JSON.stringify({provider: $('speech-provider').value, voice: $('speech-voice').value}),
+    });
+    toast('Speech settings saved.', 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    speechPending = false;
+    renderSpeech();
+  }
+}
+
+$('speech-provider')?.addEventListener('change', saveSpeech);
+$('speech-voice')?.addEventListener('change', saveSpeech);
+
+async function saveDeepgramKey(key) {
+  try {
+    await api('/api/speech/key', {method: 'POST', type: 'application/json', body: JSON.stringify({key})});
+    $('deepgram-key').value = '';
+    toast(key ? 'Deepgram API key saved.' : 'Deepgram API key removed.', 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+  }
+}
+
+$('deepgram-key-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const key = $('deepgram-key').value.trim();
+  if (!key) {
+    toast('Paste a Deepgram API key first.', 'error');
+    return;
+  }
+  void saveDeepgramKey(key);
+});
+
+$('deepgram-key-remove')?.addEventListener('click', () => void saveDeepgramKey(''));
 
 let pendingActions = new Map();
 

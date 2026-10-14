@@ -343,6 +343,7 @@ input, select {
 .panel > :last-child { margin-bottom: 0; }
 
 .hint { color: var(--muted); font-size: .9rem; margin: .4rem 0 1rem; line-height: 1.45; }
+.hint a { color: var(--accent); }
 .notice { background: #d2992218; border: 1px solid #d2992266; color: var(--warn); border-radius: 12px; padding: 1rem; margin: 0; }
 code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 

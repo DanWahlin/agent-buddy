@@ -70,6 +70,12 @@ import {
   VoiceNotifier, type VoiceNotificationMode,
 } from './voice-notifications.js';
 import {OnboardingStore, SetupError, type OnboardingChange, type OnboardingState, type OnboardingStep} from './onboarding.js';
+import {createSpeechSynthesizer} from './speech.js';
+import {deviceRoute, packetRoute, type SpeechProvider, type SpeechRoute} from './speech-route.js';
+import {
+  DeepgramFluxSynthesizer, loadDeepgramKey, saveDeepgramKey, validateDeepgramKey, type FluxVoice,
+} from './deepgram-speech.js';
+import {DeviceDeepgramUnconfigured} from './wifi-transport.js';
 
 export interface InstallState {
   character: string;
@@ -169,6 +175,12 @@ export interface CompanionStatus extends DaemonStatus {
   voice: {
     mode: VoiceNotificationMode;
     supported: boolean;
+    provider: SpeechProvider;
+    voice: FluxVoice;
+    // Whether a Deepgram key is saved; the key itself never leaves the service.
+    keySaved: boolean;
+    // Whether the connected device's firmware can call Deepgram itself.
+    deviceDeepgram: boolean;
   };
 }
 
@@ -245,6 +257,11 @@ export class CompanionService extends EventEmitter {
   #lastFirmware: FirmwareStatus['last'] = null;
   readonly #usbInstaller: UsbFirmwareInstaller;
   readonly #voice: VoiceNotifier;
+  readonly #routes: Record<SpeechProvider, SpeechRoute>;
+  #deepgramKey: string | null = null;
+  readonly #deepgramKeyLoaded: Promise<void>;
+  // The key and voice last stored on the device, so each line doesn't send them again.
+  #devicePushed: string | null = null;
   #release: ReleaseFirmware | null = null;
   // A character to install again when the device starts the new firmware later, for example after
   // the user power-cycles a device that stayed in download mode.
@@ -285,10 +302,34 @@ export class CompanionService extends EventEmitter {
     this.#usageTracker = usageTracker;
     this.#firmwareImage = firmwareImage;
     this.#usbInstaller = usbInstaller;
+    this.#deepgramKeyLoaded = loadDeepgramKey().then(key => {
+      this.#deepgramKey = key;
+      if (key) this.emit('change');
+    }, error => {
+      console.error(`[speech] Could not read the Deepgram key: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    this.#routes = {
+      system: packetRoute(createSpeechSynthesizer(), this.#transport),
+      deepgram: packetRoute(new DeepgramFluxSynthesizer({
+        apiKey: async () => {
+          await this.#deepgramKeyLoaded;
+          return this.#deepgramKey;
+        },
+        voice: () => this.#display.deepgramVoice,
+      }), this.#transport),
+      'deepgram-device': deviceRoute({speakText: text => this.#speakOnDevice(text)}),
+    };
+    // Looks up the provider for each line, so a change in Settings applies to the next one.
     this.#voice = new VoiceNotifier(this.#transport, this.#display.voiceNotifications, {
       available: () => this.#transport.network?.connected === true,
+      route: {prepare: text => this.speechRoute.prepare(text)},
     });
     this.#onboarding = onboarding;
+  }
+
+  // How speech reaches the device with the chosen provider.
+  get speechRoute(): SpeechRoute {
+    return this.#routes[this.#display.speechProvider];
   }
 
   // Finds a release firmware that an earlier install downloaded, so status can say if it is current.
@@ -406,7 +447,11 @@ export class CompanionService extends EventEmitter {
       },
       voice: {
         mode: this.#display.voiceNotifications,
-        supported: process.platform === 'darwin',
+        supported: this.#speechSupported(),
+        provider: this.#display.speechProvider,
+        voice: this.#display.deepgramVoice,
+        keySaved: this.#deepgramKey !== null,
+        deviceDeepgram: this.#transport.deepgram !== null,
       },
       service: this.#service,
       wifiPaired: this.#wifiPaired,
@@ -562,6 +607,64 @@ export class CompanionService extends EventEmitter {
     this.#voice.setMode(mode);
     await saveDisplaySettings(this.#display);
     this.emit('change');
+  }
+
+  async setSpeechProvider(provider: SpeechProvider, voice: FluxVoice = this.#display.deepgramVoice): Promise<void> {
+    this.#display = {...this.#display, speechProvider: provider, deepgramVoice: voice};
+    await saveDisplaySettings(this.#display);
+    this.emit('change');
+    if (provider === 'deepgram-device') await this.#pushDeviceDeepgram().catch(() => undefined);
+  }
+
+  // Saves the key for this computer and, when the device calls Deepgram, on the device too. null removes it.
+  async setDeepgramKey(key: string | null): Promise<void> {
+    const saved = key === null ? null : validateDeepgramKey(key);
+    await this.#deepgramKeyLoaded;
+    await saveDeepgramKey(saved);
+    this.#deepgramKey = saved;
+    this.#devicePushed = null;
+    this.emit('change');
+    if (this.#display.speechProvider === 'deepgram-device' || saved === null)
+      await this.#pushDeviceDeepgram().catch(error => {
+        if (this.#display.speechProvider === 'deepgram-device') throw error;
+      });
+  }
+
+  #speechSupported(): boolean {
+    switch (this.#display.speechProvider) {
+      case 'system': return process.platform === 'darwin';
+      case 'deepgram': return this.#deepgramKey !== null;
+      case 'deepgram-device': return this.#deepgramKey !== null && this.#transport.deepgram !== null;
+    }
+  }
+
+  // Stores the key and voice on the device when they differ from what it last received.
+  async #pushDeviceDeepgram(force = false): Promise<void> {
+    await this.#deepgramKeyLoaded;
+    if (!this.#transport.deepgram) {
+      if (this.#display.speechProvider === 'deepgram-device')
+        throw new Error('Connect a device with current firmware over Wi-Fi to use Deepgram on the device.');
+      return;
+    }
+    const key = this.#deepgramKey ?? '';
+    const signature = `${this.#transport.firmware}:${key}:${this.#display.deepgramVoice}`;
+    if (!force && signature === this.#devicePushed && this.#transport.deepgram.configured === (key !== '')) return;
+    await this.#transport.configureDeepgram(key, this.#display.deepgramVoice);
+    this.#devicePushed = signature;
+  }
+
+  async #speakOnDevice(text: string): Promise<void> {
+    await this.#deepgramKeyLoaded;
+    if (!this.#deepgramKey) throw new Error('Add a Deepgram API key in Settings before using Deepgram speech.');
+    await this.#pushDeviceDeepgram();
+    try {
+      await this.#transport.speakText(text);
+    } catch (error) {
+      // The device lost its key (a flash erase, say): store it again and try once more.
+      if (!(error instanceof DeviceDeepgramUnconfigured)) throw error;
+      await this.#pushDeviceDeepgram(true);
+      await this.#transport.speakText(text);
+    }
   }
 
   async setDesktop(change: DesktopChange): Promise<void> {

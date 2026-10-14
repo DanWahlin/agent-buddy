@@ -21,6 +21,29 @@ const uploadIdleTimeoutMs = 30000;
 const firmwareApprovalMs = 62000;
 const firmwareApprovalPollMs = 500;
 const speechProtocol = 13;
+// Protocol 14 and later firmware can call Deepgram itself: /speech-config and /speak-text.
+export const deepgramDeviceProtocol = 14;
+// A device-side line downloads from Deepgram, then plays for up to 15 seconds.
+const deviceSpeechTimeoutMs = 45_000;
+const deviceSpeechPollMs = 250;
+
+// What the device reports about its own Deepgram speech.
+export interface DeviceDeepgramStatus {
+  configured: boolean;
+  speaking: boolean;
+  error: string | null;
+}
+
+export function parseDeviceDeepgram(value: unknown): DeviceDeepgramStatus | null {
+  if (!value || typeof value !== 'object') return null;
+  const status = value as Record<string, unknown>;
+  if (typeof status.configured !== 'boolean' || typeof status.speaking !== 'boolean') return null;
+  return {
+    configured: status.configured,
+    speaking: status.speaking,
+    error: typeof status.error === 'string' && status.error ? status.error.slice(0, 200) : null,
+  };
+}
 
 export type FirmwareApproval = 'none' | 'waiting' | 'allowed';
 
@@ -80,6 +103,7 @@ export class WifiTransport {
   #ssidBase64: string | undefined;
   #installing = false;
   #buttons: ButtonCount | null = null;
+  #deepgram: DeviceDeepgramStatus | null = null;
   readonly #changed: () => void;
   readonly #button: (presses: number) => void;
 
@@ -108,6 +132,11 @@ export class WifiTransport {
 
   get orientation(): DeviceOrientation | null {
     return this.#connected ? this.#orientation : null;
+  }
+
+  // The device's own Deepgram speech; null when its firmware can't call Deepgram.
+  get deepgram(): DeviceDeepgramStatus | null {
+    return this.#connected ? this.#deepgram : null;
   }
 
   get adaptivePatchRam(): boolean {
@@ -219,7 +248,7 @@ export class WifiTransport {
       const status = await response.json() as {deviceId?: string; boot?: number; character?: string; protocol?: number;
                                                patchRam?: string; ssidBase64?: string; firmware?: string;
                                                buttonPresses?: number; orientationOffsetTenths?: unknown;
-                                               board?: unknown};
+                                               board?: unknown; deepgram?: unknown};
       if (status.deviceId?.toLowerCase() !== this.#config.deviceId.toLowerCase()) return false;
       if (!Number.isInteger(status.boot) || Number(status.boot) < 0) return false;
       const protocol = Number.isInteger(status.protocol) ? Number(status.protocol) : 0;
@@ -239,6 +268,7 @@ export class WifiTransport {
         ? status.firmware : null;
       this.#ssidBase64 = typeof status.ssidBase64 === 'string' ? status.ssidBase64 : undefined;
       this.#board = deviceBoard(status.board);
+      this.#deepgram = protocol >= deepgramDeviceProtocol ? parseDeviceDeepgram(status.deepgram) : null;
       const needsSync = !this.#connected || endpoint !== this.#endpoint || status.boot !== this.#boot;
       // Protocol 10 and later count BOOT button presses.
       if (Number.isInteger(status.buttonPresses) && Number(status.buttonPresses) >= 0) {
@@ -305,6 +335,55 @@ export class WifiTransport {
       })().catch(reject);
     });
     parseSpeechResponse(response.status, response.body);
+  }
+
+  // Stores the Deepgram key and voice in the device's flash; an empty key removes them.
+  async configureDeepgram(key: string, model: string): Promise<void> {
+    if (!this.#config || !this.#endpoint || !this.#connected)
+      throw new Error('Connect the Agent Companion over Wi-Fi first.');
+    if (this.#protocol < deepgramDeviceProtocol)
+      throw new Error('Update the device firmware before using Deepgram on the device.');
+    const response = await fetch(`${this.#endpoint}/speech-config`, {
+      method: 'POST',
+      headers: {Authorization: `Bearer ${this.#config.token}`, 'Content-Type': 'text/plain; charset=utf-8'},
+      body: `${key}\n${model}`,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(await deviceError(response, 'The device rejected the Deepgram settings'));
+    this.#deepgram = {configured: key !== '', speaking: this.#deepgram?.speaking ?? false, error: null};
+  }
+
+  // Asks the device to fetch the line from Deepgram and play it, and waits until it has.
+  async speakText(text: string): Promise<void> {
+    if (!this.#config || !this.#endpoint || !this.#connected)
+      throw new Error('Speech needs the Agent Companion to be reachable over Wi-Fi.');
+    if (this.#protocol < deepgramDeviceProtocol)
+      throw new Error('Update the device firmware before using Deepgram on the device.');
+    const endpoint = this.#endpoint;
+    const token = this.#config.token;
+    const response = await fetch(`${endpoint}/speak-text`, {
+      method: 'POST',
+      headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=utf-8'},
+      body: text,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.status === 412) throw new DeviceDeepgramUnconfigured();
+    if (response.status !== 202) throw new Error(await deviceError(response, 'The device rejected speech'));
+    const deadline = Date.now() + deviceSpeechTimeoutMs;
+    for (;;) {
+      await new Promise(resolve => setTimeout(resolve, deviceSpeechPollMs));
+      const status = await fetch(`${endpoint}/status`, {
+        headers: {Authorization: `Bearer ${token}`},
+        signal: AbortSignal.timeout(1200),
+      }).then(result => result.ok ? result.json() as Promise<{deepgram?: unknown}> : null).catch(() => null);
+      const deepgram = parseDeviceDeepgram(status?.deepgram);
+      if (deepgram && !deepgram.speaking) {
+        this.#deepgram = deepgram;
+        if (deepgram.error) throw new Error(deepgram.error);
+        return;
+      }
+      if (Date.now() >= deadline) throw new Error('The device did not finish speaking in time.');
+    }
   }
 
   async setOrientationOffset(offsetDegrees: number): Promise<DeviceOrientation> {
@@ -524,6 +603,24 @@ export function parseUploadResponse(body: string): string {
   if (!result.ok)
     throw new Error(`Device rejected the character: ${String(result.error ?? 'unknown error')}`);
   return typeof result.character === 'string' ? result.character : 'unknown';
+}
+
+// The device answered /speak-text with 412: it has no Deepgram key yet.
+export class DeviceDeepgramUnconfigured extends Error {
+  constructor() {
+    super('The device has no Deepgram API key yet.');
+  }
+}
+
+async function deviceError(response: Response, fallback: string): Promise<string> {
+  const body = await response.text().catch(() => '');
+  try {
+    const parsed = JSON.parse(body) as {error?: unknown};
+    if (typeof parsed.error === 'string') return parsed.error;
+  } catch {
+    // Plain text from an older handler.
+  }
+  return body.trim() ? body.trim().slice(0, 200) : `${fallback} (${response.status}).`;
 }
 
 export function parseSpeechResponse(status: number, body: string): void {
