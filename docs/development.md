@@ -662,7 +662,8 @@ without stopping animation. The checked-in ES8311 driver in
 `src/boards/drivers/es8311/` retains Espressif's Apache-2.0 SPDX headers and
 matches the driver in Waveshare's pinned example.
 
-The board routes audio through MCLK GPIO42, BCLK GPIO9, WS GPIO45, playback data
+The board routes audio through MCLK GPIO42 (GPIO16 on the 1.75-C, detected at startup by the
+B board's TCA9554 expander at I2C 0x20), BCLK GPIO9, WS GPIO45, playback data
 GPIO8, and its two-pin speaker connector. A compatible external speaker is
 required when the board or enclosure does not include one.
 

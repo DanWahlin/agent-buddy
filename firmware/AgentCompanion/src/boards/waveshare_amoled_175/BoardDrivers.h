@@ -34,8 +34,14 @@ inline Qmi8658Accelerometer& accelerometer() {
   return sensor;
 }
 
+// Without the -B board's I/O expander on the shared I2C bus, this is a -C. Needs touch started first.
+inline int detectAudioMclkPin() {
+  Wire.beginTransmission(kIoExpanderI2cAddress);
+  return Wire.endTransmission() == 0 ? kAudioMclkPin : kAudioMclkPinBoardC;
+}
+
 inline Es8311AudioOutput& audioOutput() {
-  static Es8311AudioOutput output({kAudioMclkPin, kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin,
+  static Es8311AudioOutput output({detectAudioMclkPin(), kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin,
                                    kAudioAmplifierPin, kI2cPort, kAudioCodecI2cAddress,
                                    kAudioMinimumCodecVolume, kAudioMaximumCodecVolume});
   return output;

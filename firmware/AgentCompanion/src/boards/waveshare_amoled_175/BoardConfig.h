@@ -34,7 +34,11 @@ constexpr uint8_t kDisplayQspiWriteCommand = 0x32;
 constexpr uint32_t kDisplayQspiPixelAddress = 0x003C00;
 constexpr int kBrightness = 155;
 
+// The -B routes the audio master clock to GPIO42 and has a TCA9554 I/O expander at 0x20.
+// The -C routes it to GPIO16 and has no expander, which is how the firmware tells them apart.
 constexpr int kAudioMclkPin = 42;
+constexpr int kAudioMclkPinBoardC = 16;
+constexpr uint8_t kIoExpanderI2cAddress = 0x20;
 constexpr int kAudioBclkPin = 9;
 constexpr int kAudioWordSelectPin = 45;
 constexpr int kAudioDataOutPin = 8;

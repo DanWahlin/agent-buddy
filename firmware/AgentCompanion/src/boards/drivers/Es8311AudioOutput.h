@@ -78,6 +78,8 @@ class Es8311AudioOutput {
     return true;
   }
 
+  int mclkPin() const { return config_.mclkPin; }
+
   // Mutes the codec, then turns off the amplifier.
   void disable() {
     es8311_voice_mute(codec_, true);

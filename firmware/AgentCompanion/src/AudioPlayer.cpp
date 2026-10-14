@@ -79,8 +79,8 @@ void audioTask(void*) {
     vTaskDelete(nullptr);
     return;
   }
-  Serial.printf("AUDIO ready sample_rate=%u volume=%u\n", kAudioSampleRate,
-                static_cast<unsigned>(currentVolume.load()));
+  Serial.printf("AUDIO ready sample_rate=%u volume=%u mclk=%d\n", kAudioSampleRate,
+                static_cast<unsigned>(currentVolume.load()), board::audioOutput().mclkPin());
   ready.store(true);
 
   AudioCue cue;
@@ -94,6 +94,9 @@ void audioTask(void*) {
 
 bool beginAudio() {
   if (cueQueue) return true;
+  // Creates the board's audio output here, after touch has started the shared I2C bus, so its
+  // board check runs once on this task rather than racing touch from the audio task.
+  board::audioOutput();
   cueQueue = xQueueCreate(1, sizeof(AudioCue));
   if (!cueQueue) {
     Serial.println("AUDIO error=queue-create");
