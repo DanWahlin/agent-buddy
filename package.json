@@ -14,6 +14,7 @@
     "narrate": "node tools/companion.mjs narrate",
     "voice": "node tools/companion.mjs voice",
     "speech": "node tools/companion.mjs speech",
+    "narration": "node tools/companion.mjs narration",
     "wifi": "node tools/companion.mjs wifi",
     "pair": "node tools/companion.mjs pair",
     "character": "node tools/companion.mjs character",

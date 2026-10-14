@@ -842,6 +842,20 @@ npm run voice contextual
 npm run narrate "Let me check the calendar for you"
 ```
 
+GitHub Copilot narrates through the plugin in `plugins/copilot-app-companion`.
+Claude Code and Codex can narrate too, through the same MCP server in a
+narrate-only mode that leaves the display to their hooks and tells the agent
+when to speak and what to leave out:
+
+```bash
+npm run narration add claude     # or: npm run narration add codex
+npm run narration remove claude
+```
+
+This registers the server with that agent's CLI (for Claude Code, in your
+user-level configuration so it works in every project). Start a new agent
+session afterwards to load it.
+
 Explicit contextual lines remain ordered rather than being replaced by automatic
 events or dropped by their cooldown. Generic working speech is suppressed while
 narration is pending and for 15 seconds afterwards; an accepted narration also
@@ -912,6 +926,7 @@ Run these from the repository folder.
 | `npm run speak "<text>"` | Speaks up to 15 seconds through the device with the chosen provider (macOS voice or Deepgram) |
 | `npm run narrate "<text>"` | Sends a validated contextual line when Contextual mode is enabled |
 | `npm run voice off\|milestones\|chatty\|contextual` | Controls automatic and contextual spoken notifications |
+| `npm run narration add\|remove claude\|codex` | Lets Claude Code or Codex add contextual narration through the companion |
 | `npm run speech system\|deepgram\|deepgram-device [VOICE]` | Chooses the speech provider and, optionally, a Deepgram Flux voice |
 | `npm run agents` | Lists agents with their versions and hook status |
 | `npm run agents enable\|disable <agent>` | Lets an agent drive the device, or stops it |

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import {createInterface} from 'node:readline';
-import {createToolHandler, listTools} from './tools.mjs';
+import {createToolHandler, listTools, narrationInstructions} from './tools.mjs';
 
 const supportedVersions = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
 const latestVersion = '2025-06-18';
-const handleTool = createToolHandler();
+// --narrate-only serves agents whose own hooks drive the display: Claude Code, Codex, and others.
+const narrateOnly = process.argv.includes('--narrate-only');
+const handleTool = createToolHandler({narrateOnly});
 const lines = createInterface({input: process.stdin, crlfDelay: Infinity});
 
 for await (const line of lines) {
@@ -34,10 +36,11 @@ async function handleRequest(method, params = {}) {
       protocolVersion: supportedVersions.has(requested) ? requested : latestVersion,
       capabilities: {tools: {listChanged: false}},
       serverInfo: {name: 'esp32-agent-companion', version: '0.2.0'},
+      ...(narrateOnly ? {instructions: narrationInstructions} : {}),
     };
   }
   if (method === 'ping') return {};
-  if (method === 'tools/list') return {tools: listTools()};
+  if (method === 'tools/list') return {tools: listTools({narrateOnly})};
   if (method === 'tools/call') {
     if (typeof params.name !== 'string') throw new Error('tools/call requires a tool name.');
     return handleTool(params.name, params.arguments ?? {});

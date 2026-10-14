@@ -47,12 +47,27 @@ const tools = [
   },
 ];
 
+// Narration only, for agents whose hooks already drive the companion's states (Claude Code, Codex).
+// Without set_state they can't hold a second lease that fights their hooks over the display.
+const narrationTools = new Set(['status', 'narrate']);
+
+// Read by agents that load MCP server instructions, such as Claude Code, in place of a skill.
+export const narrationInstructions = `Voice narration for the ESP32 Agent Companion, a desk device that shows and speaks your activity.
+
+When the companion's Voice notifications mode is "contextual", call narrate occasionally, just before a meaningful action the user would notice, with one short natural sentence that says what you are about to do, such as "Let me check the calendar for you" or "I'll send that message to Paul." Speak in the first person, like a helpful assistant at the user's desk.
+
+Do not narrate routine file reads, searches, builds, tests, or every tool call; a few lines per task is plenty. Never include secrets, tokens, code, commands, URLs, email addresses, file names, paths, opaque identifiers, or quoted prompt or message contents. Paraphrase the purpose only, in under 180 characters.
+
+If narrate reports that contextual narration is not enabled, or that the daemon or device is unavailable, stop narrating for the rest of the session without retrying or mentioning it again. Narration is decoration: never let it delay or change the user's task.`;
+
 export function createToolHandler({
   request = requestDaemon,
   leaseId = `copilot-app:${randomUUID()}`,
+  narrateOnly = false,
 } = {}) {
   return async function handleTool(name, input = {}) {
     try {
+      if (narrateOnly && !narrationTools.has(name)) throw new Error(`Unknown tool: ${name}`);
       if (name === 'status') {
         validateNoArguments(input);
         return success(await request({type: 'status'}));
@@ -76,8 +91,8 @@ export function createToolHandler({
   };
 }
 
-export function listTools() {
-  return tools;
+export function listTools({narrateOnly = false} = {}) {
+  return narrateOnly ? tools.filter(tool => narrationTools.has(tool.name)) : tools;
 }
 
 function validateNoArguments(input) {

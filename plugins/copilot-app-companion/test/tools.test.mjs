@@ -77,3 +77,20 @@ test('returns explicit daemon and device errors', async () => {
   assert.equal(result.isError, true);
   assert.equal(result.content[0].text, 'USB device is not connected.');
 });
+
+test('narrate-only mode offers status and narrate but never a state lease', async () => {
+  assert.deepEqual(listTools({narrateOnly: true}).map(tool => tool.name), ['status', 'narrate']);
+  const calls = [];
+  const handle = createToolHandler({
+    narrateOnly: true,
+    request: async request => {
+      calls.push(request);
+      return {ok: true};
+    },
+  });
+  const rejected = await handle('set_state', {state: 'working'});
+  assert.equal(rejected.isError, true);
+  assert.match(rejected.content[0].text, /Unknown tool: set_state/);
+  assert.equal((await handle('narrate', {text: 'Let me check the calendar.'})).isError, undefined);
+  assert.deepEqual(calls, [{type: 'narrate', text: 'Let me check the calendar.'}]);
+});
