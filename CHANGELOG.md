@@ -2,6 +2,19 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.11]
+
+### Fixes
+
+- Fix silent audio on the 1.75-C board by detecting its audio clock pin (#30)
+
+
+### Other changes
+
+- Restart the USB serial port when it stops taking data (#28)
+
+- Detect the 1.75-C as a board variant, and ignore bus errors (#31)
+
 ## [v0.14.10]
 
 ### Other changes
