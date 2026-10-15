@@ -2,9 +2,9 @@
 //!
 //! The companion service runs `agent-companion-desktop --flash-firmware <dir>
 //! --port <path>` after it downloads and checks a release, and reads the lines
-//! this prints: `stage <name>`, `progress <percent>`, then `done` or `error
-//! <message>`. It runs before Tauri starts, so it needs no window and works while
-//! the pet is open.
+//! this prints: `stage <name>`, `progress <percent>`, `log <message>` for its
+//! log, then `done` or `error <message>`. It runs before Tauri starts, so it needs
+//! no window and works while the pet is open.
 
 use std::{borrow::Cow, fs, path::Path};
 
@@ -23,6 +23,8 @@ const ESPRESSIF_VID: u16 = 0x303a;
 // The ESP32-S3's own USB port (USB-Serial-JTAG); espflash resets it differently from a UART bridge.
 const USB_SERIAL_JTAG_PID: u16 = 0x1001;
 const FLASH_BAUD: u32 = 460_800;
+// A write that fails is tried again once, from a new connection; most of these errors do not repeat.
+const WRITE_ATTEMPTS: u32 = 2;
 
 // The same files, order and budgets as tools/flash_release.py.
 const IMAGES: [&str; 5] = [
@@ -92,12 +94,53 @@ pub fn run(options: Result<Options, String>) -> i32 {
 fn flash(options: &Options) -> Result<(), String> {
     println!("stage checking");
     let segments = load(Path::new(&options.dir))?;
+    retry_writes(|| write(options, &segments), |line| println!("log {}", line.replace('\n', " ")))
+}
 
+enum Failure {
+    // Trying again does not help: the device did not connect, or the port could not open.
+    Final(String),
+    // The write failed after the device connected.
+    Write(String),
+}
+
+fn retry_writes(mut attempt: impl FnMut() -> Result<(), Failure>, mut log: impl FnMut(&str)) -> Result<(), String> {
+    for tried in 1..=WRITE_ATTEMPTS {
+        match attempt() {
+            Ok(()) => return Ok(()),
+            Err(Failure::Final(error)) => return Err(error),
+            Err(Failure::Write(error)) if tried < WRITE_ATTEMPTS => {
+                log(&format!("write failed ({error}); trying again from a new connection"));
+            }
+            Err(Failure::Write(error)) => {
+                return Err(format!("Couldn't write the firmware (tried {WRITE_ATTEMPTS} times): {error}"));
+            }
+        }
+    }
+    unreachable!("WRITE_ATTEMPTS is at least 1")
+}
+
+/// The error and each error that caused it, as one line, for example "The bootloader returned an
+/// error: Error while running FlashData command: ...". The top level alone hides the cause.
+fn describe(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let part = cause.to_string();
+        if !text.ends_with(&part) {
+            text = format!("{text}: {part}");
+        }
+        source = cause.source();
+    }
+    text
+}
+
+fn write(options: &Options, segments: &[Segment<'static>]) -> Result<(), Failure> {
     println!("stage connecting");
     let serial = serialport::new(&options.port, 115_200)
         .flow_control(FlowControl::None)
         .open_native()
-        .map_err(|error| format!("Couldn't open {}: {error}", options.port))?;
+        .map_err(|error| Failure::Final(format!("Couldn't open {}: {}", options.port, describe(&error))))?;
     let info = UsbPortInfo {
         vid: ESPRESSIF_VID,
         pid: options.pid,
@@ -113,15 +156,15 @@ fn flash(options: &Options) -> Result<(), String> {
         115_200,
     );
     let mut flasher = Flasher::connect(connection, true, true, false, Some(Chip::Esp32s3), Some(FLASH_BAUD))
-        .map_err(|error| format!("Couldn't connect to the ESP32-S3: {error}"))?;
+        .map_err(|error| Failure::Final(format!("Couldn't connect to the ESP32-S3: {}", describe(&error))))?;
 
     println!("stage writing");
     let sizes = segments.iter().map(|segment| (segment.addr, segment.data.len() as u64)).collect();
     let mut progress = Progress::new(sizes);
     // Writes each image as it is, so the bootloader keeps its own flash settings, and resets after.
     flasher
-        .write_bins_to_flash(&segments, &mut progress)
-        .map_err(|error| format!("Couldn't write the firmware: {error}"))
+        .write_bins_to_flash(segments, &mut progress)
+        .map_err(|error| Failure::Write(describe(&error)))
 }
 
 /// Reads and checks a bundle the way tools/flash_release.py does, and returns what to write.
@@ -344,6 +387,51 @@ mod tests {
         assert_eq!((parsed.dir.as_str(), parsed.port.as_str(), parsed.pid), ("/tmp/fw", "/dev/cu.usbmodem1", 0x1001));
         assert!(options(&args[..1]).is_none());
         assert!(options(&args[..3]).unwrap().is_err());
+    }
+
+    #[derive(Debug)]
+    struct Layered(&'static str, Option<Box<Layered>>);
+    impl std::fmt::Display for Layered {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+    impl std::error::Error for Layered {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            self.1.as_deref().map(|error| error as _)
+        }
+    }
+
+    #[test]
+    fn describes_every_cause() {
+        let error = Layered("The bootloader returned an error",
+            Some(Box::new(Layered("Error while running FlashData command", Some(Box::new(Layered("Timeout", None)))))));
+        assert_eq!(describe(&error), "The bootloader returned an error: Error while running FlashData command: Timeout");
+        // A cause that the message already ends with is not repeated.
+        let repeated = Layered("Couldn't open: busy", Some(Box::new(Layered("busy", None))));
+        assert_eq!(describe(&repeated), "Couldn't open: busy");
+    }
+
+    #[test]
+    fn tries_a_failed_write_once_more_and_never_a_failed_connection() {
+        let run = |results: Vec<Result<(), Failure>>| {
+            let mut results = results.into_iter();
+            let (mut attempts, mut logs) = (0, Vec::new());
+            let outcome = retry_writes(|| { attempts += 1; results.next().unwrap() }, |line| logs.push(line.to_string()));
+            (outcome, attempts, logs)
+        };
+        let (outcome, attempts, logs) = run(vec![Err(Failure::Write("Timeout".into())), Ok(())]);
+        assert!(outcome.is_ok());
+        assert_eq!(attempts, 2);
+        assert_eq!(logs, ["write failed (Timeout); trying again from a new connection"]);
+
+        let (outcome, attempts, _) = run(vec![Err(Failure::Write("A".into())), Err(Failure::Write("B".into()))]);
+        assert_eq!(outcome.unwrap_err(), "Couldn't write the firmware (tried 2 times): B");
+        assert_eq!(attempts, 2);
+
+        let (outcome, attempts, logs) = run(vec![Err(Failure::Final("Couldn't connect to the ESP32-S3: x".into()))]);
+        assert_eq!(outcome.unwrap_err(), "Couldn't connect to the ESP32-S3: x");
+        assert_eq!((attempts, logs.len()), (1, 0));
     }
 
     #[test]

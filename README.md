@@ -846,6 +846,9 @@ Run these from the repository folder.
   the port.
 - **Download failed:** the computer must reach GitHub. The app downloads the
   release that matches the companion service's version.
+- **Couldn't write the firmware:** the app already tried the write twice. Only
+  part of the firmware was written, so the screen can stay dark; this does not
+  damage the device. Install again from Settings, which starts over.
 - **Connection problems while it writes:** disconnect the USB cable. Hold BOOT,
   connect the cable, then release BOOT. Install again. If it
   still fails, use [Step 1](#step-1-flash-the-firmware) or the
