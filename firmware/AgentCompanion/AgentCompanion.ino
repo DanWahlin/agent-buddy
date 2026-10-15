@@ -1022,8 +1022,10 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
 DeviceCommands commandParser;
 UsbSerialWatchdog usbSerialWatchdog;
 
-constexpr uint32_t kUsbSerialInterrupts = USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY
-    | USB_SERIAL_JTAG_INTR_SERIAL_OUT_RECV_PKT | USB_SERIAL_JTAG_INTR_BUS_RESET;
+// The receive and bus-reset interrupts, which the core never turns off. It turns IN_EMPTY on and
+// off itself under its own lock, so this leaves that one alone.
+constexpr uint32_t kUsbSerialInterrupts = USB_SERIAL_JTAG_INTR_SERIAL_OUT_RECV_PKT
+    | USB_SERIAL_JTAG_INTR_BUS_RESET;
 
 bool beginSerial() {
   const bool sendBufferReady = Serial.setTxBufferSize(2048) == 2048;
@@ -1044,7 +1046,9 @@ void checkUsbSerial() {
       usb_serial_jtag_ll_ena_intr_mask(kUsbSerialInterrupts);
       break;
     case UsbSerialWatchdog::Action::Restart:
-      // Only this loop reads the port, and error logs from other tasks are rare.
+      // ESP-IDF logs from any task write through the debug output, so stop it before end() frees
+      // the buffers; beginSerial() turns it on again.
+      Serial.setDebugOutput(false);
       Serial.end();
       if (!beginSerial()) ++droppedLogs;
       logMessage("USB serial restarted\n");

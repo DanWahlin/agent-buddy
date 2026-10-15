@@ -7,6 +7,7 @@ int main() {
   using copilot::UsbSerialWatchdog;
   using Action = UsbSerialWatchdog::Action;
   constexpr uint32_t stuck = UsbSerialWatchdog::kStuckMs;
+  constexpr uint32_t interval = UsbSerialWatchdog::kRestartIntervalMs;
 
   // Data that the firmware reads soon is normal.
   UsbSerialWatchdog normal;
@@ -21,14 +22,22 @@ int main() {
   assert(watchdog.poll(true, 100) == Action::None);
   assert(watchdog.poll(true, 100 + stuck) == Action::EnableInterrupts);
   assert(watchdog.poll(true, 100 + stuck + 1) == Action::None);
-  assert(watchdog.poll(true, 100 + 2 * stuck) == Action::Restart);
-  assert(watchdog.poll(true, 100 + 3 * stuck) == Action::EnableInterrupts);
+  const uint32_t restarted = 100 + 2 * stuck;
+  assert(watchdog.poll(true, restarted) == Action::Restart);
+  assert(watchdog.poll(true, restarted + stuck) == Action::EnableInterrupts);
   assert(watchdog.interruptEnables() == 2 && watchdog.restarts() == 1);
 
+  // A restart that did not help waits a minute before the next one.
+  assert(watchdog.poll(true, restarted + 2 * stuck) == Action::None);
+  assert(watchdog.poll(true, restarted + interval - 1) == Action::None);
+  assert(watchdog.poll(true, restarted + interval) == Action::Restart);
+  assert(watchdog.restarts() == 2 && watchdog.interruptEnables() == 2);
+
   // Enabling the interrupts fixed it: the next stuck time starts with the interrupts again.
-  assert(watchdog.poll(false, 100 + 3 * stuck + 1) == Action::None);
-  assert(watchdog.poll(true, 100 + 4 * stuck) == Action::None);
-  assert(watchdog.poll(true, 100 + 5 * stuck) == Action::EnableInterrupts);
+  const uint32_t later = restarted + interval;
+  assert(watchdog.poll(false, later + 1) == Action::None);
+  assert(watchdog.poll(true, later + stuck) == Action::None);
+  assert(watchdog.poll(true, later + 2 * stuck) == Action::EnableInterrupts);
 
   // Correct across the millis() wrap, and a start time of 0 still counts.
   UsbSerialWatchdog wrapped;
