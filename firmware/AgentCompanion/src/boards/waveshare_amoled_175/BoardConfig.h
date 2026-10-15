@@ -25,6 +25,7 @@ constexpr int kDisplayD0Pin = 4;
 constexpr int kDisplayD1Pin = 5;
 constexpr int kDisplayD2Pin = 6;
 constexpr int kDisplayD3Pin = 7;
+// The 1.75-C wires LCD reset to GPIO1 and touch reset to GPIO2; see docs/development.md.
 constexpr int kDisplayResetPin = 39;
 // The panel's visible area starts at column 6 of the controller's memory.
 constexpr int kDisplayColumnOffset = 6;
@@ -34,10 +35,10 @@ constexpr uint8_t kDisplayQspiWriteCommand = 0x32;
 constexpr uint32_t kDisplayQspiPixelAddress = 0x003C00;
 constexpr int kBrightness = 155;
 
-// The -B routes the audio master clock to GPIO42 and has a TCA9554 I/O expander at 0x20.
-// The -C routes it to GPIO16 and has no expander, which is how the firmware tells them apart.
+// Audio MCLK is GPIO42, except on the 1.75-C, which uses GPIO16 (expansion header pin 8 on the
+// others). Only the others have the TCA9554 I/O expander at 0x20; BoardVariant.h uses that.
 constexpr int kAudioMclkPin = 42;
-constexpr int kAudioMclkPinBoardC = 16;
+constexpr int kAudioMclkPinC = 16;
 constexpr uint8_t kIoExpanderI2cAddress = 0x20;
 constexpr int kAudioBclkPin = 9;
 constexpr int kAudioWordSelectPin = 45;

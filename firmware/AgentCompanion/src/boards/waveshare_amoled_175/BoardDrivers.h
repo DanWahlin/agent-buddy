@@ -1,6 +1,7 @@
 #pragma once
 // Device-only drivers for the Waveshare ESP32-S3-Touch-AMOLED-1.75 (see BoardConfig.h).
 #include "BoardConfig.h"
+#include "BoardVariant.h"
 #include "../drivers/Es8311AudioOutput.h"
 #include "../drivers/Qmi8658Accelerometer.h"
 #include <Arduino_GFX_Library.h>
@@ -34,14 +35,18 @@ inline Qmi8658Accelerometer& accelerometer() {
   return sensor;
 }
 
-// Without the -B board's I/O expander on the shared I2C bus, this is a -C. Needs touch started first.
-inline int detectAudioMclkPin() {
-  Wire.beginTransmission(kIoExpanderI2cAddress);
-  return Wire.endTransmission() == 0 ? kAudioMclkPin : kAudioMclkPinBoardC;
+// Detected once, from the shared I2C bus. setup() asks right after touch starts the bus; before
+// that, every probe fails and the result is Standard.
+inline Variant variant() {
+  static const Variant detected = detectVariant([] {
+    Wire.beginTransmission(kIoExpanderI2cAddress);
+    return Wire.endTransmission();
+  });
+  return detected;
 }
 
 inline Es8311AudioOutput& audioOutput() {
-  static Es8311AudioOutput output({detectAudioMclkPin(), kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin,
+  static Es8311AudioOutput output({audioMclkPin(variant()), kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin,
                                    kAudioAmplifierPin, kI2cPort, kAudioCodecI2cAddress,
                                    kAudioMinimumCodecVolume, kAudioMaximumCodecVolume});
   return output;
