@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.13]
+
+### Other changes
+
+- Try a failed firmware write again, and explain write errors (#33)
+
 ## [v0.14.12]
 
 ### Other changes
