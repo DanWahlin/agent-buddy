@@ -32,7 +32,7 @@ class BoardTargetTests(unittest.TestCase):
                  "kAudioMaximumCodecVolume", "kTouchSda", "kTouchScl", "kTouchI2cAddress", "kTouchMirrorX",
                  "kI2cFrequency", "kImuI2cAddress", "kImuName", "kBootButtonPin")
         drivers = ("TouchController", "kTouchPointCapacity", "displayBus", "displayPanel", "accelerometer",
-                   "audioOutput")
+                   "audioOutput", "variant")
         for board_id, entry in self.data["boards"].items():
             config = (boards.BOARD_SOURCES / entry["directory"] / "BoardConfig.h").read_text()
             for name in names:

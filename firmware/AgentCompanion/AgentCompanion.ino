@@ -972,7 +972,8 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
       network.encodedSsid(ssid, sizeof(ssid));
       logMessage("INFO protocol=%u uptime_ms=%llu reset_reason=%u mode=%s requested=%s assets=%u "
                  "max_gap_us=%u dropped_logs=%u audio_ready=%u sound_volume=%u character=%s "
-                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s firmware=%s\n",
+                 "patch_ram=adaptive patch_internal=%u startup_internal=%u wifi_connected=%u ssid_b64=%s firmware=%s "
+                 "board_variant=%s\n",
                     kDeviceProtocol, static_cast<unsigned long long>(esp_timer_get_time() / 1000),
                     static_cast<unsigned>(esp_reset_reason()),
                     frame ? modeName(frame->state.mode) : "none",
@@ -981,7 +982,8 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
                     droppedLogs.load(std::memory_order_relaxed), static_cast<unsigned>(audioReady()),
                     static_cast<unsigned>(soundVolume()), installedCharacterId(),
                     patchBuffersInternal, static_cast<unsigned>(startupFreeInternal),
-                    static_cast<unsigned>(network.connected()), ssid, network.firmwareId());
+                    static_cast<unsigned>(network.connected()), ssid, network.firmwareId(),
+                    board::variantName(board::variant()));
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",
@@ -1151,6 +1153,8 @@ void setup() {
   characterReady = initializeSpriteStorage();
   if (!characterReady) logMessage("CHARACTER id=none reason=%s\n", spriteStorageError());
   if (!initializeTouchInput()) fatal(touchInputError());
+  // Touch has started the shared I2C bus, so the board variant can be detected now.
+  logMessage("Board variant: %s\n", board::variantName(board::variant()));
   pinMode(kBootButtonPin, INPUT_PULLUP);
   orientationOffsetTenths = loadOrientationOffset();
   orientationDirty = display.setTrim(orientationOffsetTenths * kOrientationPi / 1800.0f);

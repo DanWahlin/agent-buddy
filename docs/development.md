@@ -85,7 +85,7 @@ a small board layer holds the parts that change from one model to a different mo
 | --- | --- |
 | `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` and CI build. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | The display bus and panel, the touch driver, `accelerometer()`, and `audioOutput()`. Only the device build includes it. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | The display bus and panel, the touch driver, `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
 | `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, and Espressif's ES8311 driver. They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
 
@@ -662,10 +662,22 @@ without stopping animation. The checked-in ES8311 driver in
 `src/boards/drivers/es8311/` retains Espressif's Apache-2.0 SPDX headers and
 matches the driver in Waveshare's pinned example.
 
-The board routes audio through MCLK GPIO42 (GPIO16 on the 1.75-C, detected at startup by the
-B board's TCA9554 expander at I2C 0x20), BCLK GPIO9, WS GPIO45, playback data
+The board routes audio through MCLK GPIO42, BCLK GPIO9, WS GPIO45, playback data
 GPIO8, and its two-pin speaker connector. A compatible external speaker is
 required when the board or enclosure does not include one.
+
+The 1.75-C uses MCLK GPIO16. After touch starts the shared I2C bus, the firmware
+probes for the TCA9554 I/O expander at 0x20. The 1.75, -B, and -G have it, and
+the -C does not. The boot log and the INFO line report the result as
+`board_variant=standard` or `board_variant=c`, and the AUDIO line reports the
+MCLK pin. Only a clear answer counts: if the bus gives errors three times, the
+firmware keeps GPIO42, because GPIO16 is expansion header pin 8 on the other
+boards.
+
+The -C also wires LCD reset to GPIO1 and touch reset to GPIO2. The firmware does
+not use them yet: it drives GPIO39 and GPIO40 on every board, so the -C display
+and touch start without a reset pulse. Waveshare's -C BSP also lists no IMU, and
+the firmware runs without orientation when the IMU does not answer.
 
 The character output spans 412 x 466 pixels at panel position (27, 0),
 giving the 400-pixel orbit room for the balls themselves. The original 400 x 352
