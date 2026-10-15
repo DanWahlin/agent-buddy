@@ -8,6 +8,9 @@ BOARD="${BOARD:-$(python3 "$ROOT/tools/boards.py" default)}"
 export BOARD
 FQBN="$(python3 "$ROOT/tools/boards.py" field fqbn)"
 BOARD_DEFINE="$(python3 "$ROOT/tools/boards.py" field define)"
+# The ESP32 core stamps __DATE__ and __TIME__ into the firmware. A fixed time makes a release
+# build of the same sources byte-identical, so its firmware ID changes only with the firmware.
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 ACTION="${1:-build}"
 if [[ ! -x "$CLI" ]]; then
   echo "Arduino CLI not found. Set ARDUINO_CLI to its executable path." >&2

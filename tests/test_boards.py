@@ -61,6 +61,12 @@ class BoardTargetTests(unittest.TestCase):
         self.assertIn('compiler.cpp.extra_flags=-D$BOARD_DEFINE', script)
         self.assertIn('compiler.c.extra_flags=-D$BOARD_DEFINE', script)
 
+    def test_build_is_reproducible(self):
+        # The ESP32 core compiles __DATE__ and __TIME__ in; a fixed time keeps the firmware ID stable.
+        script = (ROOT / "tools/arduino.sh").read_text()
+        self.assertIn('export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"', script)
+        self.assertLess(script.index("SOURCE_DATE_EPOCH"), script.index("compile --fqbn"))
+
     def test_validate_rejects_inconsistent_targets(self):
         board_id = self.data["default"]
         changes = [
