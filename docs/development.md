@@ -421,7 +421,11 @@ PNGs and converts alpha or luminance to the mask. An optional adjacent
 The firmware ID is the first 8 bytes of the application's ELF SHA-256, as 16
 hex digits. The device reads it from `esp_app_get_description()`, and
 `daemon/src/firmware-image.ts` reads the same bytes from the `.bin` (offset 176;
-the app description starts at offset 32 with magic `0xABCD5432`). The daemon
+the app description starts at offset 32 with magic `0xABCD5432`).
+`tools/arduino.sh` sets `SOURCE_DATE_EPOCH=0`, because the ESP32 core compiles
+`__DATE__` and `__TIME__` into the firmware. A build of the same sources is then
+byte-identical, so a release changes the firmware ID, and offers a firmware
+update, only when the firmware changes. The daemon
 compares the device ID with the built image at
 `build/firmware/AgentCompanion.ino.bin` (`AGENT_COMPANION_FIRMWARE` overrides
 the path). The settings page shows the result in the **Device firmware** row on

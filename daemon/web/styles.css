@@ -261,7 +261,8 @@ button.sized::after { content: attr(data-widest); visibility: hidden; }
 .install { background: var(--panel-2); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
 .install-head { display: flex; justify-content: space-between; margin-bottom: .6rem; }
 .bar { height: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
-.bar div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+/* The fill: a div in block bars, a span in the bars inside a row's inline text. */
+.bar > div, .bar > span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
 
 .form { display: grid; grid-template-columns: 1fr 1fr auto; gap: .8rem; align-items: end; }
 .form label, .form .field { display: grid; gap: .35rem; color: var(--muted); font-size: .9rem; }
@@ -271,8 +272,6 @@ button.sized::after { content: attr(data-widest); visibility: hidden; }
 .firmware-recovery > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 .firmware-recovery > .hint { margin-top: .75rem; }
 .firmware-row .bar, .usb-firmware-row .bar { display: block; margin-top: .5rem; }
-.firmware-row .bar[hidden], .usb-firmware-row .bar[hidden] { display: none; }
-.firmware-row .bar span, .usb-firmware-row .bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
 .field-row { display: flex; gap: .5rem; }
 .field-row select { flex: 1; min-width: 0; }
 input, select {

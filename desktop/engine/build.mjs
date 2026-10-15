@@ -13,19 +13,11 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fingerprint } from './fingerprint.mjs';
+import { compiledSources, fingerprint } from './fingerprint.mjs';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repository = join(here, '..', '..');
-const firmware = join(repository, 'firmware', 'AgentCompanion', 'src');
 const out = join(here, 'prebuilt', 'engine.js');
-
-const sources = [
-  join(here, 'engine.cpp'),
-  ...['CharacterMotion', 'CharacterFrame', 'FullFrameRenderer', 'CharacterPack', 'AgentBadges', 'CharacterEffects',
-    'SpriteMotion', 'SpriteRenderer', 'SpriteStorage'].map(name => join(firmware, name + '.cpp')),
-];
 
 mkdirSync(dirname(out), { recursive: true });
 const compiler = process.env.EMXX ?? 'em++';
@@ -42,7 +34,7 @@ try {
     '-sEXPORTED_RUNTIME_METHODS=HEAPU8,UTF8ToString,stringToNewUTF8',
     // The page frees the strings it hands the engine (stringToNewUTF8).
     '-sEXPORTED_FUNCTIONS=_free',
-    ...sources,
+    ...compiledSources,
     '-o', out,
   ], { stdio: 'inherit' });
 } catch (error) {
