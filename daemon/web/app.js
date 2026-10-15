@@ -945,8 +945,8 @@ function firmwareView(firmware) {
       : {pill: 'Went back', kind: 'warning', hint: 'The device went back to its old firmware, because the new '
         + 'firmware did not connect to Wi-Fi. Install the firmware over USB below.'};
   }
-  if (firmware.usb?.installing) return {pill: 'Installing…', kind: 'warning',
-    hint: 'Writing the release firmware over USB. Keep the USB cable connected until it finishes.'};
+  // The button stays (disabled), so the row keeps its size while the progress shows in it.
+  if (firmware.usb?.installing) return {...usbInstallView(firmware.usb), overUsb: true};
   if (usbRestarting(firmware.usb)) return {pill: 'Restarting…', kind: 'warning',
     until: firmware.usb.last.at + firmwareRestartMs, hint: 'The device is restarting into the new firmware.'};
   if (!status.connected) return {pill: 'Not connected', kind: 'offline', hint: 'Connect the device to see its firmware.'};
@@ -985,6 +985,7 @@ function renderFirmware() {
   pill.textContent = view.pill;
   pill.className = `pill ${view.kind}`;
   $('firmware-hint').textContent = view.hint;
+  renderBar($('firmware-bar'), view.percent);
   $('device-update-badge').hidden = !view.update;
   // Wi-Fi updates send firmware you built yourself; the release firmware goes over USB.
   const button = $('firmware-update');
@@ -1002,19 +1003,29 @@ function renderFirmware() {
 let usbFirmwarePending = false;
 const usbStages = {downloading: 'Downloading', checking: 'Checking', connecting: 'Connecting', writing: 'Writing'};
 
+// A USB install in progress, for both the Device firmware row and the recovery row.
+function usbInstallView(usb) {
+  const {stage, percent} = usb.installing;
+  return {pill: `${usbStages[stage]}${percent === null ? '…' : ` ${percent}%`}`, kind: 'warning',
+    percent: stage === 'writing' ? percent : null,
+    hint: stage === 'downloading'
+      ? `Downloading the v${usb.release} firmware from GitHub.`
+      : 'Writing the firmware over USB. Keep the USB cable connected until it finishes.'};
+}
+
+function renderBar(bar, percent) {
+  bar.hidden = percent === null || percent === undefined;
+  if (bar.hidden) return;
+  bar.setAttribute('aria-valuenow', String(percent));
+  bar.firstElementChild.style.width = `${percent}%`;
+}
+
 function usbFirmwareView(usb) {
   if (!usb) return status
     ? {pill: 'Unknown', kind: 'offline', hint: 'Update the companion service to install firmware here.'}
     : {pill: 'Checking…', kind: 'offline', hint: 'Waiting for the companion service…'};
   const release = usb.release ? `v${usb.release}` : null;
-  if (usb.installing) {
-    const percent = usb.installing.percent;
-    return {pill: `${usbStages[usb.installing.stage]}${percent === null ? '…' : ` ${percent}%`}`, kind: 'warning',
-      percent: usb.installing.stage === 'writing' ? percent : null,
-      hint: usb.installing.stage === 'downloading'
-        ? `Downloading the ${release} firmware from GitHub.`
-        : 'Writing the firmware over USB. Keep the USB cable connected until it finishes.'};
-  }
+  if (usb.installing) return usbInstallView(usb);
   const last = usb.last;
   if (usbRestarting(usb))
     return {pill: 'Restarting…', kind: 'warning', hint: `Release v${last.version} is installed. The device is restarting.`};
@@ -1052,19 +1063,15 @@ function renderUsbFirmware() {
   pill.textContent = view.pill;
   pill.className = `pill ${view.kind}`;
   $('usb-firmware-hint').textContent = view.hint;
-  const bar = $('usb-firmware-bar');
-  bar.hidden = view.percent === null || view.percent === undefined;
-  if (!bar.hidden) {
-    bar.setAttribute('aria-valuenow', String(view.percent));
-    bar.firstElementChild.style.width = `${view.percent}%`;
-  }
+  renderBar($('usb-firmware-bar'), view.percent);
   const button = $('usb-firmware-install');
   const action = !status?.connected ? 'Install'
     : usb?.releaseId && status.firmware?.device === usb.releaseId ? 'Reinstall' : 'Replace with';
   button.textContent = usb?.release ? `${action} v${usb.release}` : 'Install';
   button.disabled = usbFirmwareBlocked(usb);
   // Recovery is for a device that does not answer at all; a device that answers updates with the row above.
-  if (!status?.connected && (usb?.installing || usb?.unanswered)) $('usb-firmware-recovery').open = true;
+  // Only for a device that does not answer; an install shows its progress in the row that started it.
+  if (!status?.connected && usb?.unanswered && !usb.installing) $('usb-firmware-recovery').open = true;
 }
 
 function usbRestarting(usb) {
@@ -1106,7 +1113,8 @@ async function installReleaseOverUsb() {
     const release = status.firmware.usb?.release;
     if (!await confirmAction(`Confirm that ${port} is your Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C.\n\n`
       + `Install published release v${release}? This replaces the current firmware and partition table. `
-      + 'Back up other firmware first. The character returns to Copilot; Wi-Fi settings stay.', 'Install firmware')) return;
+      + 'Back up other firmware first. Wi-Fi settings stay, and the app then installs your character again.',
+      'Install firmware')) return;
     await api('/api/firmware/usb', {method: 'POST', type: 'application/json',
       body: JSON.stringify({port, confirmed: true})});
   } catch (error) {
@@ -1120,10 +1128,7 @@ async function installReleaseOverUsb() {
 $('usb-firmware-install').addEventListener('click', () => void installReleaseOverUsb());
 
 $('firmware-update').addEventListener('click', async () => {
-  if ($('firmware-update').dataset.usb === 'true') {
-    $('usb-firmware-recovery').open = true;
-    return installReleaseOverUsb();
-  }
+  if ($('firmware-update').dataset.usb === 'true') return installReleaseOverUsb();
   firmwarePending = true;
   renderFirmware();
   try {

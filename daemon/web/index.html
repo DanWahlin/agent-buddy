@@ -399,6 +399,8 @@
         <span>
           <strong>Device firmware <span id="firmware-state" class="pill offline">Checking…</span></strong>
           <span class="hint" id="firmware-hint">Waiting for the companion service…</span>
+          <span class="bar" id="firmware-bar" role="progressbar" aria-labelledby="firmware-state"
+                aria-valuemin="0" aria-valuemax="100" hidden><span></span></span>
         </span>
         <span class="row-actions">
           <button type="button" id="firmware-update" disabled hidden>Update</button>

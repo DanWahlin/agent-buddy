@@ -270,9 +270,9 @@ button.sized::after { content: attr(data-widest); visibility: hidden; }
 .firmware-recovery { margin-top: 1rem; }
 .firmware-recovery > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 .firmware-recovery > .hint { margin-top: .75rem; }
-.usb-firmware-row .bar { display: block; margin-top: .5rem; }
-.usb-firmware-row .bar[hidden] { display: none; }
-.usb-firmware-row .bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+.firmware-row .bar, .usb-firmware-row .bar { display: block; margin-top: .5rem; }
+.firmware-row .bar[hidden], .usb-firmware-row .bar[hidden] { display: none; }
+.firmware-row .bar span, .usb-firmware-row .bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
 .field-row { display: flex; gap: .5rem; }
 .field-row select { flex: 1; min-width: 0; }
 input, select {

@@ -22,7 +22,7 @@ test('web alignment controls initialize once and send confirmed settings', async
         this.listeners.set(type, (this.listeners.get(type) ?? 0) + 1);
       },
       querySelector() { return {disabled: false, setAttribute() {}}; },
-      firstElementChild: {style: {}},
+      firstElementChild: {style: {} as Record<string, string>},
       setAttribute() {}, removeAttribute() {},
     };
   }
@@ -109,8 +109,22 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('firmware-update').textContent, 'Update to v0.9.0');
   assert.equal(element('firmware-update').dataset.usb, 'true');
   runInContext('status.firmware.usb.installing = {stage: "writing", percent: 5}; renderFirmware()', context);
-  assert.equal(element('firmware-state').textContent, 'Installing…');
-  assert.equal(element('firmware-update').hidden, true);
+  assert.equal(element('firmware-state').textContent, 'Writing 5%');
+  assert.match(element('firmware-hint').textContent, /Keep the USB cable connected/);
+  assert.equal(element('firmware-bar').hidden, false);
+  assert.equal(element('firmware-bar').firstElementChild.style.width, '5%');
+  // The button stays, disabled, so the row keeps its size.
+  assert.equal(element('firmware-update').hidden, false);
+  assert.equal(element('firmware-update').disabled, true);
+  // The device does not answer while it is written, but the recovery section stays as it was.
+  element('usb-firmware-recovery').open = false;
+  runInContext('status.connected = false; status.firmware.usb.unanswered = true; renderFirmware()', context);
+  assert.equal(element('usb-firmware-recovery').open, false);
+  runInContext('status.connected = true; status.firmware.usb.unanswered = false; '
+    + 'status.firmware.usb.installing = {stage: "downloading", percent: null}; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Downloading…');
+  assert.match(element('firmware-hint').textContent, /Downloading the v0\.9\.0 firmware/);
+  assert.equal(element('firmware-bar').hidden, true);
   runInContext('status.firmware.usb.installing = null; status.firmware.device = "bbbbbbbbbbbbbbbb"; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'v0.9.0');
   assert.equal(element('device-update-badge').hidden, true);
