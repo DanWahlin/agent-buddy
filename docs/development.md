@@ -475,8 +475,12 @@ runtime (`bundle-daemon.mjs --release-firmware <zip>`), so Settings shows
 3. That mode ([`flasher.rs`](../desktop/apps/desktop/src-tauri/src/flasher.rs))
    checks the manifest again with the same rules as `tools/flash_release.py`,
    then writes the five images with [espflash](https://github.com/esp-rs/espflash)
-   and resets the device. It prints `stage`, `progress`, and `done` or
-   `error` lines, which the daemon shows in Settings.
+   and resets the device. If the write fails after the device connects, it
+   connects again and writes once more; a connect failure is not tried again,
+   because it needs the BOOT button. It prints `stage`, `progress`, `log`, and
+   `done` or `error` lines. The daemon shows the stages and the result in
+   Settings and writes `log` lines to its log. Errors include each cause from
+   espflash, not only the top-level message.
 4. The daemon opens USB again, and the device reconnects with the release's
    firmware ID.
 

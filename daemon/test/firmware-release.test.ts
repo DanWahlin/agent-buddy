@@ -174,6 +174,17 @@ test('runs the desktop app to write firmware and follows its progress', async ()
       + 'echo "stage checking"; echo "stage connecting"; echo "stage writing"; printf "progress 40\\nprogress 100\\n"; echo done');
     await runUsbFlasher(good, '/fw', port, record);
     assert.deepEqual(events, ['checking', 'connecting', 'writing', '40', '100']);
+    // A write that failed once and then worked is logged, so the first error is not lost.
+    const logged: string[] = [];
+    const log = console.log;
+    console.log = (line: string) => { logged.push(line); };
+    try {
+      await runUsbFlasher(await script('retried', 'echo "log write failed (Timeout); trying again"; echo done'),
+                          '/fw', port, record);
+    } finally {
+      console.log = log;
+    }
+    assert.deepEqual(logged, ['[firmware] write failed (Timeout); trying again']);
     await assert.rejects(runUsbFlasher(await script('bad', 'echo "error No ESP32-S3 found"; exit 1'), '/fw', port, record),
                          /No ESP32-S3 found/);
     // A device that does not go into download mode by itself gets the BOOT steps.
@@ -192,5 +203,7 @@ test('flasher errors that the user can fix say what to do', () => {
   assert.match(explainFlashError("Couldn't open /dev/cu.usbmodem1: Resource busy"),
                /^Couldn't open \/dev\/cu\.usbmodem1: Resource busy\. Close any other program .*hold the BOOT button/);
   assert.match(explainFlashError("Couldn't connect to the ESP32-S3: Timeout"), /release BOOT after 2 seconds/);
-  assert.equal(explainFlashError("Couldn't write the firmware: CRC"), "Couldn't write the firmware: CRC");
+  assert.match(explainFlashError("Couldn't write the firmware (tried 2 times): Timeout"),
+               /^Couldn't write the firmware \(tried 2 times\): Timeout\. Only part of the firmware .*Install again.*hold the BOOT button/);
+  assert.equal(explainFlashError("Couldn't read manifest.json: missing"), "Couldn't read manifest.json: missing");
 });
