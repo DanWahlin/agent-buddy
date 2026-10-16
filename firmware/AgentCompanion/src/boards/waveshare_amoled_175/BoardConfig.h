@@ -18,7 +18,9 @@ constexpr char kTouchControllerName[] = "CST9217";
 constexpr char kImuName[] = "QMI8658";
 }  // namespace board
 
+// The panel shows the 466x466 content at full size.
 constexpr int kDisplaySize = 466;
+constexpr int kPanelSize = kDisplaySize;
 constexpr int kDisplayCsPin = 12;
 constexpr int kDisplaySckPin = 38;
 constexpr int kDisplayD0Pin = 4;

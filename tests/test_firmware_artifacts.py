@@ -4,7 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-from tools.firmware_artifacts import BINARIES, BUNDLE, check, layout, record, snapshot
+from tools.firmware_artifacts import (BINARIES, BUNDLE, INPUTS, artifacts, binaries, check, layout,
+                                     record, snapshot)
 
 
 class FirmwareBundleTests(unittest.TestCase):
@@ -49,6 +50,22 @@ class FirmwareBundleTests(unittest.TestCase):
         self.put(BUNDLE, json.dumps(bundle))
         with self.assertRaisesRegex(ValueError, "built for board other-board"):
             check(self.root)
+
+    def test_each_board_builds_in_its_own_folder(self):
+        # The default board keeps build/firmware, which release packaging reads.
+        self.assertEqual(artifacts("waveshare-amoled-175"), (Path("build/firmware"), INPUTS, BUNDLE))
+        build, _, bundle_path = artifacts("waveshare-lcd-154")
+        self.assertEqual(build, Path("build/firmware-waveshare-lcd-154"))
+        for path in binaries(build):
+            self.put(path, b"compiled for the LCD")
+        with mock.patch.dict(os.environ, {"BOARD": "waveshare-lcd-154"}):
+            snapshot(self.root)
+            record(self.root)
+            check(self.root)
+        bundle = json.loads((self.root / bundle_path).read_text())
+        self.assertEqual(bundle["inputs"]["board"], "waveshare-lcd-154")
+        self.assertIn("build/firmware-waveshare-lcd-154/AgentCompanion.ino.bin", bundle["binaries"])
+        self.assertFalse((self.root / BUNDLE).exists())
 
     def test_unknown_board_is_rejected(self):
         with mock.patch.dict(os.environ, {"BOARD": "no-such-board"}), \

@@ -19,6 +19,8 @@ struct Es8311Config {
   // The codec volume for 1% and for 100% sound volume.
   int minimumVolume;
   int maximumVolume;
+  // How long the amplifier takes to start; a cue that begins sooner loses its start.
+  unsigned amplifierStartupMs = 4;
 };
 
 class Es8311AudioOutput {
@@ -27,6 +29,7 @@ class Es8311AudioOutput {
 
   // Starts 16-bit stereo output. Returns nullptr, or a short error tag for the AUDIO log.
   const char* begin(unsigned sampleRate) {
+    sampleRate_ = sampleRate;
     pinMode(config_.amplifierPin, OUTPUT);
     digitalWrite(config_.amplifierPin, LOW);
     i2s_.setPins(config_.bclkPin, config_.wordSelectPin, config_.dataOutPin, -1, config_.mclkPin);
@@ -60,11 +63,13 @@ class Es8311AudioOutput {
   bool enable(uint8_t volume) {
     if (es8311_voice_volume_set(codec_, codecVolume(volume), nullptr) != ESP_OK) return false;
     digitalWrite(config_.amplifierPin, HIGH);
-    delay(4);
+    delay(config_.amplifierStartupMs);
     if (es8311_voice_mute(codec_, false) != ESP_OK) {
       digitalWrite(config_.amplifierPin, LOW);
       return false;
     }
+    enabledMs_ = millis();
+    writtenBytes_ = 0;
     return true;
   }
 
@@ -74,14 +79,20 @@ class Es8311AudioOutput {
       if (written == 0) return false;
       data += written;
       size -= written;
+      writtenBytes_ += written;
     }
     return true;
   }
 
   int mclkPin() const { return config_.mclkPin; }
 
-  // Mutes the codec, then turns off the amplifier.
+  // Waits until the written audio has played, mutes the codec, then turns off the amplifier.
+  // write() returns while the I2S DMA buffers still hold up to 60 ms, the end of a cue.
   void disable() {
+    const uint32_t playMs =
+        sampleRate_ ? writtenBytes_ / kFrameBytes * 1000 / sampleRate_ + kDrainMarginMs : 0;
+    const uint32_t elapsedMs = millis() - enabledMs_;
+    if (elapsedMs < playMs) delay(playMs - elapsedMs);
     es8311_voice_mute(codec_, true);
     delay(2);
     digitalWrite(config_.amplifierPin, LOW);
@@ -92,9 +103,16 @@ class Es8311AudioOutput {
     return config_.minimumVolume + (volume * (config_.maximumVolume - config_.minimumVolume) + 50) / 100;
   }
 
+  // 16-bit stereo.
+  static constexpr uint32_t kFrameBytes = 4;
+  // Playback can start one DMA buffer (240 frames, 10 ms at 24 kHz) after enable().
+  static constexpr uint32_t kDrainMarginMs = 12;
   Es8311Config config_;
   I2SClass i2s_;
   es8311_handle_t codec_ = nullptr;
+  unsigned sampleRate_ = 0;
+  uint32_t enabledMs_ = 0;
+  uint32_t writtenBytes_ = 0;
 };
 }  // namespace board
 }  // namespace copilot

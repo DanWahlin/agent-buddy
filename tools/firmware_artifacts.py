@@ -10,11 +10,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import boards  # noqa: E402
+# The default board's build. Release packaging reads these paths.
+BUILD = Path("build/firmware")
 INPUTS = Path("build/firmware-inputs.json")
 BUNDLE = Path("build/firmware-bundle.json")
 DEFAULT_PACK = Path("build/characters/copilot.acpk")
-BINARIES = tuple(Path("build/firmware") / f"AgentCompanion.ino{suffix}.bin"
-                 for suffix in ("", ".bootloader", ".partitions")) + (Path("build/firmware/boot_app0.bin"),)
+
+
+def binaries(build):
+    return tuple(build / f"AgentCompanion.ino{suffix}.bin"
+                 for suffix in ("", ".bootloader", ".partitions")) + (build / "boot_app0.bin",)
+
+
+BINARIES = binaries(BUILD)
+
+
+def artifacts(board):
+    """Returns the build folder, inputs record, and bundle record for a board.
+
+    The default board keeps the paths above. Each other board builds in its own folder, so building
+    one board does not replace another board's firmware.
+    """
+    if board == boards.load()["default"]:
+        return BUILD, INPUTS, BUNDLE
+    return (Path(f"build/firmware-{board}"), Path(f"build/firmware-{board}-inputs.json"),
+            Path(f"build/firmware-{board}-bundle.json"))
 
 
 def digest(path):
@@ -80,38 +100,46 @@ def write_json(path, value):
 
 
 def snapshot(root):
-    write_json(root / INPUTS, fingerprint(root))
+    board = selected_board()
+    write_json(root / artifacts(board)[1], fingerprint(root, board))
 
 
 def record(root):
-    inputs = fingerprint(root)
-    if inputs != json.loads((root / INPUTS).read_text()):
+    board = selected_board()
+    build, inputs_path, bundle_path = artifacts(board)
+    inputs = fingerprint(root, board)
+    if inputs != json.loads((root / inputs_path).read_text()):
         raise ValueError("Firmware inputs changed during compilation. Build again before uploading.")
-    if (root / BINARIES[0]).stat().st_size > inputs["app"]["size"]:
+    outputs = binaries(build)
+    if (root / outputs[0]).stat().st_size > inputs["app"]["size"]:
         raise ValueError("Compiled application exceeds its partition.")
-    write_json(root / BUNDLE, dict(inputs=inputs, binaries={path.as_posix(): digest(root / path) for path in BINARIES}))
+    write_json(root / bundle_path, dict(inputs=inputs, binaries={path.as_posix(): digest(root / path) for path in outputs}))
 
 
 def check(root):
-    bundle = json.loads((root / BUNDLE).read_text())
-    built, wanted = bundle["inputs"].get("board"), selected_board()
+    wanted = selected_board()
+    build, _, bundle_path = artifacts(wanted)
+    bundle = json.loads((root / bundle_path).read_text())
+    built = bundle["inputs"].get("board")
     if built != wanted:
         raise ValueError(f"Firmware was built for board {built}, not {wanted}. Run BOARD={wanted} tools/arduino.sh build first.")
     if bundle["inputs"] != fingerprint(root, wanted):
         raise ValueError("Firmware or the default character changed since compilation. Run tools/arduino.sh build first.")
-    if bundle["binaries"] != {path.as_posix(): digest(root / path) for path in BINARIES}:
+    if bundle["binaries"] != {path.as_posix(): digest(root / path) for path in binaries(build)}:
         raise ValueError("Compiled firmware artifacts changed. Build again before uploading.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("snapshot", "record", "check", "app-size", "asset-offset"))
+    parser.add_argument("action", choices=("snapshot", "record", "check", "app-size", "asset-offset", "build-dir"))
     args = parser.parse_args()
     try:
         if args.action == "app-size":
             print(layout(ROOT)[0]["size"])
         elif args.action == "asset-offset":
             print(hex(layout(ROOT)[1]["offset"]))
+        elif args.action == "build-dir":
+            print((ROOT / artifacts(selected_board())[0]).as_posix())
         else:
             {"snapshot": snapshot, "record": record, "check": check}[args.action](ROOT)
     except (OSError, ValueError, KeyError) as error:

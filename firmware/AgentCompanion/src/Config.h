@@ -5,6 +5,12 @@
 
 // Board pins, panel size, and chip addresses are in boards/<board>/BoardConfig.h.
 namespace copilot {
+// kDisplaySize is the content size on every board; kPanelSize is the panel's. Scanout shrinks the
+// content by up to half, averaging 2x2 blocks (see ScreenTransform.h).
+static_assert(kPanelSize > 0 && kPanelSize <= kDisplaySize && 2 * kPanelSize >= kDisplaySize,
+              "The panel must show the content at full size or down to half size.");
+// A panel smaller than the content uses the compact settings layout and one size larger text.
+constexpr bool kCompactUi = kPanelSize < kDisplaySize;
 constexpr int kFrameWidth = 400;
 constexpr int kFrameHeight = 352;
 constexpr int kFrameX = (kDisplaySize - kFrameWidth) / 2;

@@ -36,7 +36,13 @@ class ScreenOrientation {
 
   static bool panelToContent(float angle, int size, int16_t panelX, int16_t panelY,
                              int16_t& contentX, int16_t& contentY) {
-    return ScreenTransform(size, angle).panelToContent(panelX, panelY, contentX, contentY);
+    return panelToContent(angle, size, size, panelX, panelY, contentX, contentY);
+  }
+
+  static bool panelToContent(float angle, int panelSize, int contentSize, int16_t panelX,
+                             int16_t panelY, int16_t& contentX, int16_t& contentY) {
+    return ScreenTransform(panelSize, contentSize, angle)
+        .panelToContent(panelX, panelY, contentX, contentY);
   }
 
   static float shortestAngle(float angle) {
