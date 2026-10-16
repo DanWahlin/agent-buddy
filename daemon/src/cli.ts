@@ -6,6 +6,7 @@ import {characterRequestValue} from './character-pack.js';
 import {isConnectionMode} from './connection-mode.js';
 import {pairWifi} from './wifi-config.js';
 import {defaultAgentContext, normalizeAgentHook, shouldIgnoreGrokClaudeHook, type AgentId} from './agents/index.js';
+import {cursorHookResponse} from './agents/cursor.js';
 import {agentRunsHeadless} from './agents/headless.js';
 import {isAgentId} from './agents/types.js';
 
@@ -30,10 +31,19 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'hook') {
+    let cursorEvent: string | undefined;
+    let responded = false;
+    const allowCursor = () => {
+      if (cursorEvent === undefined || responded) return;
+      responded = true;
+      process.stdout.write(cursorHookResponse(cursorEvent));
+    };
     try {
       const parsed = parseHookArguments(argument, file);
       if (!parsed) return;
+      if (parsed.agent === 'cursor') cursorEvent = parsed.nativeEvent ?? '';
       const input = await readStdin(4 * 1024 * 1024);
+      allowCursor();
       const payload = input.trim() ? parseHookPayload(input) : {};
       if (parsed.agent === 'claude' && shouldIgnoreGrokClaudeHook(process.env, payload, defaultAgentContext().home)) return;
       let headless: boolean | undefined;
@@ -41,7 +51,9 @@ async function main(): Promise<void> {
         .filter(hook => hook.event !== 'notification' || !(headless ??= agentRunsHeadless(parsed.agent)));
       for (const hook of hooks) await requestDaemon({type: 'hook', agent: parsed.agent, event: hook.event, payload: hook.payload}, 300);
     } catch {
-      // Hooks are notifications only; a missing device or daemon must never block Copilot.
+      // Hooks are notifications only; a missing device or daemon must never block the agent.
+      // Cursor blocks a permission hook that prints nothing, so answer before giving up.
+      allowCursor();
     }
     return;
   }
@@ -159,7 +171,10 @@ function parseHookPayload(input: string): HookPayload {
     return JSON.parse(input) as HookPayload;
   } catch {
     const payload: HookPayload = {};
-    for (const key of ['session_id', 'sessionId', 'hook_event_name', 'hookEventName', 'tool_name',
+    // conversation_id is Cursor's session id. A truncated tool payload has to keep it, and its
+    // parent, or the turn is filed under unknown-session and a later stop cannot clear it.
+    for (const key of ['session_id', 'sessionId', 'conversation_id', 'parent_conversation_id',
+      'parent_session_id', 'parentSessionId', 'hook_event_name', 'hookEventName', 'tool_name',
       'toolName', 'tool_use_id', 'toolCallId', 'agent_id', 'agentId', 'agent_type', 'agentName',
       'notification_type', 'notificationType']) {
       const match = new RegExp(`"${key}"\\s*:\\s*"([^"]{1,512})"`).exec(input);
