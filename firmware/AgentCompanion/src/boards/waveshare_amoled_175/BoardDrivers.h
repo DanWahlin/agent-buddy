@@ -62,7 +62,8 @@ inline Variant variant() {
 inline Es8311AudioOutput& audioOutput() {
   static Es8311AudioOutput output({audioMclkPin(variant()), kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin,
                                    kAudioAmplifierPin, kI2cPort, kAudioCodecI2cAddress,
-                                   kAudioMinimumCodecVolume, kAudioMaximumCodecVolume});
+                                   kAudioMinimumCodecVolume, kAudioMaximumCodecVolume,
+                                   kAudioAmplifierStartupMs});
   return output;
 }
 }  // namespace board
