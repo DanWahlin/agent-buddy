@@ -188,8 +188,11 @@ export function locationStatus(adapter: AgentAdapter, location: AgentLocation): 
     return last && {...last, running: location.running};
   }
   const home = agentHomes[adapter.id];
+  // The login-shell probe misses Cursor when its installer left the launcher in the default
+  // directory and never put it on PATH. An unrelated `agent` executable still does not count.
   const detected = agentCommands(adapter.id).some(command => location.commands.includes(command))
-    || Boolean(home && existsSync(home(ctx.home, ctx.env, ctx.platform)));
+    || Boolean(home && existsSync(home(ctx.home, ctx.env, ctx.platform)))
+    || (adapter.id === 'cursor' && cursorCliPath(ctx) !== undefined);
   let status: AgentLocationStatus | undefined;
   if (adapter.id === 'openclaw') {
     status = detected ? {id: location.id, name: location.name, running: true, detected, hookStatus: 'unsupported',

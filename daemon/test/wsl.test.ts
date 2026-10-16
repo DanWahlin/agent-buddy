@@ -5,11 +5,13 @@ import {mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+import {cursorAdapter} from '../src/agents/cursor.js';
 import {
   agentStatuses,
   combinedStatus,
   defaultAgentContext,
   installAgent,
+  locationStatus,
   removeAllAgentHooks,
   uninstallAgent,
 } from '../src/agents/index.js';
@@ -387,6 +389,36 @@ test('reads Codex approvals by the path that Codex in the distribution sees', as
     assert.equal(untrustedCodexHooks(ubuntu.ctx!).length, waiting);
     await writeFile(config, keys('/home/dan/.codex/hooks.json'));
     assert.deepEqual(untrustedCodexHooks(ubuntu.ctx!), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('finds Cursor in a distribution from its default directory, not from an unrelated agent command', async () => {
+  const {hostHome, linuxHome, host, ubuntu, cleanup} = await locationFixture();
+  try {
+    const bin = join(linuxHome, 'bin');
+    await mkdir(bin, {recursive: true});
+    await mkdir(join(linuxHome, '.local', 'bin'), {recursive: true});
+    await writeFile(join(bin, 'agent'), '#!/bin/sh\n');
+    await writeFile(join(linuxHome, '.local', 'bin', 'agent'), '#!/bin/sh\n');
+    ubuntu.commands = ['agent'];
+    ubuntu.ctx = {...ubuntu.ctx!, env: {...ubuntu.ctx!.env, PATH: bin}};
+    assert.equal(locationStatus(cursorAdapter, ubuntu), undefined);
+
+    await writeFile(join(linuxHome, '.local', 'bin', 'cursor-agent'), '#!/bin/sh\n');
+    ubuntu.commands = [];
+    ubuntu.ctx = {...ubuntu.ctx, env: {...ubuntu.ctx.env, PATH: ''}};
+    const found = locationStatus(cursorAdapter, ubuntu);
+    assert.equal(found?.detected, true);
+    assert.equal(found?.hookStatus, 'missing');
+
+    await installAgent('cursor', host);
+    assert.equal(existsSync(join(hostHome, '.cursor', 'hooks.json')), false);
+    const installed = JSON.parse(await readFile(join(linuxHome, '.cursor', 'hooks.json'), 'utf8')) as {
+      hooks: {sessionStart: Array<{command: string}>};
+    };
+    assert.match(installed.hooks.sessionStart.at(-1)?.command ?? '', /hook cursor sessionStart$/);
   } finally {
     await cleanup();
   }

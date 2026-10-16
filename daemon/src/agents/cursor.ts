@@ -67,8 +67,8 @@ export const cursorAdapter: AgentAdapter = {
     await updateJsonFile(cursorHooksPath(ctx.home), root => withoutCursorHooks(root, ctx), {create: false});
   },
   normalize(nativeEvent, payload, receiptTime) {
-    const fields = cursorFields(payload);
     const name = String(nativeEvent ?? payload.hook_event_name ?? '');
+    const fields = cursorFields(payload, name);
     if (name === 'stop') {
       const status = String(payload.status ?? '');
       if (status === 'error') return normalized('cursor', 'errorOccurred', fields, receiptTime);
@@ -207,7 +207,7 @@ function cursorHookStatus(ctx: AgentContext): HookStatus {
 }
 
 // The CLI's session id is conversation_id. sessionStart also sends session_id.
-function cursorFields(payload: HookPayload): HookPayload {
+function cursorFields(payload: HookPayload, event: string): HookPayload {
   const next: HookPayload = {...payload};
   if (next.sessionId === undefined && next.session_id === undefined && typeof next.conversation_id === 'string')
     next.session_id = next.conversation_id;
@@ -216,5 +216,17 @@ function cursorFields(payload: HookPayload): HookPayload {
     next.parent_session_id = next.parent_conversation_id;
   if (next.agentName === undefined && next.agent_name === undefined && typeof next.subagent_type === 'string')
     next.agent_name = next.subagent_type;
+  // subagentStop sends subagent_type and not subagent_id. Keeping the id on start records
+  // a different child than stop removes, so the turn stays Working. Parallel children of one
+  // type share that name, and the coordinator counts them.
+  if (event === 'subagentStart' || event === 'subagentStop') {
+    delete next.subagent_id;
+    delete next.subagentId;
+    delete next.agent_id;
+    delete next.agentId;
+    delete next.tool_call_id;
+    delete next.toolCallId;
+    delete next.tool_use_id;
+  }
   return next;
 }

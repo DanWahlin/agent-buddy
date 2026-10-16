@@ -17,6 +17,7 @@ import {adapters, agentStatuses, defaultAgentContext, installDetectedAgents, set
         shouldIgnoreGrokClaudeHook} from '../src/agents/index.js';
 import {loadAgentsConfig} from '../src/agents/config.js';
 import {StateCoordinator} from '../src/state-coordinator.js';
+import type {HookPayload} from '../src/protocol.js';
 import type {AgentContext, AgentId} from '../src/agents/types.js';
 
 // Windows has no POSIX permission bits, so mode checks run only on macOS and Linux.
@@ -367,9 +368,13 @@ test('normalizers map attention, work, completion, and idle events per agent', (
   assert.deepEqual(cursorAdapter.normalize('beforeShellExecution', {conversation_id: 'c', command: 'npm test'}, 100)
     .map(hook => hook.event), ['preToolUse']);
   assert.deepEqual(cursorAdapter.normalize('subagentStart',
-    {conversation_id: 'child', parent_conversation_id: 'parent', subagent_id: 'sub', subagent_type: 'explore'}, 100)
-    .map(hook => [hook.event, hook.payload.sessionId, hook.payload.parentSessionId, hook.payload.subagentId, hook.payload.agentName]),
-                   [['subagentStart', 'cursor:child', 'cursor:parent', 'cursor:sub', 'explore']]);
+    {conversation_id: 'child', parent_conversation_id: 'parent', subagent_id: 'sub', subagent_type: 'explore', tool_call_id: 'call'}, 100)
+    .map(hook => [hook.event, hook.payload.sessionId, hook.payload.parentSessionId, hook.payload.subagentId, hook.payload.toolCallId, hook.payload.agentName]),
+                   [['subagentStart', 'cursor:child', 'cursor:parent', undefined, undefined, 'explore']]);
+  assert.deepEqual(cursorAdapter.normalize('subagentStop',
+    {subagent_type: 'explore', status: 'completed'}, 100)
+    .map(hook => [hook.event, hook.payload.agentName, hook.payload.subagentId]),
+                   [['subagentStop', 'explore', undefined]]);
   assert.deepEqual(cursorAdapter.normalize('stop', {conversation_id: 'c', status: 'completed'}, 100)
     .map(hook => hook.event), ['agentStop']);
   assert.deepEqual(cursorAdapter.normalize('stop', {conversation_id: 'c', status: 'aborted'}, 100)
@@ -396,6 +401,41 @@ test('normalizers map attention, work, completion, and idle events per agent', (
     .map(hook => [hook.event, hook.payload.waitingOn]), [['notification', ['ask_user']]]);
   assert.deepEqual(copilotAdapter.normalize('postToolUse', {sessionId: 's', toolName: 'ask_user', timestamp: 200}, 100)
     .map(hook => hook.event), ['postToolUse']);
+});
+
+test('Cursor subagent stop clears the child and counts parallel children of one type', () => {
+  let time = 1000;
+  const coordinator = new StateCoordinator(() => {}, {now: () => time, sweepMs: 0});
+  const handle = (event: string, payload: HookPayload) => {
+    for (const hook of cursorAdapter.normalize(event, payload, time)) coordinator.handle(hook.event, hook.payload);
+  };
+  handle('beforeSubmitPrompt', {conversation_id: 'conv', prompt: 'look'});
+  handle('subagentStart', {
+    conversation_id: 'conv', parent_conversation_id: 'conv', subagent_id: 'abc-123',
+    subagent_type: 'explore', tool_call_id: 'tc-1',
+  });
+  handle('subagentStart', {
+    conversation_id: 'conv', parent_conversation_id: 'conv', subagent_id: 'def-456',
+    subagent_type: 'explore', tool_call_id: 'tc-2',
+  });
+  assert.equal(coordinator.state, 'working');
+  assert.equal(coordinator.sessionCount, 1);
+  assert.deepEqual(coordinator.snapshot().sessions[0]?.subagents.map(agent => [agent.id, agent.instances]),
+                    [['name:explore', 2]]);
+  // The documented stop has the type and not the id, and may omit the parent conversation.
+  time += 1;
+  handle('subagentStop', {subagent_type: 'explore', status: 'completed'});
+  assert.equal(coordinator.state, 'working');
+  assert.equal(coordinator.sessionCount, 1);
+  assert.deepEqual(coordinator.snapshot().sessions[0]?.subagents.map(agent => [agent.id, agent.instances]),
+                    [['name:explore', 1]]);
+  time += 1;
+  handle('subagentStop', {conversation_id: 'conv', subagent_type: 'explore', status: 'completed'});
+  time += 1;
+  handle('stop', {conversation_id: 'conv', status: 'completed'});
+  assert.equal(coordinator.state, 'complete');
+  assert.equal(coordinator.snapshot().sessions.some(session => session.id === 'unknown-session'), false);
+  coordinator.close();
 });
 
 test('a Copilot question shows Needs attention over other working sessions until answered', () => {
@@ -576,7 +616,7 @@ async function withAgentsConfig<T>(path: string, run: () => Promise<T>): Promise
   }
 }
 
-test('all six agents update connection status from real activity and retain pending approval gates', async () => {
+test('all seven agents update connection status from real activity and retain pending approval gates', async () => {
   const {root, home, ctx, cleanup} = await fixture();
   try {
     const bin = join(root, 'bin');
@@ -589,7 +629,7 @@ test('all six agents update connection status from real activity and retain pend
     await withAgentsConfig(config, async () => {
       const events = new Map<AgentId, number>();
       const statuses = () => agentStatuses(context, new Map(), events);
-      assert.equal(statuses().length, 6);
+      assert.equal(statuses().length, adapters.length);
       for (const agent of statuses()) {
         assert.equal(agent.installed, true, agent.id);
         assert.equal(agent.action?.kind, ['codex', 'hermes'].includes(agent.id) ? 'approve' : 'restart', agent.id);

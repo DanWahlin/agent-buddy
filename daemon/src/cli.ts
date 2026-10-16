@@ -171,7 +171,10 @@ function parseHookPayload(input: string): HookPayload {
     return JSON.parse(input) as HookPayload;
   } catch {
     const payload: HookPayload = {};
-    for (const key of ['session_id', 'sessionId', 'hook_event_name', 'hookEventName', 'tool_name',
+    // conversation_id is Cursor's session id. A truncated tool payload has to keep it, and its
+    // parent, or the turn is filed under unknown-session and a later stop cannot clear it.
+    for (const key of ['session_id', 'sessionId', 'conversation_id', 'parent_conversation_id',
+      'parent_session_id', 'parentSessionId', 'hook_event_name', 'hookEventName', 'tool_name',
       'toolName', 'tool_use_id', 'toolCallId', 'agent_id', 'agentId', 'agent_type', 'agentName',
       'notification_type', 'notificationType']) {
       const match = new RegExp(`"${key}"\\s*:\\s*"([^"]{1,512})"`).exec(input);
