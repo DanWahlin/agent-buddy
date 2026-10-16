@@ -1,6 +1,4 @@
 #include "SpriteRenderer.h"
-#include "SpriteStorage.h"
-#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #ifdef ARDUINO_ARCH_ESP32
@@ -10,6 +8,7 @@
 namespace copilot {
 static_assert(kSpriteWidth == kCharacterFrameWidth && kSpriteHeight == kFrameHeight,
               "Character packs must match the display frame.");
+static_assert(kSpriteWidth <= kDisplaySize, "Character packs must fit the display.");
 namespace {
 uint64_t microsNow() {
 #ifdef ARDUINO_ARCH_ESP32
@@ -18,7 +17,6 @@ uint64_t microsNow() {
   return 0;
 #endif
 }
-
 }
 
 SpriteRenderer::SpriteRenderer(uint16_t* firstOpenPatch, uint16_t* secondOpenPatch, uint16_t* patch,
@@ -35,17 +33,10 @@ void SpriteRenderer::invalidate() {
 }
 
 bool SpriteRenderer::decode(const SpriteBlock& block, uint16_t* output, size_t pixels, size_t width, size_t stride) {
-  const uint8_t* source = spriteBlock(block);
-  if (!source) {
-    error_ = "Sprite block lies outside the installed character pack.";
-    return false;
-  }
-  if (!inflate_(reinterpret_cast<uint8_t*>(output), pixels * sizeof(uint16_t),
-                source, block.size, width, stride)) {
-    error_ = "Sprite asset decompression failed.";
-    return false;
-  }
-  return true;
+  constexpr SpriteBlockErrors kErrors{"Sprite block lies outside the installed character pack.",
+                                      "Sprite asset decompression failed."};
+  error_ = inflateSpriteBlock(inflate_, block, output, pixels, width, stride, kErrors);
+  return !error_;
 }
 
 bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
@@ -73,8 +64,7 @@ bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
     error_ = "Invalid discrete sprite pose.";
     return false;
   }
-  if (outputWidth_ != kSpriteWidth || outputHeight_ < kSpriteHeight
-      || outputWidth_ > kDisplaySize || outputHeight_ > kDisplaySize) {
+  if (outputWidth_ != kSpriteWidth || outputHeight_ < kSpriteHeight || outputHeight_ > kDisplaySize) {
     error_ = "Sprite output must match the exported stride and fit the artwork and display.";
     return false;
   }
@@ -151,9 +141,7 @@ bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
     if (pose.blinkBlend) {
       if (!decode(entry.blinks[pose.blinkLevel], patch_, patchPixels,
                   entry.patchWidth, entry.patchWidth)) return false;
-      const int revealHalfHeight = std::max(
-          1, static_cast<int>((static_cast<unsigned>(pose.blinkBlend)
-              * (entry.patchHeight + 1) / 2 + 254) / 255));
+      const int revealHalfHeight = blinkRevealHalfHeight(pose.blinkBlend, entry.patchHeight);
       const int center = entry.patchHeight / 2;
       for (int y = 0; y < entry.patchHeight; ++y) {
         uint16_t* output = art + (entry.patchY + y) * outputWidth_ + entry.patchX;

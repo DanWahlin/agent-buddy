@@ -3,7 +3,7 @@
 #ifdef ARDUINO_ARCH_ESP32
 #include <Arduino.h>
 #include <Wire.h>
-#include <TouchDrvCSTXXX.hpp>
+#include "boards/BoardDrivers.h"
 #include <esp_timer.h>
 #endif
 
@@ -11,7 +11,7 @@ namespace copilot {
 namespace {
 const char* error = nullptr;
 #ifdef ARDUINO_ARCH_ESP32
-TouchDrvCST92xx controller;
+board::TouchController controller;
 TouchGestureTracker tracker;
 portMUX_TYPE touchLock = portMUX_INITIALIZER_UNLOCKED;
 volatile bool pending = false;
@@ -48,16 +48,16 @@ bool initializeTouchInput() {
 #ifdef ARDUINO_ARCH_ESP32
   if (initialized) return true;
   controller.setPins(kTouchReset, kTouchInterrupt);
-  if (!controller.begin(Wire, CST92XX_SLAVE_ADDRESS, kTouchSda, kTouchScl)) {
-    error = "CST9217 touch controller initialization failed.";
+  if (!controller.begin(Wire, kTouchI2cAddress, kTouchSda, kTouchScl)) {
+    error = "Touch controller initialization failed.";
     return false;
   }
-  if (controller.getSupportTouchPoint() != 2) {
+  if (controller.getSupportTouchPoint() != board::kTouchPointCapacity) {
     error = "Unexpected touch controller point capacity.";
     return false;
   }
   controller.setMaxCoordinates(kDisplaySize - 1, kDisplaySize - 1);
-  controller.setMirrorXY(true, true);
+  controller.setMirrorXY(kTouchMirrorX, kTouchMirrorY);
   Wire.setTimeOut(8);
   pinMode(kTouchInterrupt, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(kTouchInterrupt), interrupt, FALLING);

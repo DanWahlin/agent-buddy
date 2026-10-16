@@ -18,7 +18,6 @@ env:
   # arduino/setup-arduino-cli's latest release (v2.0.0) still declares node20; run it on Node 24.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ARDUINO_CORE: esp32:esp32@3.3.10
-  WAVESHARE_REVISION: e4344e70c2fa78a13e8a06566507f1ba8af6672a
 
 jobs:
   build:
@@ -92,9 +91,8 @@ jobs:
           arduino-cli --config-file "$config" config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
           arduino-cli --config-file "$config" core update-index
           arduino-cli --config-file "$config" core install "$ARDUINO_CORE"
-          git clone --filter=blob:none --no-checkout https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75.git .deps/waveshare
-          git -C .deps/waveshare sparse-checkout set examples/arduino/libraries/GFX_Library_for_Arduino examples/arduino/libraries/SensorLib
-          git -C .deps/waveshare checkout --detach "$WAVESHARE_REVISION"
+          # Each board in firmware/boards.json pins its vendor libraries to one revision.
+          python3 tools/boards.py fetch-vendor .deps/waveshare
       - name: Build matched firmware
         run: |
           ARDUINO_CLI="$(command -v arduino-cli)" \
@@ -104,7 +102,7 @@ jobs:
       - name: Package firmware and character packs
         run: |
           python tools/package_release.py --version "$(cat VERSION)" \
-            --name "${GITHUB_REPOSITORY#*/}" --repository "$GITHUB_REPOSITORY"
+            --repository "$GITHUB_REPOSITORY"
       - name: Upload release bundles
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -194,7 +192,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-alsa
       - run: npm ci
-      - name: Download the character packs
+      - name: Download the release bundles
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-bundles
@@ -204,7 +202,8 @@ jobs:
         run: |
           mkdir -p build/characters
           unzip -o -j "$RUNNER_TEMP"/release-bundles/*-characters.zip '*.acpk' -d build/characters
-          node desktop/apps/desktop/scripts/bundle-daemon.mjs --target ${{ matrix.target }}
+          node desktop/apps/desktop/scripts/bundle-daemon.mjs --target ${{ matrix.target }} \
+            --release-firmware "$RUNNER_TEMP"/release-bundles/*-firmware.zip
       - name: Build the app
         working-directory: desktop/apps/desktop
         run: |
@@ -260,6 +259,14 @@ jobs:
           pattern: desktop-*
           path: artifacts
           merge-multiple: true
+      - name: Add the desktop apps to SHA256SUMS
+        working-directory: artifacts
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%P\n' | LC_ALL=C sort \
+            | xargs -d '\n' sha256sum -- > SHA256SUMS.new
+          mv SHA256SUMS.new SHA256SUMS
+          cat SHA256SUMS
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
@@ -272,8 +279,9 @@ jobs:
 
             ### The device
 
-            Download the desktop app for your OS (below) and open it. It installs the companion service and opens Settings.
-            Connect the device over USB, and click **Install** on the **Device** tab: the app downloads this release's firmware, checks it, and writes it to the device.
+            Download the desktop app for your OS (below) and open it. A new installation starts the companion service and opens setup.
+            Choose your agents and approve any required hook changes. Choose a character and display option. For a new device, connect USB, detect the device, and confirm the supported Waveshare board before installing firmware and your character. Select **Finish** to open Settings.
+            To replace firmware later, use **USB release install or recovery** on the **Device** tab.
 
             Without the desktop app, download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
             It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
@@ -284,7 +292,7 @@ jobs:
             ### The desktop app
 
             The same character, with the same animation, in a small window on your desktop. It carries the
-            companion service: when no service runs, it installs it with your agents' hooks, so you need
+            companion service: when no service runs, it installs the service and asks you to choose and approve agent hooks, so you need
             no clone of the repository and no Node.js. If a service from a clone runs, the app follows that one.
 
             > [!TIP]
@@ -305,7 +313,7 @@ jobs:
             sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"
             ```
 
-            Then open it from Applications. It has no Dock icon: look for it in the menu bar.
+            Then open it from Applications. The running app appears in the Dock and the menu bar. Select its Dock entry to return to an open Settings window.
 
             #### 🪟 Windows (x64 and Arm64)
 

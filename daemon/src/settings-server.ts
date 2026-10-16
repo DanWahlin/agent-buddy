@@ -3,7 +3,7 @@ import {chmod, mkdir, readFile, rename, writeFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {isCharacterName, maxPackBytes, readCharacterThumbnail} from './character-pack.js';
+import {isCharacterName, maxPackBytes, readCharacterPack, readCharacterThumbnail} from './character-pack.js';
 import type {CompanionService} from './companion-service.js';
 import {isConnectionMode} from './connection-mode.js';
 import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
@@ -11,6 +11,7 @@ import {settingsInfoPath} from './paths.js';
 import {isAgentId} from './agents/types.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 import {isOrientationOffset} from './orientation-settings.js';
+import {isOnboardingChange, isOnboardingStep, SetupError} from './onboarding.js';
 
 export const defaultSettingsPort = 4667;
 const maxJsonBytes = 64 * 1024;
@@ -21,6 +22,13 @@ const staticFiles: Record<string, [string, string]> = {
   '/theme.js': ['theme.js', 'text/javascript; charset=utf-8'],
   '/logo.svg': ['logo.svg', 'image/svg+xml'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
+  '/onboarding.js': ['onboarding.js', 'text/javascript; charset=utf-8'],
+  '/onboarding.css': ['onboarding.css', 'text/css; charset=utf-8'],
+  '/welcome-device.webp': ['welcome-device.webp', 'image/webp'],
+  '/welcome-idle.mp4': ['welcome-idle.mp4', 'video/mp4'],
+  '/device-shell.webp': ['device-shell.webp', 'image/webp'],
+  '/character-preview.js': ['character-preview.js', 'text/javascript; charset=utf-8'],
+  '/character-engine.js': ['../../desktop/engine/prebuilt/engine.js', 'text/javascript; charset=utf-8'],
 };
 const securityHeaders = {
   'Cache-Control': 'no-store',
@@ -28,7 +36,7 @@ const securityHeaders = {
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-    + "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    + "script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
 };
 
 export interface SettingsServerOptions {
@@ -36,11 +44,14 @@ export interface SettingsServerOptions {
     | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
-    | 'uninstall' | 'stopService' | 'restartService' | 'on' | 'off'>;
+    | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
+    | 'restartOnboarding' | 'navigateOnboarding' | 'installOnboardingAgents' | 'detectUsbDevices' | 'applyOnboardingDisplay'
+    | 'setupOnboardingDevice' | 'finishOnboarding' | 'removeOnboardingAgent' | 'rescanAgents' | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
   thumbnail?: (id: string) => Promise<Buffer | null>;
+  previewPack?: (id: string) => Promise<Buffer>;
 }
 
 export function webDirectory(): string {
@@ -59,6 +70,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
   const {service, port, token} = options;
   const directory = options.webDirectory ?? webDirectory();
   const thumbnail = options.thumbnail ?? readCharacterThumbnail;
+  const previewPack = options.previewPack ?? (async id => (await readCharacterPack(id)).data);
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const expected = Buffer.from(token);
 
@@ -79,10 +91,30 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
     const method = request.method ?? 'GET';
 
     const file = staticFiles[url.pathname];
-    if (method === 'GET' && file) {
+    if ((method === 'GET' || method === 'HEAD') && file) {
       const body = await readFile(join(directory, file[0]));
-      response.writeHead(200, {...securityHeaders, 'Content-Type': file[1]});
-      response.end(body);
+      const headers = {...securityHeaders, 'Content-Type': file[1], 'Content-Length': body.length};
+      if (file[1].startsWith('video/')) {
+        const range = request.headers.range;
+        if (range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+          const start = match?.[1] ? Number(match[1]) : match?.[2] ? Math.max(0, body.length - Number(match[2])) : NaN;
+          const end = match?.[1] && match[2] ? Math.min(Number(match[2]), body.length - 1) : body.length - 1;
+          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end
+            || start >= body.length || (match?.[1] === '' && Number(match[2]) === 0)) {
+            response.writeHead(416, {...securityHeaders, 'Content-Range': `bytes */${body.length}`});
+            response.end();
+            return;
+          }
+          response.writeHead(206, {...headers, 'Accept-Ranges': 'bytes',
+            'Content-Range': `bytes ${start}-${end}/${body.length}`, 'Content-Length': end - start + 1});
+          response.end(method === 'HEAD' ? undefined : body.subarray(start, end + 1));
+          return;
+        }
+        response.setHeader('Accept-Ranges', 'bytes');
+      }
+      response.writeHead(200, headers);
+      response.end(method === 'HEAD' ? undefined : body);
       return;
     }
     if (!url.pathname.startsWith('/api/')) throw new HttpError(404, 'Not found.');
@@ -95,6 +127,75 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
     if (method === 'GET' && segments.length === 1 && segments[0] === 'status') {
       return json(response, 200, service.status());
     }
+    if (segments[0] === 'onboarding') {
+      if (method === 'GET' && segments.length === 1) return json(response, 200, service.onboardingStatus());
+      if (method === 'POST' && segments.length === 1) {
+        const change = await readJson(request);
+        if (!isOnboardingChange(change)) throw new HttpError(400, 'Invalid setup choices.');
+        return json(response, 200, await service.updateOnboarding(change));
+      }
+      if (method === 'POST' && segments.length === 2) {
+        if (segments[1] === 'restart') return json(response, 200, await service.restartOnboarding());
+        if (segments[1] === 'rescan') return json(response, 200, await service.rescanAgents());
+        if (segments[1] === 'navigate') {
+          const body = await readJson(request) as {step?: unknown} | null;
+          if (!body || !isOnboardingStep(body.step)) throw new HttpError(400, 'Select a valid setup step.');
+          return json(response, 200, await service.navigateOnboarding(body.step));
+        }
+        if (segments[1] === 'remove-agent') {
+          const body = await readJson(request) as {confirmed?: unknown; agent?: unknown; agents?: unknown} | null;
+          if (body?.confirmed !== true || !isAgentId(body.agent))
+            throw new HttpError(400, 'Approve the selected agent hook removal first.');
+          const approvedAgents = body.agents;
+          if (!Array.isArray(approvedAgents) || !approvedAgents.every(isAgentId))
+            throw new HttpError(400, 'Include the current selection with the removal approval.');
+          const current = service.onboardingStatus().agents;
+          if (current.length !== approvedAgents.length || current.some(id => !approvedAgents.includes(id)))
+            throw new HttpError(409, 'Agent selection changed. Review and approve the removal again.');
+          return json(response, 200, await service.removeOnboardingAgent(body.agent));
+        }
+        if (segments[1] === 'hooks') {
+          const body = await readJson(request) as {confirmed?: unknown; agents?: unknown; installAgents?: unknown} | null;
+          if (typeof body?.confirmed !== 'boolean') throw new HttpError(400, 'Include the hook installation approval.');
+          const approvedAgents = body.agents;
+          if (!Array.isArray(approvedAgents) || !approvedAgents.every(isAgentId) || new Set(approvedAgents).size !== approvedAgents.length)
+            throw new HttpError(400, 'Include the selected agents with the approval.');
+          const current = service.onboardingStatus().agents;
+          if (current.length !== approvedAgents.length || current.some(id => !approvedAgents.includes(id)))
+            throw new HttpError(409, 'Agent selection changed. Review and approve the current selection again.');
+          const installAgents = body.installAgents === undefined ? (body.confirmed ? approvedAgents : []) : body.installAgents;
+          if (!Array.isArray(installAgents) || !installAgents.every(isAgentId)
+            || new Set(installAgents).size !== installAgents.length || installAgents.some(id => !approvedAgents.includes(id)))
+            throw new HttpError(400, 'Include only selected agents that need hook installation.');
+          if (!body.confirmed && installAgents.length)
+            throw new HttpError(400, 'Approve the required hook installation first.');
+          return json(response, 200, {results: await service.installOnboardingAgents(installAgents)});
+        }
+        if (segments[1] === 'display') {
+          await service.applyOnboardingDisplay();
+          return json(response, 200, {ok: true});
+        }
+        if (segments[1] === 'device') {
+          const body = await readJson(request) as {flash?: unknown; confirmed?: unknown; port?: unknown;
+            character?: unknown; display?: unknown} | null;
+          if (typeof body?.flash !== 'boolean' || body.confirmed !== true)
+            throw new HttpError(400, 'Confirm the device setup first.');
+          if (service.onboardingStatus().busy || service.installBusy)
+            throw new HttpError(409, 'Wait for the current installation to finish.');
+          const setup = service.onboardingStatus();
+          if (setup.completed || setup.display === 'desktop' || setup.deviceDeferred || (body.flash && !setup.port))
+            throw new HttpError(409, 'Select and detect the device in setup first.');
+          if (body.port !== setup.port || body.character !== setup.character || body.display !== setup.display)
+            throw new HttpError(409, 'Device choices changed. Review and approve the current device setup again.');
+          service.setupOnboardingDevice(body.flash).catch(error =>
+            console.error(`[onboarding] device setup failed: ${error instanceof Error ? error.message : String(error)}`));
+          return json(response, 202, {ok: true});
+        }
+        if (segments[1] === 'finish') return json(response, 200, await service.finishOnboarding());
+      }
+    }
+    if (method === 'GET' && segments.length === 1 && segments[0] === 'devices')
+      return json(response, 200, await service.detectUsbDevices());
     if (segments[0] === 'agents') {
       if (method === 'GET' && segments.length === 1) return json(response, 200, service.agentStatuses());
       const id = segments[1];
@@ -131,9 +232,17 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         response.end(image);
         return;
       }
+      if (method === 'GET' && segments[2] === 'preview-pack' && segments.length === 3) {
+        if (!(await service.characters()).some(entry => entry.id === id))
+          throw new HttpError(404, 'Unknown character.');
+        const pack = await previewPack(id);
+        response.writeHead(200, {...securityHeaders, 'Content-Type': 'application/octet-stream', 'Content-Length': pack.length});
+        response.end(pack);
+        return;
+      }
       if (method === 'POST' && segments[2] === 'install' && segments.length === 3) {
         const status = service.status();
-        if (status.installing || service.installBusy)
+        if (status.installing || service.installBusy || status.onboarding?.busy)
           throw new HttpError(409, 'A character installation is already in progress.');
         if (!status.connected) throw new HttpError(409, 'Connect the Agent Companion over USB or Wi-Fi first.');
         if (!(await service.characters()).some(entry => entry.id === id))
@@ -150,7 +259,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
     }
     if (method === 'POST' && segments.length === 2 && segments[0] === 'firmware' && segments[1] === 'update') {
       const status = service.status();
-      if (status.installing || status.firmware.updating || service.installBusy)
+      if (status.installing || status.firmware.updating || service.installBusy || status.onboarding?.busy)
         throw new HttpError(409, 'Wait for the current installation to finish.');
       if (!status.firmware.canUpdate)
         throw new HttpError(409, status.firmware.built === null ? 'No firmware is built.'
@@ -162,30 +271,35 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       return json(response, 202, {ok: true});
     }
     if (method === 'POST' && segments.length === 2 && segments[0] === 'firmware' && segments[1] === 'usb') {
+      const body = await readJson(request) as {port?: unknown; confirmed?: unknown} | null;
+      if (body?.confirmed !== true) throw new HttpError(400, 'Confirm the supported device and firmware replacement first.');
+      if (body.port !== undefined && body.port !== null && typeof body.port !== 'string')
+        throw new HttpError(400, 'USB port must be a device path.');
       const status = service.status();
-      if (status.installing || status.firmware.updating || status.firmware.usb.installing || service.installBusy)
+      if (status.installing || status.firmware.updating || status.firmware.usb.installing || service.installBusy || status.onboarding?.busy)
         throw new HttpError(409, 'Wait for the current installation to finish.');
       if (!status.firmware.usb.flasher)
         throw new HttpError(409, 'Installing firmware over USB needs the desktop app. Open the desktop app, then try again.');
       if (!status.firmware.usb.release)
         throw new HttpError(409, 'The companion service has no VERSION file, so it cannot choose a release.');
       // Download and write progress, and the result, arrive through /api/events.
-      service.installFirmwareOverUsb().catch(() => undefined);
+      service.installFirmwareOverUsb(typeof body.port === 'string' ? body.port : undefined).catch(error =>
+        console.error(`[settings] USB firmware install failed: ${error instanceof Error ? error.message : String(error)}`));
       return json(response, 202, {ok: true});
     }
     if (method === 'GET' && segments.length === 2 && segments[0] === 'wifi' && segments[1] === 'networks') {
       return json(response, 200, await service.scanWifi());
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'wifi') {
-      const body = await readJson(request) as {ssid?: unknown; password?: unknown};
-      if (typeof body.ssid !== 'string' || typeof body.password !== 'string')
+      const body = await readJson(request) as {ssid?: unknown; password?: unknown} | null;
+      if (typeof body?.ssid !== 'string' || typeof body?.password !== 'string')
         throw new HttpError(400, 'Enter a network name and password.');
       const deviceId = await service.configureWifi(body.ssid, body.password);
       return json(response, 200, {ok: true, deviceId});
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'connection') {
-      const body = await readJson(request) as {mode?: unknown};
-      if (!isConnectionMode(body.mode)) throw new HttpError(400, 'Connection mode must be auto, usb, or wifi.');
+      const body = await readJson(request) as {mode?: unknown} | null;
+      if (!isConnectionMode(body?.mode)) throw new HttpError(400, 'Connection mode must be auto, usb, or wifi.');
       await service.setConnection(body.mode);
       return json(response, 200, {ok: true, mode: body.mode});
     }
@@ -208,7 +322,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'desktop') {
       const body = await readJson(request) as {visible?: unknown; backdrop?: unknown; sounds?: unknown; volume?: unknown;
-        character?: unknown};
+        character?: unknown; deviceEnabled?: unknown};
       if (body.visible !== undefined && typeof body.visible !== 'boolean')
         throw new HttpError(400, 'Desktop visibility must be true or false.');
       if (body.sounds !== undefined && typeof body.sounds !== 'boolean')
@@ -219,16 +333,21 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         throw new HttpError(400, `Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
       if (body.character !== undefined && (typeof body.character !== 'string' || !isCharacterName(body.character)))
         throw new HttpError(400, 'Desktop character must be a character id.');
+      if (body.deviceEnabled !== undefined && typeof body.deviceEnabled !== 'boolean')
+        throw new HttpError(400, 'Device use must be on (true) or off (false).');
+      if (body.deviceEnabled !== undefined && service.onboardingStatus().busy)
+        throw new HttpError(409, 'Wait for device setup to finish.');
       if (body.visible === undefined && body.backdrop === undefined && body.sounds === undefined
-        && body.volume === undefined && body.character === undefined)
+        && body.volume === undefined && body.character === undefined && body.deviceEnabled === undefined)
         throw new HttpError(400, 'Nothing to change.');
       try {
         await service.setDesktop({visible: body.visible, backdrop: body.backdrop, sounds: body.sounds,
-                                  volume: body.volume, character: body.character});
+                                  volume: body.volume, character: body.character,
+                                  ...(body.deviceEnabled === undefined ? {} : {deviceEnabled: body.deviceEnabled})});
       } catch (error) {
         throw new HttpError(409, error instanceof Error ? error.message : String(error));
       }
-      return json(response, 200, {ok: true, desktop: service.status().desktop});
+      return json(response, 200, {ok: true, desktop: service.status().desktop, deviceEnabled: service.status().deviceEnabled});
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'usage') {
       const body = await readJson(request) as {enabled?: unknown; window?: unknown};
@@ -278,7 +397,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         response.destroy();
         return;
       }
-      const status = error instanceof HttpError ? error.status : 400;
+      const status = error instanceof HttpError || error instanceof SetupError ? error.status : 400;
       // An error can leave an unread request body behind, so don't reuse the connection.
       response.setHeader('Connection', 'close');
       response.on('finish', () => request.socket.destroy());
@@ -321,7 +440,10 @@ function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
 async function readJson(request: IncomingMessage): Promise<unknown> {
   requireType(request, 'application/json');
   try {
-    return JSON.parse((await readBody(request, maxJsonBytes)).toString('utf8'));
+    const value: unknown = JSON.parse((await readBody(request, maxJsonBytes)).toString('utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new HttpError(400, 'Request body must be a JSON object.');
+    return value;
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(400, 'Invalid JSON.');

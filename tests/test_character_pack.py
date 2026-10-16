@@ -1,7 +1,9 @@
 import hashlib
+import json
 from pathlib import Path
 import struct
 import sys
+import tempfile
 import unittest
 import unittest.mock
 
@@ -40,6 +42,37 @@ class CharacterPackTests(unittest.TestCase):
         assembly = (ROOT / packs.HOST_ASSEMBLY).read_text()
         for symbol in ("kCopilotPack", "kCopilotPackEnd", "kOpenClawPack", "kOpenClawPackEnd"):
             self.assertIn(f"{symbol}:", assembly)
+
+    def test_only_the_three_original_characters_are_built_in(self):
+        expected = ["claude", "copilot", "openclaw"]
+        self.assertEqual(json.loads((ROOT / "characters/built-in.json").read_text()), expected)
+        self.assertEqual([path.name for path in packs.discover_characters()], expected)
+        self.assertEqual(sorted(path.stem for path in self.paths.values()), expected)
+
+    def test_builtin_roster_rejects_add_on_source_folders(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = root / packs.CHARACTERS
+            for pack_id in ("claude", "copilot", "openclaw"):
+                folder = base / pack_id
+                folder.mkdir(parents=True)
+                (folder / "character.json").write_text(json.dumps({"id": pack_id}))
+            (base / "built-in.json").write_text('["claude","copilot","openclaw"]')
+            self.assertEqual(len(packs.discover_characters(root)), 3)
+            (base / "custom").mkdir()
+            with self.assertRaisesRegex(packs.PackError, "Built-in character sources"):
+                packs.discover_characters(root)
+
+    def test_builtin_roster_rejects_invalid_ids_and_duplicates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base = root / packs.CHARACTERS
+            base.mkdir()
+            for ids in ([], None, {}, ["../custom"], ["copilot", "copilot"], [1]):
+                with self.subTest(ids=ids):
+                    (base / "built-in.json").write_text(json.dumps(ids))
+                    with self.assertRaisesRegex(packs.PackError, "built-in.json"):
+                        packs.discover_characters(root)
 
     def test_digest_covers_everything_except_its_own_field(self):
         hashed = bytearray(self.copilot)

@@ -52,7 +52,7 @@ export interface AgentLocation {
 
 export interface AgentLocations {
   list(): AgentLocation[];
-  refresh(options?: {all?: boolean}): Promise<void>;
+  refresh(options?: {all?: boolean; force?: boolean}): Promise<void>;
 }
 
 export interface AgentLocationStatus {

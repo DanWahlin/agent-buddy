@@ -10,6 +10,10 @@ export interface FoundHook {
   cli: string;
 }
 
+export function isHookCurrent(status: HookStatus): boolean {
+  return status === 'installed' || status === 'needs-approval';
+}
+
 // The hooks are 'installed' only when every event has one, each runs this install's CLI, and that
 // Node.js and CLI are still on disk. Hooks of another install, or of a removed one, are 'outdated'.
 export function hookHealth(found: FoundHook[], events: readonly string[],

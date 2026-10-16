@@ -1,4 +1,5 @@
 #include "SpriteMotion.h"
+#include "MotionMath.h"
 #include <algorithm>
 #include <cmath>
 
@@ -6,21 +7,6 @@ namespace copilot {
 namespace {
 constexpr double kMaxDelta = 1.0 / 30;
 constexpr const char* kInvalidCount = "At least two sprite frames are required.";
-
-double quintic(double t) {
-  return t * t * t * (t * (6 * t - 15) + 10);
-}
-
-double inverseQuintic(double value) {
-  if (value <= 0 || value >= 1) return std::max(0.0, std::min(1.0, value));
-  double low = 0, high = 1;
-  for (int i = 0; i < 30; ++i) {
-    const double middle = (low + high) / 2;
-    if (quintic(middle) < value) low = middle;
-    else high = middle;
-  }
-  return (low + high) / 2;
-}
 }
 
 SpriteMotion::SpriteMotion(uint32_t seed, uint8_t frameCount)
@@ -30,10 +16,7 @@ SpriteMotion::SpriteMotion(uint32_t seed, uint8_t frameCount)
 }
 
 double SpriteMotion::random() {
-  rng_ ^= rng_ << 13;
-  rng_ ^= rng_ >> 17;
-  rng_ ^= rng_ << 5;
-  return static_cast<double>(rng_) / 4294967296.0;
+  return static_cast<double>(xorshift32(rng_)) / 4294967296.0;
 }
 
 double SpriteMotion::range(double low, double high) {
@@ -110,9 +93,9 @@ void SpriteMotion::startTurn() {
   uint8_t direction;
   double depth = 1;
   if (queueSize_) {
-    const Request request = queue_[queueHead_];
-    direction = request.direction;
-    depth = request.depth;
+    const Request& next = queue_[queueHead_];
+    direction = next.direction;
+    depth = next.depth;
     queueHead_ = (queueHead_ + 1) % kQueueCapacity;
     --queueSize_;
   } else if (cycling_) {

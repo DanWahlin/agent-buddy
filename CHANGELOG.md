@@ -2,6 +2,115 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.14]
+
+### Build and maintenance
+
+- Make firmware builds reproducible and the engine fingerprint exact (#34)
+
+## [v0.14.13]
+
+### Other changes
+
+- Try a failed firmware write again, and explain write errors (#33)
+
+## [v0.14.12]
+
+### Other changes
+
+- Show USB install progress in the Device firmware row (#32)
+
+## [v0.14.11]
+
+### Fixes
+
+- Fix silent audio on the 1.75-C board by detecting its audio clock pin (#30)
+
+
+### Other changes
+
+- Restart the USB serial port when it stops taking data (#28)
+
+- Detect the 1.75-C as a board variant, and ignore bus errors (#31)
+
+## [v0.14.10]
+
+### Other changes
+
+- Keep the service alive when the device stops reading its USB port (#27)
+
+## [v0.14.9]
+
+### Other changes
+
+- Help the user when a USB firmware install needs download mode (#26)
+
+## [v0.14.8]
+
+### Features and improvements
+
+- Reload a character pack that is added again under the same id (#24)
+
+
+### Other changes
+
+- Keep USB recovery closed when the device answers (#25)
+
+## [v0.14.7]
+
+### Other changes
+
+- Count USB as connected only after the device answers (#23)
+
+## [v0.14.6]
+
+### Features and improvements
+
+- Show the new character after an upload and drop a silent USB link (#22)
+
+## [v0.14.5]
+
+### Other changes
+
+- Exit when the daemon cannot start; make OpenClaw smaller (#21)
+
+## [v0.14.4]
+
+### Other changes
+
+- List the desktop apps in SHA256SUMS (#20)
+
+## [v0.14.3]
+
+### Other changes
+
+- Keep the device's character after a USB firmware update (#19)
+
+## [v0.14.2]
+
+### Other changes
+
+- Show firmware updates in Settings and use an X to remove characters (#18)
+
+## [v0.14.1]
+
+### Fixes
+
+- Fix release firmware downloads after the agent-buddy rename (#17)
+
+## [v0.14.0]
+
+### Features and improvements
+
+- Add guided onboarding and reliable desktop activation (#15)
+
+- Add a firmware board layer and refactor firmware (#16)
+
+
+### Other changes
+
+- Move the character selector to the top of the live demo panel (#13)
+
 ## [v0.13.1]
 
 ### Other changes

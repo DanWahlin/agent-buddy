@@ -1,5 +1,14 @@
 # Characters
 
+This repository ships only **Copilot**, **OpenClaw**, and **Claude**. Their ids
+are declared in [`built-in.json`](built-in.json). Built-in builds and desktop
+bundles reject additional source folders, and release archives exclude cached
+add-on packs from `build/characters`.
+
+Keep all other character sources, previews, and pack builds in a separate
+private repository. Import their finished `.acpk` files with **Add character
+pack** in Settings. Imported packs remain separate from the shipped built-ins.
+
 Each lowercase folder is a self-contained character pack source. `character.json` tells the generic packer where to find the packed frame payload, metadata, and optional validator:
 
 ```json
@@ -26,12 +35,16 @@ the packer renders it from the character's idle center pose; add
 `"thumbnail": "thumbnail.png"` to the manifest to supply your own (PNG, up to
 256 KiB). The firmware ignores the thumbnail.
 
-To add a character, create a lowercase `characters/<id>/` folder with its manifest, deterministic `frames.bin` and `frames.json`, then run:
+To update the built-in packs, run this command from the repository root:
 
 ```bash
 python3 tools/character_pack.py build
 ```
 
-The daemon installs packs from `build/characters/<id>.acpk`; don't change that output path or the `.acpk` format.
+For an add-on, use the same `characters/<id>/` layout in its own repository,
+with a manifest, deterministic `frames.bin`, and `frames.json`. Build the pack
+there, then import it in Settings.
+
+The daemon installs built-in packs from `build/characters/<id>.acpk`; don't change that output path or the `.acpk` format.
 The running daemon also runs this build when a character's top-level files change, before it lists or installs
-characters, so a new folder shows up on the settings page without a restart.
+the built-ins. Added packs are stored in the daemon's separate user character directory.

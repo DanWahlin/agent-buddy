@@ -177,10 +177,10 @@ export class WslLocations implements AgentLocations {
   }
 
   // `all` also starts each stopped distribution to look into it, as an uninstall must.
-  refresh(options: {all?: boolean} = {}): Promise<void> {
-    if (this.#refreshing && !options.all) return this.#refreshing;
+  refresh(options: {all?: boolean; force?: boolean} = {}): Promise<void> {
+    if (this.#refreshing && !options.all && !options.force) return this.#refreshing;
     const work: Promise<void> = (this.#refreshing ?? Promise.resolve())
-      .then(() => this.#update(Boolean(options.all)))
+      .then(() => this.#update(Boolean(options.all), Boolean(options.force)))
       .finally(() => {
         if (this.#refreshing === work) this.#refreshing = undefined;
       });
@@ -188,7 +188,7 @@ export class WslLocations implements AgentLocations {
     return work;
   }
 
-  async #update(all: boolean): Promise<void> {
+  async #update(all: boolean, force: boolean): Promise<void> {
     this.#listedAt = this.#now();
     const listed = await this.#run(['--list', '--quiet']);
     const names = listed.status === 0 ? parseDistributions(decodeWslOutput(listed.stdout)) : [];
@@ -198,7 +198,7 @@ export class WslLocations implements AgentLocations {
     for (const name of names) {
       const old = this.#distributions.get(name);
       const distribution: Distribution = {...old, running: active.has(name) || all};
-      const stale = old?.probedAt === undefined || this.#now() - old.probedAt >= probeEveryMs || !old.running;
+      const stale = force || old?.probedAt === undefined || this.#now() - old.probedAt >= probeEveryMs || !old.running;
       if (distribution.running && stale) {
         const result = await this.#run(['--distribution', name, '--exec', 'sh', '-l', '-s'], probeScript(this.#host.node));
         const probe = result.status === 0 ? parseProbe(result.stdout.toString('utf8')) : undefined;

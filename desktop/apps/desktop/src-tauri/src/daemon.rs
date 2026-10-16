@@ -20,6 +20,29 @@ const MAX_BADGES: usize = 4;
 const ROLES: [&str; 3] = ["working", "attention", "complete"];
 const STATES: [&str; 5] = ["idle", "surprise", "working", "complete", "attention"];
 
+pub fn onboarding_pending(status: &Value) -> bool {
+    status.get("onboarding").and_then(|it| it.get("completed")).and_then(Value::as_bool) == Some(false)
+}
+
+pub fn setup_due() -> Option<bool> {
+    let status = request(&socket_path()?, &json!({ "type": "status" }))?;
+    Some(onboarding_pending(&status))
+}
+
+pub fn installation_active(status: &Value) -> bool {
+    status.get("onboarding").and_then(|it| it.get("busy")).and_then(Value::as_bool) == Some(true)
+        || status.get("installing").is_some_and(Value::is_object)
+        || status.get("firmware").is_some_and(|firmware| {
+            firmware.get("updating").is_some_and(Value::is_object)
+                || firmware.get("usb").and_then(|usb| usb.get("installing")).is_some_and(Value::is_object)
+        })
+}
+
+pub fn installing() -> Option<bool> {
+    let status = request(&socket_path()?, &json!({ "type": "status" }))?;
+    Some(installation_active(&status))
+}
+
 /// The cue volume when the daemon does not give one, as Settings has it.
 pub const DEFAULT_VOLUME: u8 = 30;
 
@@ -48,6 +71,7 @@ pub struct Snapshot {
     /// result of the last install, so the desktop can show what the device does.
     pub installing: Value,
     pub last_install: Value,
+    pub busy: bool,
 }
 
 impl Snapshot {
@@ -252,6 +276,7 @@ pub fn parse(status: &Value) -> Option<Snapshot> {
             .unwrap_or_default(),
         installing: status.get("installing").cloned().unwrap_or(Value::Null),
         last_install: status.get("lastInstall").cloned().unwrap_or(Value::Null),
+        busy: installation_active(status),
     })
 }
 
@@ -380,6 +405,9 @@ pub fn settings_url() -> Option<String> {
 /// an older one does not say.
 pub fn device_used() -> Option<bool> {
     let reply = request(&socket_path()?, &json!({ "type": "status" }))?;
+    if reply.get("deviceEnabled").and_then(Value::as_bool) == Some(false) {
+        return Some(false);
+    }
     reply.get("deviceUsed")?.as_bool()
 }
 
@@ -393,6 +421,21 @@ pub fn stop_service() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn onboarding_is_only_due_for_an_explicit_incomplete_record() {
+        assert!(!onboarding_pending(&json!({ "state": "idle" })));
+        assert!(!onboarding_pending(&json!({ "onboarding": { "completed": true } })));
+        assert!(onboarding_pending(&json!({ "onboarding": { "completed": false } })));
+    }
+
+    #[test]
+    fn installs_prevent_quitting_until_the_operation_finishes() {
+        assert!(!installation_active(&json!({ "installing": null })));
+        assert!(installation_active(&json!({ "installing": { "percent": 10 } })));
+        assert!(installation_active(&json!({ "onboarding": { "busy": true } })));
+        assert!(installation_active(&json!({ "firmware": { "usb": { "installing": { "stage": "writing" } } } })));
+    }
 
     #[test]
     fn the_windows_pipe_name_matches_the_daemon() {

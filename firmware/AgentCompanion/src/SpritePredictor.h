@@ -50,7 +50,7 @@ class SpritePredictor {
   bool complete() const { return output_ && remaining_ == 0; }
 
  private:
-  uint16_t previous_[kCharacterFrameWidth];
+  uint16_t previous_[kCharacterFrameWidth] = {};
   uint16_t* output_ = nullptr;
   size_t width_ = 0, stride_ = 0, column_ = 0, remaining_ = 0;
 };

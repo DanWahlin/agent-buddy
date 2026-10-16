@@ -39,7 +39,9 @@ class ReleaseBundleTests(unittest.TestCase):
                  "app1,app,ota_1,0x210000,0x200000,\n"
                  "assets,data,0x40,0x410000,0xBE0000,\n")
         self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
-        for pack_id in ("copilot", "openclaw"):
+        self.put("characters/built-in.json", (ROOT / "characters/built-in.json").read_bytes())
+        for pack_id in ("claude", "copilot", "openclaw"):
+            self.put(f"characters/{pack_id}/character.json", (ROOT / f"characters/{pack_id}/character.json").read_bytes())
             self.put(f"build/characters/{pack_id}.acpk", tiny_pack(pack_id))
         for path in firmware_artifacts.BINARIES:
             self.put(path, b"compiled-" + path.name.encode())
@@ -80,19 +82,21 @@ class ReleaseBundleTests(unittest.TestCase):
         original = [firmware.read_bytes(), characters.read_bytes()]
         package_release.package(self.root, "1.2.3")
         self.assertEqual(original, [firmware.read_bytes(), characters.read_bytes()])
-        self.assertEqual(firmware.name, "esp32-agent-companion-v1.2.3-firmware.zip")
-        self.assertEqual(characters.name, "esp32-agent-companion-v1.2.3-characters.zip")
+        self.assertEqual(firmware.name, "agent-buddy-v1.2.3-firmware.zip")
+        self.assertEqual(characters.name, "agent-buddy-v1.2.3-characters.zip")
         with zipfile.ZipFile(firmware) as archive:
             self.assertEqual(set(archive.namelist()), {*flash_release.PAYLOAD_NAMES, "SHA256SUMS"})
             self.assertTrue(all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()))
         with zipfile.ZipFile(characters) as archive:
-            self.assertEqual(archive.namelist(), ["copilot.acpk", "openclaw.acpk"])
+            self.assertEqual(archive.namelist(), ["claude.acpk", "copilot.acpk", "openclaw.acpk"])
             self.assertEqual(archive.read("openclaw.acpk"), tiny_pack("openclaw"))
         with zipfile.ZipFile(firmware) as archive:
             self.assertEqual(archive.read("bin/character-copilot.acpk"), tiny_pack("copilot"))
         self.assertEqual((firmware.parent / "SHA256SUMS").read_bytes(),
                          package_release.checksum_file(dict(zip((firmware.name, characters.name), original))))
         manifest = flash_release.verify_bundle(extracted)
+        self.assertEqual(manifest["board"], "waveshare-amoled-175")
+        self.assertIn("(waveshare-amoled-175)", (extracted / "INSTALL.txt").read_text())
         self.assertEqual([image["offset"] for image in manifest["images"]],
                          [0, 0x8000, 0xe000, 0x10000, 0x410000])
         self.assertEqual(manifest["images"][2]["size"], 8192)
@@ -103,6 +107,21 @@ class ReleaseBundleTests(unittest.TestCase):
         result = subprocess.run([sys.executable, "-S", str(extracted / "flash.py"), "--verify-only"],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_identity_matches_daemon_download(self):
+        daemon = (ROOT / "daemon/src/firmware-release.ts").read_text()
+        self.assertIn(f"export const releaseName = '{package_release.RELEASE_NAME}';", daemon)
+        self.assertIn(f"export const releaseRepository = '{package_release.RELEASE_REPOSITORY}';", daemon)
+        # The workflow must not rename the assets that the daemon downloads.
+        workflow = (ROOT / ".github/workflows/build.yml").read_text()
+        self.assertIn("tools/package_release.py", workflow)
+        self.assertNotIn("--name", workflow)
+        # The desktop app records the release firmware ID, so Settings can show an update.
+        self.assertIn('--release-firmware "$RUNNER_TEMP"/release-bundles/*-firmware.zip', workflow)
+        # SHA256SUMS covers the desktop apps as well as the ZIPs.
+        release = workflow[workflow.index("  release:"):]
+        self.assertLess(release.index("pattern: desktop-*"), release.index("sha256sum --check --strict SHA256SUMS"))
+        self.assertLess(release.index("mv SHA256SUMS.new SHA256SUMS"), release.index("Publish GitHub Release"))
 
     def test_custom_name_and_repository(self):
         firmware, characters = package_release.package(self.root, "0.0.0", name="new-name",
@@ -151,6 +170,8 @@ class ReleaseBundleTests(unittest.TestCase):
         original = (extracted / "manifest.json").read_bytes()
         changes = [
             lambda m: m.update(chip="esp32"),
+            lambda m: m.update(board="../other"),
+            lambda m: m.update(board=7),
             lambda m: m.update(schema_version=True),
             lambda m: m.update(flash_size="8MB"),
             lambda m: m.update(version="01.2.3"),
@@ -218,6 +239,38 @@ class ReleaseBundleTests(unittest.TestCase):
             package_release.package(self.root, "1.2.3")
         path.write_bytes(tiny_pack("other"))
         with self.assertRaisesRegex(ValueError, "different id"):
+            package_release.package(self.root, "1.2.3")
+
+    def test_release_excludes_unregistered_add_on_packs(self):
+        self.put("build/characters/custom.acpk", tiny_pack("custom"))
+        _, _, characters = self.bundle()
+        with zipfile.ZipFile(characters) as archive:
+            self.assertEqual(archive.namelist(), ["claude.acpk", "copilot.acpk", "openclaw.acpk"])
+
+    def test_release_uses_real_builtin_packs_and_excludes_addons(self):
+        files = {
+            f"{source.name}.acpk": character_pack.build_character(ROOT, source)
+            for source in character_pack.discover_characters(ROOT)
+        }
+        for name, data in files.items():
+            self.put(f"build/characters/{name}", data)
+        self.put("build/characters/custom.acpk", tiny_pack("custom"))
+        firmware_artifacts.snapshot(self.root)
+        firmware_artifacts.record(self.root)
+        _, _, characters = self.bundle()
+        with zipfile.ZipFile(characters) as archive:
+            self.assertEqual(archive.namelist(), sorted(files))
+            for name, data in files.items():
+                self.assertEqual(archive.read(name), data)
+
+    def test_release_requires_every_builtin_pack(self):
+        (self.root / "build/characters/claude.acpk").unlink()
+        with self.assertRaisesRegex(FileNotFoundError, "claude.acpk"):
+            package_release.package(self.root, "1.2.3")
+
+    def test_release_requires_the_builtin_roster(self):
+        (self.root / "characters/built-in.json").unlink()
+        with self.assertRaisesRegex(ValueError, "built-in.json is required"):
             package_release.package(self.root, "1.2.3")
 
     def test_layout_is_read_not_reexported(self):

@@ -8,11 +8,12 @@ import {claudeAdapter} from './claude.js';
 import {codexAdapter} from './codex.js';
 import {commandInvocation, findExecutable} from './commands.js';
 import {copilotAdapter} from './copilot.js';
-import {cursorAdapter} from './cursor.js';
+import {cursorAdapter, cursorCliPath} from './cursor.js';
+import {isHookCurrent} from './hook-config.js';
 import {grokAdapter, grokHookPath} from './grok.js';
 import {hermesAdapter} from './hermes.js';
 import {openclawAdapter} from './openclaw.js';
-import {isAgentEnabledSync, loadAgentsConfigSync, updateAgentsConfig} from './config.js';
+import {configuredAgentEnabled, isAgentEnabledSync, loadAgentsConfigSync, updateAgentsConfig} from './config.js';
 import {namespacePayload} from './normalize.js';
 import {untrustedCodexHooks} from './codex.js';
 import {claudeHome, codexHome, copilotHome, grokHome, hermesHome} from './homes.js';
@@ -102,7 +103,7 @@ export function agentStatuses(
     ctx: AgentContext,
     activity: Map<AgentId, {activeSessions: number; driving: boolean}>,
     lastEvents: Map<AgentId, number>): AgentStatus[] {
-  const config = loadAgentsConfigSync();
+  const config = loadAgentsConfigSync(hookConsentPath(ctx));
   const locations = ctx.locations?.list() ?? [];
   return adapters.map(adapter => {
     const detection = adapter.detect(ctx);
@@ -116,7 +117,7 @@ export function agentStatuses(
     const hookStatus = others.length ? combinedStatus(statuses) : hostStatus;
     const detected = detection.installed || others.some(other => other.detected);
     const active = activity.get(adapter.id);
-    const enabled = config.enabled[adapter.id] ?? detected;
+    const enabled = configuredAgentEnabled(config, adapter.id, detected);
     const seen = Boolean(config.seen?.[adapter.id]) || lastEvents.has(adapter.id);
     const contexts = [ctx, ...locations.filter(location => location.running && location.ctx).map(location => location.ctx!)];
     return {
@@ -137,6 +138,7 @@ export function agentStatuses(
           + 'copy of Agent Companion or Node.js. Choose Reinstall to fix them.'
         : adapter.hint(hookStatus) ?? adapter.note?.(ctx),
       action: agentAction(adapter, contexts, hookStatus, enabled, seen),
+      ...(config.problem ? {warning: config.problem} : {}),
       ...(others.length ? {locations: [{
         id: 'host', name: hostName(ctx.platform), running: true, detected: detection.installed, hookStatus: hostStatus,
         configPath: detection.configPath,
@@ -286,7 +288,7 @@ export function isAgentEnabled(id: AgentId, detected = true): boolean {
 // Both return warnings for the user, if any.
 // In WSL distributions too, where the agent is. A failure there is a warning, so the other
 // places still get their hooks.
-export async function installAgent(id: AgentId, ctx: AgentContext): Promise<string[]> {
+export async function installAgent(id: AgentId, ctx: AgentContext, onlyNeeded = false): Promise<string[]> {
   const adapter = adapterById.get(id);
   if (!adapter) throw new Error(`Unknown agent: ${id}`);
   const targets = await locationTargets(adapter, ctx, false);
@@ -297,18 +299,54 @@ export async function installAgent(id: AgentId, ctx: AgentContext): Promise<stri
     if (stopped.length)
       throw new Error(`Open ${stopped.map(location => location.name).join(' or ')} so the service can reach it, then try again.`);
   }
-  const warnings = here || !targets.length ? [...(await adapter.install(ctx)) ?? []] : [];
+  const warnings = (here || !targets.length) && (!onlyNeeded || !isHookCurrent(adapter.hookStatus(ctx)))
+    ? [...(await adapter.install(ctx)) ?? []] : [];
   warnings.push(...targets.flatMap(({location}) => location.problem ? [`${location.name}: ${location.problem}`] : []));
-  warnings.push(...await changeEachLocation(targets.filter(({location}) => !location.problem), there => adapter.install(there),
+  const changes = targets.filter(({location, ctx: there}) =>
+    !location.problem && (!onlyNeeded || !isHookCurrent(adapter.hookStatus(there))));
+  warnings.push(...await changeEachLocation(changes, there => adapter.install(there),
                                             (location, error) => `${location.name}: ${adapter.name} hooks not installed (${error})`));
+  await rememberHookApproval(ctx, [id]);
   return warnings;
 }
 
-export async function uninstallAgent(id: AgentId, ctx: AgentContext): Promise<string[]> {
+export async function initializeHookConsent(ctx: AgentContext, fresh: boolean): Promise<void> {
+  await updateAgentsConfig(config => {
+    if (config.approved !== undefined) return false;
+    config.approved = fresh ? {} : existingHookApprovals(ctx);
+  }, hookConsentPath(ctx));
+}
+
+function existingHookApprovals(ctx: AgentContext): Partial<Record<AgentId, boolean>> {
+  return Object.fromEntries(adapters.filter(adapter =>
+    hasHooks(adapter.hookStatus(ctx))
+      || (ctx.locations?.list() ?? []).some(location =>
+        hasHooks(locationStatus(adapter, location)?.hookStatus ?? 'missing')))
+    .map(adapter => [adapter.id, true]));
+}
+
+export async function rememberHookApproval(ctx: AgentContext, ids: AgentId[]): Promise<void> {
+  await updateAgentsConfig(config => {
+    config.approved ??= existingHookApprovals(ctx);
+    for (const id of ids) config.approved[id] = true;
+  }, hookConsentPath(ctx));
+}
+
+function hookConsentPath(ctx: AgentContext): string {
+  return ctx.env.AGENT_COMPANION_AGENTS_CONFIG ?? process.env.AGENT_COMPANION_AGENTS_CONFIG
+    ?? join(ctx.dataDir, 'agents.json');
+}
+
+export async function uninstallAgent(id: AgentId, ctx: AgentContext, allLocations = false): Promise<string[]> {
   const adapter = adapterById.get(id);
   if (!adapter) throw new Error(`Unknown agent: ${id}`);
+  let targets: LocationTarget[];
+  if (allLocations) {
+    await ctx.locations?.refresh({all: true, force: true});
+    targets = targetsIn(adapter, ctx.locations?.list() ?? [], true);
+  } else targets = await locationTargets(adapter, ctx, true);
   const warnings = [...(await adapter.uninstall(ctx)) ?? []];
-  warnings.push(...await changeEachLocation(await locationTargets(adapter, ctx, true), there => adapter.uninstall(there),
+  warnings.push(...await changeEachLocation(targets, there => adapter.uninstall(there),
                                             (location, error) => `${location.name}: remove the ${adapter.name} hooks yourself (${error})`));
   return warnings;
 }
@@ -336,12 +374,20 @@ export async function removeAllAgentHooks(ctx: AgentContext): Promise<string[]> 
 // Skips the agents whose hooks the user removed, so setup and app updates don't add them back.
 export async function installDetectedAgents(
     ctx: AgentContext, removed: Partial<Record<AgentId, boolean>> = loadAgentsConfigSync().removed ?? {},
+    respectConsent = true,
 ): Promise<Array<{id: AgentId; installed: boolean; message: string}>> {
   const results: Array<{id: AgentId; installed: boolean; message: string}> = [];
+  const config = loadAgentsConfigSync(hookConsentPath(ctx));
+  const permitted = (id: AgentId) => !respectConsent || config.approved === undefined
+    || (config.approved[id] === true && config.enabled[id] !== false);
   for (const adapter of adapters) {
     if (removed[adapter.id]) {
       results.push({id: adapter.id, installed: false, message:
         `${adapter.name}: hooks not installed because you removed them (to add them back, choose Install hook in Settings or run agents install ${adapter.id})`});
+      continue;
+    }
+    if (!permitted(adapter.id)) {
+      results.push({id: adapter.id, installed: false, message: `${adapter.name}: hooks not selected in setup`});
       continue;
     }
     const detected = adapter.id === 'copilot' || adapter.detect(ctx).installed;
@@ -358,13 +404,12 @@ export async function installDetectedAgents(
                     message: `${adapter.name}: hook install skipped (${errorText(error)})`});
     }
   }
-  if (!ctx.locations) return results;
-  await ctx.locations.refresh();
-  for (const location of ctx.locations.list()) {
+  if (ctx.locations) await ctx.locations.refresh();
+  for (const location of ctx.locations?.list() ?? []) {
     if (!location.running || !location.ctx) continue;
     for (const adapter of adapters) {
       const status = locationStatus(adapter, location);
-      if (removed[adapter.id] || adapter.id === 'openclaw' || !status?.detected) continue;
+      if (removed[adapter.id] || !permitted(adapter.id) || adapter.id === 'openclaw' || !status?.detected) continue;
       const name = `${adapter.name} (${location.name})`;
       if (location.problem) {
         results.push({id: adapter.id, installed: false, message: `${name}: hooks not installed. ${location.problem}`});
@@ -378,6 +423,8 @@ export async function installDetectedAgents(
       }
     }
   }
+  if (!respectConsent)
+    await rememberHookApproval(ctx, [...new Set(results.filter(result => result.installed).map(result => result.id))]);
   return results;
 }
 

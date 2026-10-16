@@ -1,0 +1,28 @@
+{
+  "default": "waveshare-amoled-175",
+  "boards": {
+    "waveshare-amoled-175": {
+      "name": "Waveshare ESP32-S3-Touch-AMOLED-1.75",
+      "models": "Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C",
+      "define": "AGENT_BOARD_WAVESHARE_AMOLED_175",
+      "directory": "waveshare_amoled_175",
+      "chip": "esp32s3",
+      "flash_size": "16MB",
+      "fqbn": "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=custom,PSRAM=opi,LoopCore=1,EventsCore=1,DebugLevel=error",
+      "vendor": {
+        "repository": "https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75.git",
+        "revision": "e4344e70c2fa78a13e8a06566507f1ba8af6672a",
+        "directory_env": "WAVESHARE_DIR",
+        "default_directory": "~/Documents/Arduino/ESP32-S3-Touch-AMOLED-1.75",
+        "libraries": [
+          "examples/arduino/libraries/GFX_Library_for_Arduino",
+          "examples/arduino/libraries/SensorLib"
+        ],
+        "required_files": {
+          "examples/arduino/libraries/GFX_Library_for_Arduino/src/display/Arduino_CO5300.cpp": "Waveshare's CO5300-capable GFX library",
+          "examples/arduino/libraries/SensorLib/src/touch/TouchDrvCST92xx.h": "Waveshare's CST9217 SensorLib"
+        }
+      }
+    }
+  }
+}

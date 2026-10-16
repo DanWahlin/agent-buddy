@@ -6,11 +6,11 @@
 namespace copilot {
 constexpr float kOrientationPi = 3.14159265358979323846f;
 
+// Takes in-plane gravity in the orientation frame: the display is upright when y = 0 and x > 0.
+// Each board's accelerometer() gives samples in this frame.
 class ScreenOrientation {
  public:
   bool update(float accelerometerX, float accelerometerY) {
-    // Board axes mapped to display coordinates: screen X = -sensor Y,
-    // screen Y = sensor X.
     if (!std::isfinite(accelerometerX) || !std::isfinite(accelerometerY)) return false;
     const float magnitude = std::hypot(accelerometerX, accelerometerY);
     if (magnitude < kMinimumInPlaneGravity) return false;

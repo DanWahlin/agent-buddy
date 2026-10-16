@@ -10,6 +10,16 @@ const char* spriteStorageError();
 const CharacterPack* characterPack();
 // Returns the compressed bytes for a block of the installed pack, or nullptr.
 const uint8_t* spriteBlock(const SpriteBlock& block);
+using InflateSprite = bool (*)(uint8_t*, size_t, const uint8_t*, size_t, size_t, size_t);
+// The messages a renderer reports when a block is out of bounds or fails to inflate.
+struct SpriteBlockErrors {
+  const char* outside;
+  const char* inflate;
+};
+// Inflates one pack block into output. Returns nullptr, or the reason it failed.
+const char* inflateSpriteBlock(InflateSprite inflate, const SpriteBlock& block, uint16_t* output,
+                               size_t pixels, size_t width, size_t stride,
+                               const SpriteBlockErrors& errors);
 // Host builds select a pack already in memory; the packer verified its SHA-256.
 bool loadCharacterPack(const uint8_t* bytes, size_t size);
 
