@@ -89,10 +89,11 @@ class Es8311AudioOutput {
   // Waits until the written audio has played, mutes the codec, then turns off the amplifier.
   // write() returns while the I2S DMA buffers still hold up to 60 ms, the end of a cue.
   void disable() {
-    const uint32_t playMs =
-        sampleRate_ ? writtenBytes_ / kFrameBytes * 1000 / sampleRate_ + kDrainMarginMs : 0;
+    // 64-bit: frames * 1000 overflows 32 bits after about 179 s of audio.
+    const uint64_t playMs = sampleRate_
+        ? uint64_t{writtenBytes_} / kFrameBytes * 1000 / sampleRate_ + kDrainMarginMs : 0;
     const uint32_t elapsedMs = millis() - enabledMs_;
-    if (elapsedMs < playMs) delay(playMs - elapsedMs);
+    if (elapsedMs < playMs) delay(static_cast<uint32_t>(playMs - elapsedMs));
     es8311_voice_mute(codec_, true);
     delay(2);
     digitalWrite(config_.amplifierPin, LOW);
