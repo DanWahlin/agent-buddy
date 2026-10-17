@@ -22,7 +22,8 @@ class Arduino_DataBus {
   }
 };
 
-class Arduino_CO5300 {
+// Shared code must not call panel brightness: each board sets it through setDisplayBrightness().
+class StubPanel {
  public:
   struct Rect { int x, y, width, height; };
   bool started = false;
@@ -39,8 +40,9 @@ class Arduino_CO5300 {
     assert(!started && color == 0);
     if (width > 0 && height > 0) ++marginClears;
   }
-  void setBrightness(uint8_t) {}
 };
+class Arduino_CO5300 : public StubPanel {};
+class Arduino_ST7789 : public StubPanel {};
 
 class Arduino_Canvas {
  public:

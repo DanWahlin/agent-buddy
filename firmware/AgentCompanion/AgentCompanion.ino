@@ -37,7 +37,8 @@
 using namespace copilot;
 
 namespace {
-OrientedDisplay display(&board::displayPanel(), &board::displayBus());
+OrientedDisplay display(&board::displayPanel(), &board::displayBus(), board::displayScanout(),
+                        board::setDisplayBrightness);
 QueueHandle_t freeFrames, readyFrames, commands;
 TaskHandle_t renderTask;
 SpriteRenderer* patchRenderer = nullptr;
@@ -67,7 +68,7 @@ uint32_t worstPresentationGap = 0;
 unsigned patchBuffersInternal = 0;
 size_t startupFreeInternal = 0;
 bool captureInterrupted = false;
-SettingsMenu settings(kBrightness);
+SettingsMenu settings(kBrightness, kDefaultSoundVolume, kCompactUi);
 NetworkManager network;
 OrientationSensor orientationSensor;
 ButtonPressTracker bootButton;
@@ -420,6 +421,9 @@ int textWidth(const char* text, uint8_t size) {
   return static_cast<int>(std::strlen(text)) * 6 * size;
 }
 
+// Text one size larger on a panel that shows the content at about half size.
+constexpr uint8_t uiText(uint8_t size) { return kCompactUi ? size + 1 : size; }
+
 void drawText(const char* text, int x, int y, uint8_t size, uint16_t color) {
   display.setTextColor(color);
   display.setTextSize(size);
@@ -453,6 +457,17 @@ void drawStepper(const char* title, const SettingsRect& down, const SettingsRect
   drawText(value, valueX, down.y + 11, 2, ui_color::kText);
 }
 
+// The compact stepper: the title above, and the value centered between the buttons.
+void drawCompactStepper(const char* title, const SettingsRect& down, const SettingsRect& up,
+                        const char* value) {
+  drawCenteredText(title, down.y - 32, 3, ui_color::kText);
+  drawSettingsButton(down, "-", false, 5);
+  drawSettingsButton(up, "+", false, 5);
+  const int boxX = down.x + down.width + 6;
+  display.fillRoundRect(boxX, down.y, up.x - 6 - boxX, down.height, 14, ui_color::kBackground);
+  drawCenteredText(value, down.y + (down.height - 32) / 2, 4, ui_color::kText);
+}
+
 struct WifiStatus {
   const char* label;
   const char* headline;
@@ -476,8 +491,9 @@ void fitText(char* output, size_t capacity, const char* value, size_t maxCharact
 void drawWifiStatusButton() {
   using namespace ui_color;
   const WifiStatus status = wifiStatus();
-  constexpr SettingsRect area = settings_layout::kWifiStatus;
-  // Two size-2 lines fit within the round display's visible width at the top.
+  constexpr SettingsRect area = kCompactUi ? compact_layout::kWifiStatus : settings_layout::kWifiStatus;
+  // Two lines fit within the round display's visible width at the top.
+  const uint8_t size = uiText(2);
   display.fillRoundRect(area.x, area.y, area.width, area.height, 14, kButton);
   display.drawRoundRect(area.x, area.y, area.width, area.height, 14, status.color);
   char ssid[24];
@@ -486,25 +502,58 @@ void drawWifiStatusButton() {
     fitText(ssid, sizeof(ssid), network.ssid(), 18);
     detail = ssid;
   }
-  drawCenteredText(status.headline, area.y + 8, 2, status.color);
-  drawCenteredText(detail, area.y + 28, 2, network.connected() ? kText : kMuted);
+  drawCenteredText(status.headline, area.y + 8, size, status.color);
+  drawCenteredText(detail, area.y + 8 + 10 * size, size, network.connected() ? kText : kMuted);
+}
+
+void stepperValues(char* brightness, char* volume, size_t capacity) {
+  snprintf(brightness, capacity, "%u%%",
+           static_cast<unsigned>((settings.brightness() * 100 + 127) / 255));
+  if (settings.soundVolume() == 0) snprintf(volume, capacity, "Off");
+  else snprintf(volume, capacity, "%u%%", static_cast<unsigned>(settings.soundVolume()));
+}
+
+void drawCompactSettingsMenu() {
+  using namespace ui_color;
+  using namespace compact_layout;
+  display.fillScreen(0);
+  char brightness[8], volume[8];
+  stepperValues(brightness, volume, sizeof(brightness));
+  drawCompactStepper("Brightness", kBrightnessDown, kBrightnessUp, brightness);
+  drawCompactStepper("Volume", kVolumeDown, kVolumeUp, volume);
+  drawSettingsButton(kWifi, "Wi-Fi", false, 3);
+  display.fillCircle(kWifi.x + 26, kWifi.y + kWifi.height / 2, 9, wifiStatus().color);
+  drawSettingsButton(kStates, "State", false, 3);
+  drawSettingsButton(kClose, "Close", false, 3);
+  flushDisplay();
+}
+
+// The compact layout's character state page. The full layout shows these buttons on its main page.
+void drawStatesPage(CharacterMode selected) {
+  display.fillScreen(0);
+  for (const LabeledButton& button : compact_layout::kModeButtons) {
+    CharacterMode mode;
+    const bool active = requestedMode(settingsModeCommand(button.action), mode) && mode == selected;
+    drawSettingsButton(button.rect, button.label, active, button.textSize);
+  }
+  flushDisplay();
 }
 
 void drawSettingsMenu(CharacterMode selected) {
   using namespace ui_color;
   using namespace settings_layout;
+  if (kCompactUi) {
+    drawCompactSettingsMenu();
+    return;
+  }
   display.fillScreen(0);
   drawWifiStatusButton();
   display.fillRoundRect(38, 92, 390, 336, 28, kPanel);
   display.drawRoundRect(38, 92, 390, 336, 28, kPanelBorder);
-  char value[8];
-  snprintf(value, sizeof(value), "%u%%",
-           static_cast<unsigned>((settings.brightness() * 100 + 127) / 255));
-  drawStepper("Brightness", kBrightnessDown, kBrightnessUp, value, 211);
-  const bool soundOff = settings.soundVolume() == 0;
-  if (soundOff) snprintf(value, sizeof(value), "Off");
-  else snprintf(value, sizeof(value), "%u%%", static_cast<unsigned>(settings.soundVolume()));
-  drawStepper("Volume", kVolumeDown, kVolumeUp, value, soundOff ? 215 : 211);
+  char brightness[8], volume[8];
+  stepperValues(brightness, volume, sizeof(brightness));
+  drawStepper("Brightness", kBrightnessDown, kBrightnessUp, brightness, 211);
+  drawStepper("Volume", kVolumeDown, kVolumeUp, volume, settings.soundVolume() == 0 ? 215 : 211);
   drawText("Character", 185, 222, 2, kText);
   // Only the installed pack is on the device; the daemon installs a different one.
   display.fillRoundRect(58, 244, 350, 34, 10, kBackground);
@@ -518,8 +567,43 @@ void drawSettingsMenu(CharacterMode selected) {
   flushDisplay();
 }
 
+void drawCompactNetworkSettings() {
+  using namespace ui_color;
+  using namespace compact_layout;
+  const WifiStatus status = wifiStatus();
+  display.fillScreen(0);
+  drawCenteredText("Wi-Fi", 16, 4, kText);
+  display.fillCircle(30, 84, 9, status.color);
+  drawText(status.label, 50, 72, 3, status.color);
+  if (network.configured()) {
+    char ssid[40];
+    fitText(ssid, sizeof(ssid), network.ssid(), 24);
+    drawText(ssid, 16, 108, 3, network.connected() ? kText : kMuted);
+    char address[32];
+    snprintf(address, sizeof(address), "IP %s",
+             network.connected() ? network.address() : "not assigned");
+    drawText(address, 16, 140, 3, kMuted);
+  }
+  if (network.setupActive()) {
+    drawText(network.setupName(), 16, 176, 3, kText);
+    drawText("Password", 16, 216, 3, kText);
+    drawText(network.pairingCode(), 176, 212, 4, kText);
+    drawText("http://192.168.4.1", 16, 252, 3, kText);
+  } else {
+    drawText("Start setup to connect.", 16, 196, 3, kMuted);
+  }
+  drawSettingsButton(kWifiSetup, network.setupActive() ? "Restart setup" : "Setup Wi-Fi",
+                     network.setupActive(), 3);
+  drawSettingsButton(kBack, "Back", false, 3);
+  flushDisplay();
+}
+
 void drawNetworkSettings() {
   using namespace ui_color;
+  if (kCompactUi) {
+    drawCompactNetworkSettings();
+    return;
+  }
   const WifiStatus status = wifiStatus();
   display.fillScreen(0);
   drawText("Wi-Fi", 153, 48, 3, kText);
@@ -548,6 +632,13 @@ void drawNetworkSettings() {
                      network.setupActive());
   drawSettingsButton(settings_layout::kBack, "Back", false);
   flushDisplay();
+}
+
+// Draws whichever settings page is open.
+void drawSettingsPage(CharacterMode selected) {
+  if (settings.networkPage()) drawNetworkSettings();
+  else if (settings.statesPage()) drawStatesPage(selected);
+  else drawSettingsMenu(selected);
 }
 
 void clearCharacterMargins() {
@@ -630,6 +721,11 @@ void handleTouchGesture(const TouchGesture& gesture, const Frame& frame) {
       drawNetworkSettings();
       logMessage("WIFI setup=%s code=%s\n", network.setupName(), network.pairingCode());
       break;
+    case SettingsAction::States:
+      settings.openStates();
+      queueAudioCue(AudioCue::Settings);
+      drawStatesPage(frame.state.requestedMode);
+      break;
     case SettingsAction::Back:
       settings.back();
       queueAudioCue(AudioCue::Settings);
@@ -674,8 +770,8 @@ void drawInstallScreen(const char* source) {
   updateOrientation();
   display.fillScreen(0);
   display.setBrightness(settings.brightness());
-  drawCenteredText("Installing character", 140, 2, ui_color::kText);
-  drawCenteredText(source, 208, 2, ui_color::kMuted);
+  drawCenteredText("Installing character", 140, uiText(2), ui_color::kText);
+  drawCenteredText(source, 208, uiText(2), ui_color::kMuted);
   display.drawRoundRect(83, 238, 300, 24, 8, ui_color::kButtonBorder);
   flushDisplay();
 }
@@ -686,8 +782,8 @@ void drawInstallName() {
   const char* name = characterInstallName();
   if (drawn || !name) return;
   drawn = true;
-  const bool large = textWidth(name, 3) <= 340;
-  drawCenteredText(name, large ? 172 : 176, large ? 3 : 2, ui_color::kAccent);
+  const bool large = textWidth(name, uiText(3)) <= 340;
+  drawCenteredText(name, large ? 172 : 176, large ? uiText(3) : uiText(2), ui_color::kAccent);
 }
 
 void drawInstallProgress(uint32_t received, uint32_t total) {
@@ -700,21 +796,22 @@ void drawInstallProgress(uint32_t received, uint32_t total) {
   display.fillRoundRect(86, 241, std::max(1, 294 * percent / 100), 18, 6, ui_color::kButtonActive);
   char label[8];
   snprintf(label, sizeof(label), "%d%%", percent);
-  display.fillRect(183, 276, 100, 16, 0);
-  drawCenteredText(label, 276, 2, ui_color::kText);
+  const int labelWidth = 50 * uiText(2);
+  display.fillRect((kDisplaySize - labelWidth) / 2, 276, labelWidth, 8 * uiText(2), 0);
+  drawCenteredText(label, 276, uiText(2), ui_color::kText);
   flushDisplay();
 }
 
 void drawInstallResult(const char* error) {
   updateOrientation();
-  display.fillRect(40, 300, 386, 60, 0);
+  display.fillRect(0, 300, kDisplaySize, 60, 0);
   if (error) {
-    drawCenteredText("Install failed", 306, 2, ui_color::kError);
+    drawCenteredText("Install failed", 306, uiText(2), ui_color::kError);
     char detail[64];
-    fitText(detail, sizeof(detail), error, 50);
-    drawCenteredText(detail, 332, 1, ui_color::kMuted);
+    fitText(detail, sizeof(detail), error, kCompactUi ? 38 : 50);
+    drawCenteredText(detail, 316 + 8 * uiText(2), uiText(1), ui_color::kMuted);
   } else {
-    drawCenteredText("Installed. Restarting...", 306, 2, ui_color::kSuccess);
+    drawCenteredText("Installed. Restarting...", 306, uiText(2), ui_color::kSuccess);
   }
   flushDisplay();
 }
@@ -856,10 +953,13 @@ const NetworkManager::CharacterUpload kWifiUpload{
 void drawShellScreen() {
   display.fillScreen(0);
   drawWifiStatusButton();
-  drawCenteredText("No character installed", 196, 2, ui_color::kText);
-  drawCenteredText("Connect USB or Wi-Fi and run", 236, 1, ui_color::kMuted);
-  drawCenteredText("npm run character", 256, 2, ui_color::kMuted);
-  drawCenteredText(spriteStorageError() ? spriteStorageError() : "", 300, 1, ui_color::kMuted);
+  drawCenteredText("No character installed", 196, uiText(2), ui_color::kText);
+  drawCenteredText("Connect USB or Wi-Fi and run", 236, uiText(1), ui_color::kMuted);
+  drawCenteredText("npm run character", 256, uiText(2), ui_color::kMuted);
+  char error[80];
+  fitText(error, sizeof(error), spriteStorageError() ? spriteStorageError() : "",
+          kDisplaySize / textWidth("x", uiText(1)));
+  drawCenteredText(error, 300, uiText(1), ui_color::kMuted);
   flushDisplay();
 }
 
@@ -1142,11 +1242,13 @@ void startCharacter() {
 }
 
 void setup() {
+  board::beginBoard();
   if (!beginSerial()) fatal("USB buffer allocation failed.");
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
-  logMessage("\nAgent Companion character shell / %s (%s)\nPanel: %s, touch: %s\nPSRAM: %u bytes\n",
-             board::kName, board::kId, board::kDisplayPanelName, board::kTouchControllerName,
-             ESP.getPsramSize());
+  logMessage("\nAgent Companion character shell / %s (%s)\nPanel: %s %dx%d (content %dx%d), touch: %s\n"
+             "PSRAM: %u bytes\n",
+             board::kName, board::kId, board::kDisplayPanelName, kPanelSize, kPanelSize,
+             kDisplaySize, kDisplaySize, board::kTouchControllerName, ESP.getPsramSize());
   if (!display.begin(kSpiFrequency)) fatal(display.error());
   display.setBrightness(0);
   display.fillScreen(0);
@@ -1221,15 +1323,15 @@ bool showFirmwarePrompt(bool shell) {
   if (settings.isOpen()) closeSettings("firmware");
   display.fillScreen(0);
   display.setBrightness(settings.brightness());
-  drawCenteredText("Firmware update", 150, 3, ui_color::kText);
+  drawCenteredText("Firmware update", 150, uiText(3), ui_color::kText);
   if (prompt == Prompt::Waiting) {
-    drawCenteredText("Press BOOT to allow it", 206, 2, ui_color::kAccent);
-    drawCenteredText("Did not start an update? Do nothing.", 246, 1, ui_color::kMuted);
-    drawCenteredText("The request stops in 60 seconds.", 266, 1, ui_color::kMuted);
+    drawCenteredText("Press BOOT to allow it", 206, uiText(2), ui_color::kAccent);
+    drawCenteredText("Did not start an update? Do nothing.", 246, uiText(1), ui_color::kMuted);
+    drawCenteredText("The request stops in 60 seconds.", 266, uiText(1), ui_color::kMuted);
   } else if (prompt == Prompt::Allowed) {
-    drawCenteredText("Allowed. Receiving...", 206, 2, ui_color::kSuccess);
+    drawCenteredText("Allowed. Receiving...", 206, uiText(2), ui_color::kSuccess);
   } else {
-    drawCenteredText("Installed. Restarting...", 206, 2, ui_color::kSuccess);
+    drawCenteredText("Installed. Restarting...", 206, uiText(2), ui_color::kSuccess);
   }
   flushDisplay();
   return true;
@@ -1278,8 +1380,7 @@ void loop() {
   if (xQueueReceive(readyFrames, &frame, pdMS_TO_TICKS(3000)) != pdTRUE) fatal("Renderer stalled.");
   const bool prompt = showFirmwarePrompt(false);
   if (settings.isOpen() && network.revision() != networkRevision) {
-    if (settings.networkPage()) drawNetworkSettings();
-    else drawSettingsMenu(frame->state.requestedMode);
+    drawSettingsPage(frame->state.requestedMode);
     networkRevision = network.revision();
   }
   // Pace presentation, not decoding: cached frames must not arrive earlier than newly decoded poses.

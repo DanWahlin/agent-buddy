@@ -49,6 +49,66 @@ void check(int size, float angle, int x, int y, int width, int height,
       }
   }
 }
+
+// Averages a 2x2 block per channel, like the panel's downscale.
+uint16_t average(uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
+  const auto channel = [&](int shift, int mask) {
+    return (((a >> shift) & mask) + ((b >> shift) & mask) + ((c >> shift) & mask)
+            + ((d >> shift) & mask)) / 4;
+  };
+  return static_cast<uint16_t>(channel(11, 31) << 11 | channel(5, 63) << 5 | channel(0, 31));
+}
+
+// A panel half the content size: each panel pixel is the average of the 2x2 block around its
+// center, which panelToContent rounds to the block's bottom-right pixel.
+void checkHalf(int panel, float angle, copilot::Rgb565Order order) {
+  const int content = panel * 2;
+  std::vector<uint16_t> pixels(content * content);
+  for (size_t index = 0; index < pixels.size(); ++index) {
+    const uint16_t color = static_cast<uint16_t>(index * 2654435761u >> 7);
+    pixels[index] = order == copilot::Rgb565Order::Display ? swap(color) : color;
+  }
+  const copilot::ScreenTransform transform(panel, content, angle);
+  std::vector<uint16_t> output(panel * panel, 0xffff);
+  assert(transform.renderRows({pixels.data(), 0, 0, content, content, order}, 0, panel,
+                              output.data(), output.size()));
+  const auto native = [&](int x, int y) {
+    const uint16_t pixel = pixels[y * content + x];
+    return order == copilot::Rgb565Order::Display ? swap(pixel) : pixel;
+  };
+  for (int panelY = 0; panelY < panel; ++panelY) {
+    for (int panelX = 0; panelX < panel; ++panelX) {
+      int16_t x, y;
+      assert(transform.panelToContent(panelX, panelY, x, y) && x >= 1 && y >= 1);
+      const uint16_t expected = average(native(x - 1, y - 1), native(x, y - 1),
+                                        native(x - 1, y), native(x, y));
+      assert(output[panelY * panel + panelX] == swap(expected));
+    }
+  }
+}
+
+void check466To240(float angle) {
+  // Any 2x2 block of a one-pixel checkerboard is half white, so the panel shows 50% grey.
+  std::vector<uint16_t> pixels(466 * 466);
+  for (int y = 0; y < 466; ++y)
+    for (int x = 0; x < 466; ++x) pixels[y * 466 + x] = (x + y) % 2 ? 0xffff : 0;
+  const copilot::ScreenTransform transform(240, 466, angle);
+  std::vector<uint16_t> output(240 * 240, 0x1234);
+  for (int row = 0; row < 240; row += 17) {
+    const int rows = std::min(17, 240 - row);
+    assert(transform.renderRows({pixels.data(), 0, 0, 466, 466, copilot::Rgb565Order::Native}, row,
+                                rows, output.data() + row * 240, 240 * rows));
+  }
+  constexpr uint16_t grey = 0x7bef;
+  size_t lit = 0;
+  for (uint16_t pixel : output) {
+    assert(pixel == 0 || pixel == swap(grey));
+    lit += pixel != 0;
+  }
+  assert(output[120 * 240 + 120] == swap(grey));
+  // Upright, every panel pixel's block is inside the content.
+  if (angle == 0.0f) assert(lit == output.size());
+}
 }
 
 int main() {
@@ -86,5 +146,39 @@ int main() {
   assert(!upright.panelToContent(-1, 0, x, y));
   assert(!upright.panelToContent(2, 0, x, y));
   assert(!copilot::ScreenTransform(0, 0).panelToContent(0, 0, x, y));
+  for (auto order : {copilot::Rgb565Order::Native, copilot::Rgb565Order::Display})
+    for (float angle : {0.0f, copilot::kOrientationPi / 2, copilot::kOrientationPi,
+                        -copilot::kOrientationPi / 2})
+      for (int panel : {2, 4, 9}) checkHalf(panel, angle, order);
+  for (float angle : {0.0f, copilot::kOrientationPi / 2, 0.61f, -2.2f}) check466To240(angle);
+
+  // One bright content pixel lands where the scale puts it.
+  std::vector<uint16_t> dark(466 * 466, 0);
+  dark[100 * 466 + 300] = 0xffff;
+  std::vector<uint16_t> scaled(240 * 240);
+  const copilot::ScreenTransform small(240, 466, 0);
+  assert(small.renderRows({dark.data(), 0, 0, 466, 466, copilot::Rgb565Order::Native}, 0, 240,
+                          scaled.data(), scaled.size()));
+  for (int panelY = 0; panelY < 240; ++panelY)
+    for (int panelX = 0; panelX < 240; ++panelX)
+      if (scaled[panelY * 240 + panelX]) {
+        assert(std::abs(panelX - (300 + 0.5) * 240 / 466) <= 1.0);
+        assert(std::abs(panelY - (100 + 0.5) * 240 / 466) <= 1.0);
+      }
+  assert(small.panelToContent(0, 0, x, y) && x <= 1 && y <= 1);
+  assert(small.panelToContent(239, 239, x, y) && x >= 464 && y >= 464);
+  assert(small.panelToContent(120, 120, x, y) && std::abs(x - 233) <= 1 && std::abs(y - 233) <= 1);
+  assert(!small.panelToContent(240, 0, x, y));
+  assert(copilot::ScreenOrientation::panelToContent(0, 240, 466, 239, 0, x, y) && x >= 464 && y <= 1);
+  assert(small.renderRows({dark.data(), 0, 0, 466, 466, copilot::Rgb565Order::Native}, 239, 1,
+                          scaled.data(), 240));
+  assert(!small.renderRows({dark.data(), 0, 0, 466, 466, copilot::Rgb565Order::Native}, 239, 1,
+                           scaled.data(), 239));
+  assert(!small.renderRows({dark.data(), 0, 0, 466, 466, copilot::Rgb565Order::Native}, 240, 1,
+                           scaled.data(), 240));
+  // The panel shows the content at full size or down to half size; nothing else.
+  assert(!copilot::ScreenTransform(232, 466, 0).panelToContent(0, 0, x, y));
+  assert(!copilot::ScreenTransform(466, 240, 0).panelToContent(0, 0, x, y));
   std::cout << "PASS: full-resolution rotation, centered frames, native/display colors and matching touch\n";
+  std::cout << "PASS: half-size panels average 2x2 blocks at every angle and map touch to content\n";
 }

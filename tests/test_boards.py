@@ -26,23 +26,33 @@ class BoardTargetTests(unittest.TestCase):
             self.assertIn(f'"{directory}/{header}"', fallback, header)
 
     def test_board_config_defines_the_shared_contract(self):
-        names = ("kId", "kName", "kDisplaySize", "kDisplayCsPin", "kBrightness", "kSpiFrequency",
-                 "kDisplayQspiWriteCommand", "kDisplayQspiPixelAddress", "kAudioMclkPin",
-                 "kAudioAmplifierPin", "kAudioCodecI2cAddress", "kAudioMinimumCodecVolume",
-                 "kAudioMaximumCodecVolume", "kTouchSda", "kTouchScl", "kTouchI2cAddress", "kTouchMirrorX",
-                 "kI2cFrequency", "kImuI2cAddress", "kImuName", "kBootButtonPin")
-        drivers = ("TouchController", "kTouchPointCapacity", "displayBus", "displayPanel", "accelerometer",
-                   "audioOutput", "variant")
+        names = ("kId", "kName", "kDisplayPanelName", "kTouchControllerName", "kDisplaySize", "kPanelSize",
+                 "kDisplayCsPin", "kBrightness", "kSpiFrequency", "kAudioMclkPin", "kAudioAmplifierPin",
+                 "kAudioCodecI2cAddress", "kAudioMinimumCodecVolume", "kAudioMaximumCodecVolume", "kTouchSda",
+                 "kTouchScl", "kTouchInterrupt", "kTouchReset", "kTouchI2cAddress", "kTouchMirrorX",
+                 "kTouchMirrorY", "kI2cFrequency", "kImuI2cAddress", "kImuName", "kBootButtonPin")
+        drivers = ("TouchController", "kTouchPointCapacity", "displayBus", "displayPanel", "displayScanout",
+                   "setDisplayBrightness", "beginBoard", "configureTouch", "accelerometer", "audioOutput",
+                   "variant")
+        # Each display bus needs its own pins: a QSPI pixel-write prefix, or a data/command pin.
+        buses = {"Arduino_ESP32QSPI": ("kDisplayQspiWriteCommand", "kDisplayQspiPixelAddress"),
+                 "Arduino_ESP32SPIDMA": ("kDisplayDcPin",)}
         for board_id, entry in self.data["boards"].items():
             config = (boards.BOARD_SOURCES / entry["directory"] / "BoardConfig.h").read_text()
             for name in names:
                 self.assertRegex(config, rf"\b{name}\b", f"{board_id}: {name}")
             self.assertIn(f'kId[] = "{board_id}"', config)
+            # Packs, layouts, and effects are drawn at 466x466 on every board; scanout fits the panel.
+            self.assertIn("constexpr int kDisplaySize = 466;", config, board_id)
             includes = re.findall(r"#include\s*([<\"][^>\"]+)", config)
             self.assertLessEqual(set(includes), {"<cstdint", "<cstddef"}, "BoardConfig.h must stay free of vendor headers")
             source = (boards.BOARD_SOURCES / entry["directory"] / "BoardDrivers.h").read_text()
             for name in drivers:
                 self.assertRegex(source, rf"\b{name}\b", f"{board_id}: {name}")
+            used = [bus for bus in buses if re.search(rf"\b{bus}\b", source)]
+            self.assertEqual(len(used), 1, f"{board_id}: one display bus")
+            for name in buses[used[0]]:
+                self.assertRegex(config, rf"\b{name}\b", f"{board_id}: {name}")
 
     def test_shared_firmware_has_no_board_pins_or_vendor_drivers(self):
         shared = [path for path in FIRMWARE.rglob("*") if path.suffix in (".ino", ".h", ".cpp")
@@ -51,7 +61,10 @@ class BoardTargetTests(unittest.TestCase):
             text = path.read_text(errors="ignore")
             for pattern in (r"\bArduino_CO5300\b", r"\bArduino_ESP32QSPI\b", r"\bTouchDrvCST92xx\b",
                             r"TouchDrvCSTXXX\.hpp", r"\bCST92XX_SLAVE_ADDRESS\b", r"\bQMI8658_L_SLAVE_ADDRESS\b",
-                            r"\bSensorQMI8658\b", r"\bes8311_\w+", r"ESP_I2S\.h", r"\bI2SClass\b"):
+                            r"\bSensorQMI8658\b", r"\bes8311_\w+", r"ESP_I2S\.h", r"\bI2SClass\b",
+                            r"\bArduino_ST7789\b", r"\bArduino_ESP32SPIDMA\b", r"\bTouchDrvCST816\b",
+                            r"\bCST816_SLAVE_ADDRESS\b", r"\bESP32QSPI_SPI_HOST\b", r"\bledc\w+\(",
+                            r"\bkDisplayQspi\w+", r"\bkDisplayDcPin\b"):
                 self.assertNotRegex(text, pattern, path.relative_to(ROOT).as_posix())
 
     def test_build_keeps_the_core_defines(self):

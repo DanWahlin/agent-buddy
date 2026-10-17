@@ -18,7 +18,9 @@ constexpr char kTouchControllerName[] = "CST9217";
 constexpr char kImuName[] = "QMI8658";
 }  // namespace board
 
+// The panel shows the 466x466 content at full size.
 constexpr int kDisplaySize = 466;
+constexpr int kPanelSize = kDisplaySize;
 constexpr int kDisplayCsPin = 12;
 constexpr int kDisplaySckPin = 38;
 constexpr int kDisplayD0Pin = 4;
@@ -44,6 +46,9 @@ constexpr int kAudioBclkPin = 9;
 constexpr int kAudioWordSelectPin = 45;
 constexpr int kAudioDataOutPin = 8;
 constexpr int kAudioAmplifierPin = 46;
+// The amplifier stays silent for over 100 ms after it turns on (measured on the 1.75-C), which
+// would cut the short settings sound to nothing.
+constexpr unsigned kAudioAmplifierStartupMs = 150;
 constexpr uint8_t kAudioCodecI2cAddress = 0x18;
 // The ES8311 volume for 1% and for 100% sound volume, tuned for the board's speaker.
 constexpr int kAudioMinimumCodecVolume = 68;

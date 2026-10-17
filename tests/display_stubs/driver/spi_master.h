@@ -5,6 +5,7 @@
 #include <deque>
 
 using esp_err_t = int;
+using spi_host_device_t = int;
 constexpr esp_err_t ESP_OK = 0, ESP_FAIL = -1;
 constexpr int SPI2_HOST = 2, SPI_CLK_SRC_DEFAULT = 1;
 constexpr unsigned SPI_DEVICE_HALFDUPLEX = 1;
@@ -42,12 +43,20 @@ inline spi_device_handle_t owner = nullptr;
 inline unsigned maxPending = 0;
 inline int failSubmission = -1;
 inline int chipSelect = 1;
+// The scanout the test expects, set from the board under test.
+inline int host = SPI2_HOST, mode = 0, commandBits = 8, addressBits = 24;
+inline bool quad = true;
+inline unsigned command = 0x32;
+inline uint64_t address = 0x003C00;
+inline int csPin = 12, dcPin = -1;
+inline int dataCommand = 0;
 }
 
 inline esp_err_t spi_bus_add_device(int host, const spi_device_interface_config_t* config,
                                    spi_device_handle_t* device) {
-  assert(host == SPI2_HOST && config->queue_size == 2 && config->spics_io_num == -1);
-  assert(config->command_bits == 8 && config->address_bits == 24);
+  assert(host == spi_stub::host && config->queue_size == 2 && config->spics_io_num == -1);
+  assert(config->command_bits == spi_stub::commandBits && config->address_bits == spi_stub::addressBits);
+  assert(config->mode == spi_stub::mode);
   assert(config->clock_source == SPI_CLK_SRC_DEFAULT);
   *device = new SpiDevice{{}, spi_stub::sink};
   return ESP_OK;
@@ -75,11 +84,17 @@ inline esp_err_t spi_device_queue_trans(spi_device_handle_t device, spi_transact
     spi_stub::failSubmission = -1;
     return ESP_FAIL;
   }
-  if (transaction->flags & SPI_TRANS_VARIABLE_CMD) {
+  assert(bool(transaction->flags & SPI_TRANS_MODE_QIO) == spi_stub::quad);
+  if (spi_stub::dcPin >= 0) assert(spi_stub::dataCommand == 1);
+  if (!spi_stub::commandBits && !spi_stub::addressBits) {
+    // A plain SPI panel takes only pixels.
+    assert(!(transaction->flags & SPI_TRANS_VARIABLE_CMD) && transaction->cmd == 0 && transaction->addr == 0);
+  } else if (transaction->flags & SPI_TRANS_VARIABLE_CMD) {
     const auto* extended = reinterpret_cast<const spi_transaction_ext_t*>(transaction);
     assert(extended->command_bits == 0 && extended->address_bits == 0 && extended->dummy_bits == 0);
   } else {
-    assert(device->pending.empty() && transaction->cmd == 0x32 && transaction->addr == 0x003C00);
+    assert(device->pending.empty() && transaction->cmd == spi_stub::command
+           && transaction->addr == spi_stub::address);
   }
   device->pending.push_back(transaction);
   spi_stub::maxPending = std::max(spi_stub::maxPending, static_cast<unsigned>(device->pending.size()));

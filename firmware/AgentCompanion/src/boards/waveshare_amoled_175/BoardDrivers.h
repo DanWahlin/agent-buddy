@@ -4,6 +4,7 @@
 #include "BoardVariant.h"
 #include "../drivers/Es8311AudioOutput.h"
 #include "../drivers/Qmi8658Accelerometer.h"
+#include "../../DisplayDma.h"
 #include <Arduino_GFX_Library.h>
 #include <TouchDrvCSTXXX.hpp>
 #include <Wire.h>
@@ -16,6 +17,9 @@ static_assert(kTouchI2cAddress == CST92XX_SLAVE_ADDRESS, "Touch address differs 
 static_assert(kImuI2cAddress == QMI8658_L_SLAVE_ADDRESS, "IMU address differs from the driver.");
 static_assert(kAudioCodecI2cAddress == ES8311_ADDRESS_0, "Codec address differs from the driver.");
 
+// Runs first in setup(). This board needs nothing before its drivers start.
+inline void beginBoard() {}
+
 inline Arduino_DataBus& displayBus() {
   static Arduino_ESP32QSPI bus(kDisplayCsPin, kDisplaySckPin, kDisplayD0Pin, kDisplayD1Pin,
                                kDisplayD2Pin, kDisplayD3Pin, true);
@@ -27,6 +31,16 @@ inline DisplayPanel& displayPanel() {
                             kDisplayColumnOffset, 0, 0, 0);
   return panel;
 }
+
+// CO5300 QSPI pixel write: each frame starts with the RAMWR command and address.
+inline DisplayScanout displayScanout() {
+  return {ESP32QSPI_SPI_HOST, 0, 8, 24, true, kDisplayQspiWriteCommand, kDisplayQspiPixelAddress,
+          kDisplayCsPin, -1};
+}
+
+inline void setDisplayBrightness(uint8_t brightness) { displayPanel().setBrightness(brightness); }
+
+inline void configureTouch(TouchController&) {}
 
 // The QMI8658 axes are already the orientation frame (see ScreenOrientation.h), so read() needs
 // no axis change on this board. The IMU starts after touch, then sets the shared bus clock.
@@ -48,7 +62,8 @@ inline Variant variant() {
 inline Es8311AudioOutput& audioOutput() {
   static Es8311AudioOutput output({audioMclkPin(variant()), kAudioBclkPin, kAudioWordSelectPin, kAudioDataOutPin,
                                    kAudioAmplifierPin, kI2cPort, kAudioCodecI2cAddress,
-                                   kAudioMinimumCodecVolume, kAudioMaximumCodecVolume});
+                                   kAudioMinimumCodecVolume, kAudioMaximumCodecVolume,
+                                   kAudioAmplifierStartupMs});
   return output;
 }
 }  // namespace board

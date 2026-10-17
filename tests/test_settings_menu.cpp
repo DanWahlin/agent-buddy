@@ -48,5 +48,45 @@ int main() {
   assert(menu.tap(230, 230) == SettingsAction::None);
   menu.close();
   assert(!menu.isOpen());
+
+  // The compact layout spreads larger controls over three pages.
+  copilot::SettingsMenu compact(155, 50, true);
+  assert(compact.compact());
+  compact.open();
+  assert(compact.tap(60, 90) == SettingsAction::BrightnessDown);
+  assert(compact.brightness() == 130);
+  assert(compact.tap(400, 90) == SettingsAction::BrightnessUp);
+  assert(compact.brightness() == 155);
+  assert(compact.tap(60, 220) == SettingsAction::SoundDown);
+  assert(compact.soundVolume() == 25);
+  assert(compact.tap(400, 220) == SettingsAction::SoundUp);
+  assert(compact.soundVolume() == 50);
+  assert(compact.tap(233, 90) == SettingsAction::None);
+  assert(compact.tap(233, 20) == SettingsAction::None);
+  assert(compact.tap(100, 320) == SettingsAction::Wifi);
+  assert(compact.tap(350, 320) == SettingsAction::States);
+  assert(compact.tap(233, 420) == SettingsAction::Close);
+  compact.openNetwork();
+  assert(compact.networkPage() && !compact.statesPage());
+  assert(compact.tap(233, 320) == SettingsAction::WifiSetup);
+  assert(compact.tap(233, 420) == SettingsAction::Back);
+  assert(compact.tap(233, 100) == SettingsAction::None);
+  compact.back();
+  compact.openStates();
+  assert(compact.statesPage() && !compact.networkPage());
+  assert(compact.tap(100, 80) == SettingsAction::Idle);
+  assert(compact.tap(350, 80) == SettingsAction::Working);
+  assert(compact.tap(100, 230) == SettingsAction::Complete);
+  assert(compact.tap(350, 230) == SettingsAction::Attention);
+  assert(compact.tap(100, 380) == SettingsAction::Surprise);
+  assert(compact.tap(350, 380) == SettingsAction::Back);
+  assert(compact.tap(233, 158) == SettingsAction::None);
+  compact.back();
+  assert(!compact.statesPage() && compact.tap(60, 90) == SettingsAction::BrightnessDown);
+  compact.openStates();
+  compact.close();
+  compact.open();
+  assert(!compact.statesPage());
   std::cout << "PASS: settings geometry, brightness, sound, Wi-Fi, modes and close action\n";
+  std::cout << "PASS: compact settings pages, steppers, state buttons and back\n";
 }
