@@ -143,6 +143,12 @@ class FakeService extends EventEmitter {
     this.setup = initialOnboarding();
     return this.setup;
   }
+  async exitOnboarding() {
+    if (!this.setup.rerun) throw new SetupError('Finish setup first. It has not been completed on this computer.');
+    this.setupActions.push('exit');
+    this.setup = {...this.setup, completed: true, rerun: false, step: 'complete'};
+    return this.setup;
+  }
   async installOnboardingAgents(approved: AgentId[] = []) {
     if (!isHookCurrent(this.hookStatus) && !approved.includes('copilot'))
       throw new SetupError('Hooks changed. Review and approve the required installation.');
@@ -293,6 +299,21 @@ test('a rejected device operation returns a conflict rather than an accepted ins
     assert.equal(response.status, 409);
     assert.match(JSON.parse(response.body).error, /service is stopping/);
     assert.deepEqual(service.setupActions, []);
+  });
+});
+
+test('a setup rerun can be left over the API; a first setup cannot', async () => {
+  await withServer(async (call, service) => {
+    service.setup = {...initialOnboarding(), rerun: true};
+    assert.equal((await call('/api/onboarding/exit', {method: 'POST', token: false})).status, 401);
+    const left = await call('/api/onboarding/exit', {method: 'POST'});
+    assert.equal(left.status, 200);
+    assert.equal(JSON.parse(left.body).completed, true);
+    service.setup = initialOnboarding();
+    const first = await call('/api/onboarding/exit', {method: 'POST'});
+    assert.equal(first.status, 409);
+    assert.match(JSON.parse(first.body).error, /Finish setup first/);
+    assert.deepEqual(service.setupActions, ['exit']);
   });
 });
 

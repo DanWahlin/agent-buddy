@@ -145,3 +145,28 @@ test('a failed save leaves progress intact and removes its temporary file before
     await rm(directory, {recursive: true, force: true});
   }
 });
+
+test('a setup rerun is saved, survives a restart, and finishing clears it', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'onboarding-'));
+  const path = join(directory, 'onboarding.json');
+  try {
+    const store = new OnboardingStore(path);
+    await store.reset({character: 'claude'}, true, true);
+    assert.equal(new OnboardingStore(path).state.rerun, true);
+    await store.update({step: 'agents'});
+    assert.equal(store.state.rerun, true);
+    await store.finish();
+    assert.equal(new OnboardingStore(path).state.rerun, false);
+    // A setup record from before rerun existed is still valid.
+    const saved = JSON.parse(await readFile(path, 'utf8'));
+    delete saved.rerun;
+    await writeFile(path, JSON.stringify(saved));
+    assert.equal(new OnboardingStore(path).state.rerun, false);
+    assert.equal(new OnboardingStore(path).problem, null);
+    await writeFile(path, JSON.stringify({...saved, rerun: 'yes'}));
+    assert.match(new OnboardingStore(path).problem ?? '', /could not be read/);
+    assert.equal(isOnboardingChange({rerun: true}), false);
+  } finally {
+    await rm(directory, {recursive: true, force: true});
+  }
+});

@@ -14,6 +14,8 @@ export type CompanionDisplay = typeof companionDisplays[number];
 export interface OnboardingState {
   version: 1;
   completed: boolean;
+  // True when setup runs again after it was finished: the user can then leave it unchanged.
+  rerun: boolean;
   step: OnboardingStep;
   visitedSteps: OnboardingStep[];
   agents: AgentId[];
@@ -26,7 +28,7 @@ export interface OnboardingState {
   port: string | null;
 }
 
-export type OnboardingChange = Partial<Omit<OnboardingState, 'version' | 'completed' | 'visitedSteps'>>;
+export type OnboardingChange = Partial<Omit<OnboardingState, 'version' | 'completed' | 'rerun' | 'visitedSteps'>>;
 
 export class SetupError extends Error {
   constructor(message: string, readonly status: 400 | 409 = 409) {
@@ -35,7 +37,7 @@ export class SetupError extends Error {
 }
 
 export function initialOnboarding(completed = false): OnboardingState {
-  return {version: 1, completed, step: 'welcome', agents: [], agentStage: 'select', character: 'copilot', display: 'desktop',
+  return {version: 1, completed, rerun: false, step: 'welcome', agents: [], agentStage: 'select', character: 'copilot', display: 'desktop',
           visitedSteps: ['welcome'], agentsDeferred: false, deferredAgents: [], deviceDeferred: false, port: null};
 }
 
@@ -83,10 +85,12 @@ export function readOnboarding(path = onboardingPath()): OnboardingState | null 
   const record = value as Record<string, unknown>;
   if (record.version !== 1 || typeof record.completed !== 'boolean')
     throw new InvalidOnboardingError('The saved setup record is invalid.');
-  const {version: _version, completed, visitedSteps, ...change} = record;
-  if (!isOnboardingChange(change) || Object.keys(change).length !== 9)
+  const {version: _version, completed, visitedSteps, rerun, ...change} = record;
+  // Setup records from before `rerun` existed have no such field.
+  if (!isOnboardingChange(change) || Object.keys(change).length !== 9
+    || (rerun !== undefined && typeof rerun !== 'boolean'))
     throw new InvalidOnboardingError('The saved setup record is invalid.');
-  const saved = {...initialOnboarding(), ...change, completed};
+  const saved = {...initialOnboarding(), ...change, completed, rerun: rerun === true};
   if (saved.completed && saved.step !== 'complete')
     throw new InvalidOnboardingError('The saved setup record is invalid.');
   if (visitedSteps === undefined) {
@@ -140,14 +144,15 @@ export class OnboardingStore {
     return this.#save(state => ({...state, ...change}));
   }
 
-  reset(change: OnboardingChange = {}, preserveVisits = false): Promise<OnboardingState> {
+  // `rerun` marks setup that runs again after it was finished, so the user can leave it unchanged.
+  reset(change: OnboardingChange = {}, preserveVisits = false, rerun = false): Promise<OnboardingState> {
     if (!isOnboardingChange(change)) return Promise.reject(new SetupError('Invalid setup choices.', 400));
-    return this.#save(state => ({...initialOnboarding(), ...change,
+    return this.#save(state => ({...initialOnboarding(), ...change, rerun,
       ...(preserveVisits ? {visitedSteps: state.visitedSteps} : {})}));
   }
 
   finish(): Promise<OnboardingState> {
-    return this.#save(state => ({...state, completed: true, step: 'complete'}));
+    return this.#save(state => ({...state, completed: true, rerun: false, step: 'complete'}));
   }
 
   #save(update: (state: OnboardingState) => OnboardingState): Promise<OnboardingState> {

@@ -136,6 +136,8 @@ app. You do not need Python, Node.js, or a clone of the repository.
 Setup resumes after an interruption. Existing installations do not receive a
 forced setup flow after an update. Use **Run setup wizard** in Settings to change
 your choices or continue deferred setup.
+After you finish setup once, **Exit setup** returns to Settings at any step.
+Choices that a step already applied stay; nothing else changes.
 Select a previously reached step in the top navigation to return to it.
 Saved choices stay intact. New steps unlock as you reach them, and navigation
 is disabled during an installation.

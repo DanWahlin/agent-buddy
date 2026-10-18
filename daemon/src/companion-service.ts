@@ -668,10 +668,23 @@ export class CompanionService extends EventEmitter {
         : available.some(entry => entry.id === current) ? current : 'copilot',
       display: previous.deviceDeferred ? previous.display
         : !this.deviceEnabled ? 'desktop' : this.#display.showDesktopCompanion ? 'both' : 'device',
-    }, true);
+    }, true, previous.completed || previous.rerun);
     this.#onboardingError = null;
     this.emit('change');
     return state;
+  }
+
+  // Leaves setup that runs again after it was finished. Steps already applied stay; nothing else changes.
+  exitOnboarding(): Promise<OnboardingState> {
+    return this.#mutate(async () => {
+      if (this.#onboarding.state.completed) return this.#onboarding.state;
+      if (!this.#onboarding.state.rerun)
+        throw new SetupError('Finish setup first. It has not been completed on this computer.');
+      await this.#transport.selectUsbPort(null);
+      const completed = await this.#onboarding.finish();
+      this.emit('change');
+      return completed;
+    }, 'Leaving setup');
   }
 
   async rescanAgents(): Promise<AgentStatus[]> {
