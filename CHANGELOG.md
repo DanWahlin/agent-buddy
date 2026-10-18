@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.16]
+
+### Other changes
+
+- Let a setup rerun exit back to Settings (#37)
+
 ## [v0.14.15]
 
 ### Other changes
