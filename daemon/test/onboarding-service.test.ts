@@ -187,6 +187,35 @@ test('real service methods retain setup ownership through hook, display, charact
   }
 });
 
+test('setup that runs again after it was finished can be left without changes; a first setup cannot', async () => {
+  const {service, store, device, cleanup} = await fixture();
+  try {
+    await store.reset({display: 'both', character: 'claude'});
+    await assert.rejects(service.exitOnboarding(), /Finish setup first/);
+    assert.equal(store.state.completed, false);
+
+    await store.finish();
+    const restarted = await service.restartOnboarding();
+    assert.equal(restarted.rerun, true);
+    assert.equal(restarted.completed, false);
+    device.selected = '/dev/selected';
+    const left = await service.exitOnboarding();
+    assert.equal(left.completed, true);
+    assert.equal(left.rerun, false);
+    assert.equal(store.state.completed, true);
+    assert.equal(device.selected, null);
+    assert.deepEqual(service.displayChanges, []);
+    assert.deepEqual(service.installedCharacters, []);
+    // Leaving finished setup again changes nothing.
+    assert.deepEqual(await service.exitOnboarding(), store.state);
+    // A restart of a rerun is still a rerun.
+    await service.restartOnboarding();
+    assert.equal((await service.restartOnboarding()).rerun, true);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('a Wi-Fi scan blocks setup with a message that names the scan', async () => {
   const {service, device, cleanup} = await fixture();
   const pending = gate();

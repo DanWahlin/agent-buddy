@@ -737,3 +737,34 @@ test('the shared device scene keeps an installation transport through reconnect 
   runInContext("controller.offline = true; controller.renderConnectionScene(connectionScenes[1]);", context);
   assert.match(element('ob-firmware-connection-art').className, /disconnected/);
 });
+
+test('Exit setup shows only when setup runs again, and leaves through the API', async () => {
+  const elements = new Map<string, Element>();
+  const element = (id: string) => {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id)!;
+  };
+  const context = createContext({
+    document: {getElementById: element, activeElement: null, createElement: () => new Element()},
+  });
+  const source = readFileSync(new URL('../../web/onboarding.js', import.meta.url), 'utf8');
+  runInContext(source.replace(/^import .*;\s*$/gm, '').replace(/^export /gm, ''), context);
+  runInContext(`
+    const controller = Object.create(Onboarding.prototype);
+    controller.state = {step: 'welcome', agents: [], rerun: false};
+    controller.status = {agents: [], connected: false};
+    controller.characters = [];
+    const calls = [];
+    controller.api = async path => { calls.push(path); return {}; };
+    controller.refresh = async () => { calls.push('refresh'); };
+    controller.renderFooter(false);
+  `, context);
+  assert.equal(element('ob-exit').hidden, true);
+  runInContext("controller.state.rerun = true; controller.renderFooter(false)", context);
+  assert.equal(element('ob-exit').hidden, false);
+  assert.equal(element('ob-exit').disabled, false);
+  runInContext("controller.renderFooter(true)", context);
+  assert.equal(element('ob-exit').disabled, true);
+  await runInContext('controller.exit()', context);
+  assert.deepEqual(JSON.parse(runInContext('JSON.stringify(calls)', context)), ['/api/onboarding/exit', 'refresh']);
+});

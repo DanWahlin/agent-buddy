@@ -160,6 +160,7 @@ export class Onboarding {
     $('ob-next').addEventListener('click', () => void this.run(() => this.next()));
     $('ob-back').addEventListener('click', () => void this.run(() => this.back()));
     $('ob-skip').addEventListener('click', () => void this.run(() => this.skip()));
+    $('ob-exit').addEventListener('click', () => void this.run(() => this.exit()));
   }
 
   update(status, characters) {
@@ -291,6 +292,12 @@ export class Onboarding {
     await this.api('/api/onboarding/finish', {method: 'POST'});
     await this.refresh();
     await this.reloadCharacters();
+  }
+
+  // Setup that runs again after it was finished can be left: the choices already applied stay.
+  async exit() {
+    await this.api('/api/onboarding/exit', {method: 'POST'});
+    await this.refresh();
   }
 
   async goTo(step) {
@@ -867,6 +874,9 @@ export class Onboarding {
   renderFooter(busy) {
     const step = this.state.step;
     const next = $('ob-next');
+    const exit = $('ob-exit');
+    exit.hidden = !this.state.rerun;
+    exit.disabled = Boolean(busy);
     $('ob-back').hidden = step === 'welcome';
     const skip = $('ob-skip');
     skip.hidden = !['agents', 'display', 'firmware'].includes(step)
