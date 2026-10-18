@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.14.15]
+
+### Other changes
+
+- Name the running task when Settings is busy (#36)
+
 ## [v0.14.14]
 
 ### Build and maintenance
