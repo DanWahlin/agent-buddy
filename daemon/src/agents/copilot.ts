@@ -84,16 +84,18 @@ export function copilotAppVersion(ctx: AgentContext,
 // Copilot denies every tool call when a preToolUse hook cannot run, and a running session keeps
 // the hooks it loaded at its start. So after an uninstall removes Node.js and the CLI, such a
 // session could use no tool until it restarted. The system shell, which is always there, runs
-// the hook only while the CLI is still on disk, and otherwise exits with 0.
+// the hook only while Node.js and the CLI are on disk, and otherwise exits with 0.
 export function copilotHookCommand(node: string, cli: string, event: string, platform: NodeJS.Platform,
                                    env: NodeJS.ProcessEnv): {exec: string; args: string[]} {
   const hook = [cli, 'hook', 'copilot', event];
-  if (platform !== 'win32') return {exec: '/bin/sh', args: ['-c', '[ -f "$1" ] || exit 0; exec "$0" "$@"', node, ...hook]};
+  if (platform !== 'win32')
+    return {exec: '/bin/sh', args: ['-c', '[ -x "$0" ] && [ -f "$1" ] || exit 0; exec "$0" "$@"', node, ...hook]};
   // Copilot quotes an argument for cmd.exe only when it has a space, so a path with a character
   // that cmd.exe reads in its command line runs Node.js directly, as before.
   if ([node, cli].some(path => /["%^&|<>()!,;=]/.test(path))) return {exec: node, args: hook};
   const root = env.SystemRoot?.trim() || env.windir?.trim() || 'C:\\Windows';
-  return {exec: win32.join(root, 'System32', 'cmd.exe'), args: ['/d', '/c', 'if', 'exist', cli, node, ...hook]};
+  return {exec: win32.join(root, 'System32', 'cmd.exe'),
+          args: ['/d', '/c', 'if', 'exist', node, 'if', 'exist', cli, node, ...hook]};
 }
 
 export function createCopilotHooks(node: string, cli: string, platform: NodeJS.Platform = process.platform,

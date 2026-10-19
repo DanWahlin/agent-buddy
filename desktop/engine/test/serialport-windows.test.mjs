@@ -48,9 +48,9 @@ test('another binding version is refused before anything is built', async t => {
   await mkdir(join(bindings, 'src'));
   await writeFile(join(bindings, 'package.json'), JSON.stringify({version: '13.0.1'}));
   await writeFile(join(bindings, 'src', 'serialport_win.cpp'), 'unchanged');
-  assert.throws(() => buildPatchedWindowsBinding({bindings, arch: 'x64', nodeVersion: '24.21.0', nodeGyp: 'none'}),
-                process.platform === 'win32' ? /fixes @serialport\/bindings-cpp 13\.0\.0, not 13\.0\.1/
-                  : /can only be built on Windows/);
+  await assert.rejects(buildPatchedWindowsBinding({bindings, arch: 'x64', nodeVersion: '24.21.0', nodeGyp: 'none'}),
+                       process.platform === 'win32' ? /fixes @serialport\/bindings-cpp 13\.0\.0, not 13\.0\.1/
+                         : /can only be built on Windows/);
   assert.equal(await readFile(join(bindings, 'src', 'serialport_win.cpp'), 'utf8'), 'unchanged');
 });
 
@@ -83,7 +83,7 @@ test('the fixed binding builds for this computer and loads', {
   const published = await readFile(join(prebuilds, name));
   const source = await readFile(join(bindings, 'src', 'serialport_win.cpp'), 'utf8');
 
-  buildPatchedWindowsBinding({
+  await buildPatchedWindowsBinding({
     bindings, arch: process.arch, nodeVersion: process.versions.node,
     nodeGyp: join(repository, 'daemon', 'node_modules', 'node-gyp', 'bin', 'node-gyp.js'),
   });

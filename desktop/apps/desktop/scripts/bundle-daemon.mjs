@@ -17,6 +17,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {builtInPackFiles} from './character-packs.mjs';
+import {PermanentError, retry} from './retry.mjs';
 import {buildPatchedWindowsBinding} from './serialport-windows.mjs';
 
 // Keep this the same as the Node.js in .github/workflows/build.yml.
@@ -63,18 +64,14 @@ function run(command, args, cwd) {
 }
 
 async function download(url) {
-  // nodejs.org sometimes times out from CI runners.
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Could not download ${url}: HTTP ${response.status}`);
-      return Buffer.from(await response.arrayBuffer());
-    } catch (error) {
-      if (attempt === 3) throw error;
-      console.log(`Downloading ${url} failed; trying again (${attempt + 1} of 3)`);
-      await new Promise(resolve => setTimeout(resolve, attempt * 10_000));
-    }
-  }
+  return retry(`Downloading ${url}`, async () => {
+    const response = await fetch(url);
+    if (response.ok) return Buffer.from(await response.arrayBuffer());
+    const message = `Could not download ${url}: HTTP ${response.status}`;
+    // A missing file stays missing; a busy server may answer the next time.
+    throw response.status < 500 && response.status !== 408 && response.status !== 429
+      ? new PermanentError(message) : new Error(message);
+  });
 }
 
 // A file of the Node.js release, checked against the release's SHASUMS256.txt.
@@ -145,7 +142,7 @@ async function main() {
     // The published Windows binding cannot write to the device's USB port; see serialport-windows.mjs.
     for (const arch of arches) {
       console.log(`Building serialport's Windows binding for ${arch}`);
-      buildPatchedWindowsBinding({
+      await buildPatchedWindowsBinding({
         bindings: join(runtimeDaemon, 'node_modules', '@serialport', 'bindings-cpp'),
         arch,
         nodeVersion: NODE_VERSION,

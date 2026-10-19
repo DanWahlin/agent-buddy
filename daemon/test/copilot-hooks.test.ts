@@ -11,12 +11,13 @@ const windowsEnv = {SystemRoot: 'C:\\Windows'};
 test('Copilot hooks run through the system shell', () => {
   assert.deepEqual(copilotHookCommand('C:\\A B\\node.exe', 'C:\\A B\\cli.js', 'preToolUse', 'win32', windowsEnv), {
     exec: 'C:\\Windows\\System32\\cmd.exe',
-    args: ['/d', '/c', 'if', 'exist', 'C:\\A B\\cli.js', 'C:\\A B\\node.exe', 'C:\\A B\\cli.js', 'hook', 'copilot',
-           'preToolUse'],
+    args: ['/d', '/c', 'if', 'exist', 'C:\\A B\\node.exe', 'if', 'exist', 'C:\\A B\\cli.js', 'C:\\A B\\node.exe',
+           'C:\\A B\\cli.js', 'hook', 'copilot', 'preToolUse'],
   });
   assert.deepEqual(copilotHookCommand('/a b/node', '/a b/cli.js', 'preToolUse', 'darwin', {}), {
     exec: '/bin/sh',
-    args: ['-c', '[ -f "$1" ] || exit 0; exec "$0" "$@"', '/a b/node', '/a b/cli.js', 'hook', 'copilot', 'preToolUse'],
+    args: ['-c', '[ -x "$0" ] && [ -f "$1" ] || exit 0; exec "$0" "$@"', '/a b/node', '/a b/cli.js', 'hook',
+           'copilot', 'preToolUse'],
   });
   // cmd.exe would read these characters, so Node.js runs directly.
   for (const path of ['C:\\R&D\\cli.js', 'C:\\100%\\cli.js', 'C:\\a,b\\cli.js', 'C:\\x (y)\\cli.js'])
@@ -50,7 +51,8 @@ function runHook(command: {exec: string; args: string[]}, input: string): Promis
 }
 
 test('a Copilot hook runs the CLI while it is there, and exits with 0 once it is gone', async t => {
-  const folder = await mkdtemp(join(tmpdir(), 'agent companion hook '));
+  // A user folder can have spaces and letters outside ASCII.
+  const folder = await mkdtemp(join(tmpdir(), 'agent companion José 日本 '));
   t.after(() => rm(folder, {recursive: true, force: true}));
   const runtime = join(folder, 'runtime dir');
   await mkdir(runtime);
@@ -68,6 +70,11 @@ process.stdin.on('data', chunk => input += chunk).on('end', () =>
   // After an uninstall, Copilot denies the tool call unless the hook exits with 0.
   await rm(runtime, {recursive: true});
   assert.equal(await runHook(command, '{"toolName":"bash"}'), 0);
-  assert.equal(await runHook({exec: join(runtime, 'node.exe'), args: [cli, 'hook', 'copilot', 'preToolUse']}, '{}')
-    .catch(() => 'cannot start'), 'cannot start');
+  // Node.js gone while a CLI is still there, as when the service ran from a clone and Node.js was removed.
+  const kept = join(folder, 'cli.js');
+  await writeFile(kept, 'process.exit(3);\n');
+  const noNode = copilotHookCommand(join(runtime, 'node.exe'), kept, 'preToolUse', process.platform, process.env);
+  assert.equal(await runHook(noNode, '{}'), 0);
+  assert.equal(await runHook(copilotHookCommand(process.execPath, kept, 'preToolUse', process.platform, process.env),
+                             '{}'), 3);
 });

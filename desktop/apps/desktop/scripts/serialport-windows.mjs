@@ -6,19 +6,21 @@
 // GetOverlappedResult waits on that pointer and fails with "Invalid handle", so every write to
 // the device fails and the app never finds it (serialport/bindings-cpp#241). Microsoft says
 // not to call GetOverlappedResult there: the completion routine receives the result itself.
-import {execFileSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync}
   from 'node:fs';
 import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
+import {retry} from './retry.mjs';
 
 export const PATCHED_VERSION = '13.0.0';
 
 // The machine field of a Windows binary's PE header.
 const MACHINES = {x64: 0x8664, arm64: 0xaa64};
-const HEADER_ATTEMPTS = 3;
 
+// Each fix changes only how a completion routine learns its result. A write that completes
+// with no bytes is written again, as before.
 const FIXES = [
   {
     before: `  WriteBaton* baton = static_cast<WriteBaton*>(ov->hEvent);
@@ -91,8 +93,8 @@ export function windowsMachine(binary) {
 }
 
 // Replaces the prebuilt binding for `arch` in an installed @serialport/bindings-cpp with one
-// built from the fixed source. Needs Visual Studio's C++ tools for that architecture.
-export function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp}) {
+// built from the fixed source. Needs Visual Studio's C++ tools for that architecture, and Python.
+export async function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp}) {
   // node-gyp builds for the computer it runs on, whatever --arch says about the CPU.
   if (process.platform !== 'win32') throw new Error('serialport\'s Windows binding can only be built on Windows.');
   if (!MACHINES[arch]) throw new Error(`serialport's Windows binding cannot be built for ${arch}.`);
@@ -117,21 +119,16 @@ export function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp
     writeFileSync(join(copy, 'src', 'serialport_win.cpp'), patched);
     const addonApi = dirname(createRequire(join(bindings, 'package.json')).resolve('node-addon-api/package.json'));
     cpSync(addonApi, join(work, 'node_modules', 'node-addon-api'), {recursive: true});
-    const gyp = args => execFileSync(process.execPath, [nodeGyp, ...args, `--arch=${arch}`, `--target=${nodeVersion}`],
-                                     {cwd: copy, stdio: ['ignore', 'inherit', 'inherit']});
-    // Only the Node.js headers need the network, and nodejs.org sometimes times out from CI runners.
-    // node-gyp checks them against the release's SHASUMS256.txt and caches them for the build.
-    for (let attempt = 1; ; attempt++) {
-      try {
-        gyp(['install']);
-        break;
-      } catch (error) {
-        if (attempt === HEADER_ATTEMPTS) throw error;
-        console.log(`Downloading the Node.js headers failed; trying again (${attempt + 1} of ${HEADER_ATTEMPTS})`);
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 10_000);
-      }
-    }
-    gyp(['rebuild', '--release']);
+    const gyp = args => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [nodeGyp, ...args, `--arch=${arch}`, `--target=${nodeVersion}`],
+                          {cwd: copy, stdio: ['ignore', 'inherit', 'inherit']});
+      child.once('error', reject);
+      child.once('exit', code => code === 0 ? resolve() : reject(new Error(`node-gyp ${args[0]} exited with ${code}.`)));
+    });
+    // Only the Node.js headers need the network. node-gyp checks them against the release's
+    // SHASUMS256.txt and caches them for the build.
+    await retry('Downloading the Node.js headers', () => gyp(['install']));
+    await gyp(['rebuild', '--release']);
     const built = join(copy, 'build', 'Release', 'bindings.node');
     if (windowsMachine(readFileSync(built)) !== MACHINES[arch])
       throw new Error(`node-gyp did not build serialport's Windows binding for ${arch}.`);

@@ -66,7 +66,7 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   [`scripts/serialport-windows.mjs`](apps/desktop/scripts/serialport-windows.mjs),
   because the published binding cannot write to the device's USB port on Windows on
   Arm (serialport/bindings-cpp#241). That step needs Visual Studio's C++ build tools
-  for the target architecture, as GitHub's Windows runners have.
+  for the target architecture, and Python, as GitHub's Windows runners have.
 - [`tauri.daemon.conf.json`](apps/desktop/src-tauri/tauri.daemon.conf.json)
   adds that folder to the app's resources. A build without it (`npm start`,
   `cargo run`) carries no service and never installs one.
