@@ -6,6 +6,11 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      sign_windows:
+        description: Sign the Windows apps (runs in the release environment, which allows only v* tags by default)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -157,6 +162,14 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     # The app carries the daemon, with the release's own character packs.
     needs: build
+    # Release builds sign the Windows apps with Azure Artifact Signing, so Smart App Control lets
+    # them run. Signing needs the release environment's Azure login, which only v* tags can use.
+    environment: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.sign_windows) && 'release' || '' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SIGN_WINDOWS: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.sign_windows) && 'true' || 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -206,6 +219,21 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-alsa
       - run: npm ci
+      - name: Sign in to Azure for signing
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Set up signing
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        env:
+          ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+        run: ./apps/desktop/scripts/windows-signing.ps1 -Setup
       - name: Download the release bundles
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -218,11 +246,27 @@ jobs:
           unzip -o -j "$RUNNER_TEMP"/release-bundles/*-characters.zip '*.acpk' -d build/characters
           node desktop/apps/desktop/scripts/bundle-daemon.mjs --target ${{ matrix.target }} \
             --release-firmware "$RUNNER_TEMP"/release-bundles/*-firmware.zip
+      - name: Sign the daemon runtime
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        run: ./apps/desktop/scripts/windows-signing.ps1 -SignFolder apps/desktop/src-tauri/daemon-runtime
       - name: Build the app
         working-directory: desktop/apps/desktop
         run: |
+          signing=()
+          if [ "${{ runner.os }}" = Windows ] && [ "$SIGN_WINDOWS" = true ]; then
+            # Tauri runs this for the app, its uninstaller and the installer.
+            script="$(cygpath -w "$PWD/scripts/windows-signing.ps1" | sed 's/\\/\\\\/g')"
+            signing=(--config "{\"bundle\":{\"windows\":{\"signCommand\":{\"cmd\":\"pwsh\",\"args\":[\"-NoProfile\",\"-File\",\"$script\",\"%1\"]}}}}")
+          fi
           npm run bundle -- --target ${{ matrix.target }} --config src-tauri/tauri.daemon.conf.json \
-            --config "{\"version\":\"$(cat ../../../VERSION)\"}"
+            --config "{\"version\":\"$(cat ../../../VERSION)\"}" "${signing[@]}"
+      - name: Check the Windows signatures
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        run: |
+          $release = 'apps/desktop/src-tauri/target/${{ matrix.target }}/release'
+          ./apps/desktop/scripts/windows-signing.ps1 -Verify (Get-Item "$release/agent-companion-desktop.exe", "$release/bundle/nsis/*-setup.exe").FullName
       - name: Package
         run: |
           version="$(cat ../VERSION)"
@@ -339,7 +383,8 @@ jobs:
             | `agent-companion-desktop-*-windows-x64-setup.exe` | Windows installer for Intel and AMD PCs |
             | `agent-companion-desktop-*-windows-arm64-setup.exe` | Windows installer for Arm PCs (Snapdragon) |
 
-            The app isn't code-signed, so Windows may flag it:
+            The installer and the app are signed by Dan Wahlin (Azure Artifact Signing), so Smart App Control lets them run.
+            While the publisher builds reputation, Windows may still warn:
             1. If your browser warns about the download, choose **Keep**.
             2. When you see **Windows protected your PC**, choose **More info**.
             3. Then choose **Run anyway**.
