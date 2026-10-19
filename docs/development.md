@@ -164,10 +164,12 @@ Known limits for boards that are not similar to the current board:
   `board`. Add a new board to `firmwareBoards` in `daemon/src/firmware-release.ts`
   too; a daemon test checks that the two lists match.
 - The app installs only the firmware for the device's board. A device that answers
-  over USB names its board (the `BOARD` line; firmware from before boards names
-  none and is the default board), and that board wins: a different choice is
-  refused. A device that does not answer can't name its board, so setup and
-  Settings ask the person to choose it, and the confirmation names the board. The
+  over USB names its board (the `BOARD` line), and that board wins: a different
+  choice is refused. A device that does not answer, or whose firmware sends no
+  `BOARD` line (firmware from before the line, which includes LCD-1.54 builds),
+  can't name its board over USB, so setup and Settings ask the person to choose it
+  once, and the confirmation names the board. Over Wi-Fi, firmware names its board
+  in its status. The
   daemon checks the downloaded manifest's board, and the desktop app's flasher
   (`--board <id>`) checks it again before it writes. A device of a board that
   releases have no firmware for shows **Other board** and installs from source
