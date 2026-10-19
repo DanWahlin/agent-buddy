@@ -71,13 +71,17 @@ test('the fixed binding builds for this computer and loads', {
   skip: (process.platform !== 'win32' || !process.env.AGENT_COMPANION_BUILD_SERIALPORT || !existsSync(installed))
     && 'set AGENT_COMPANION_BUILD_SERIALPORT=1 on Windows, with daemon dependencies installed, to build it',
 }, async t => {
-  // Inside daemon/node_modules, so the build resolves node-addon-api as the bundled runtime does.
-  const bindings = await mkdtemp(join(repository, 'daemon', 'node_modules', '.serialport-test-'));
-  t.after(() => rm(bindings, {recursive: true, force: true}));
+  // Inside daemon/node_modules, so the build resolves node-addon-api as the bundled runtime does,
+  // and about 200 characters deep, as the bundle in a deep checkout is: MSBuild fails near 260.
+  const root = await mkdtemp(join(repository, 'daemon', 'node_modules', '.serialport-test-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const padding = Math.max(0, 200 - root.length - '\\bindings-cpp'.length);
+  const bindings = join(root, ...Array.from({length: Math.ceil(padding / 41)}, () => 'd'.repeat(40)), 'bindings-cpp');
   await cp(installed, bindings, {recursive: true});
   const prebuilds = join(bindings, 'prebuilds', `win32-${process.arch}`);
   const [name] = (await readdir(prebuilds)).filter(file => file.endsWith('.node'));
   const published = await readFile(join(prebuilds, name));
+  const source = await readFile(join(bindings, 'src', 'serialport_win.cpp'), 'utf8');
 
   buildPatchedWindowsBinding({
     bindings, arch: process.arch, nodeVersion: process.versions.node,
@@ -87,7 +91,9 @@ test('the fixed binding builds for this computer and loads', {
   const built = await readFile(join(prebuilds, name));
   assert.notDeepEqual(built, published);
   assert.equal(windowsMachine(built), {x64: 0x8664, arm64: 0xaa64}[process.arch]);
+  // Only the binary changes: node-gyp-build would load a build folder before the prebuilt one.
   assert.equal(existsSync(join(bindings, 'build')), false);
+  assert.equal(await readFile(join(bindings, 'src', 'serialport_win.cpp'), 'utf8'), source);
   // A child process, so Windows lets go of the binding before the copy is removed.
   const loads = `require(${JSON.stringify(bindings)}).autoDetect().list().then(ports => console.log(Array.isArray(ports)))`;
   assert.equal(execFileSync(process.execPath, ['-e', loads], {encoding: 'utf8'}).trim(), 'true');

@@ -7,8 +7,11 @@
 // the device fails and the app never finds it (serialport/bindings-cpp#241). Microsoft says
 // not to call GetOverlappedResult there: the completion routine receives the result itself.
 import {execFileSync} from 'node:child_process';
-import {copyFileSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync}
+  from 'node:fs';
+import {createRequire} from 'node:module';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
 
 export const PATCHED_VERSION = '13.0.0';
 
@@ -103,17 +106,23 @@ export function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp
   if (prebuilt.length !== 1) throw new Error(`serialport has no single prebuilt binding in ${prebuilds}.`);
 
   const source = join(bindings, 'src', 'serialport_win.cpp');
-  writeFileSync(source, patchWindowsSource(readFileSync(source, 'utf8')));
-  const build = join(bindings, 'build');
+  const patched = patchWindowsSource(readFileSync(source, 'utf8'));
+  // MSBuild's file tracker fails on paths near 260 characters, which a build inside the bundle of
+  // a deep checkout reaches, so the binding builds in a short folder beside node-addon-api.
+  const work = mkdtempSync(join(tmpdir(), 'acsp-'));
   try {
+    const copy = join(work, 'bindings-cpp');
+    for (const name of ['package.json', 'binding.gyp', 'src']) cpSync(join(bindings, name), join(copy, name), {recursive: true});
+    writeFileSync(join(copy, 'src', 'serialport_win.cpp'), patched);
+    const addonApi = dirname(createRequire(join(bindings, 'package.json')).resolve('node-addon-api/package.json'));
+    cpSync(addonApi, join(work, 'node_modules', 'node-addon-api'), {recursive: true});
     execFileSync(process.execPath, [nodeGyp, 'rebuild', '--release', `--arch=${arch}`, `--target=${nodeVersion}`],
-                 {cwd: bindings, stdio: ['ignore', 'inherit', 'inherit']});
-    const built = join(build, 'Release', 'bindings.node');
+                 {cwd: copy, stdio: ['ignore', 'inherit', 'inherit']});
+    const built = join(copy, 'build', 'Release', 'bindings.node');
     if (windowsMachine(readFileSync(built)) !== MACHINES[arch])
       throw new Error(`node-gyp did not build serialport's Windows binding for ${arch}.`);
     copyFileSync(built, join(prebuilds, prebuilt[0]));
   } finally {
-    // node-gyp-build loads build/Release before prebuilds, so nothing may stay there.
-    rmSync(build, {recursive: true, force: true});
+    rmSync(work, {recursive: true, force: true});
   }
 }
