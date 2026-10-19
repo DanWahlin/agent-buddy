@@ -159,6 +159,13 @@ export class WifiTransport {
       });
   }
 
+  // Looks for the paired device now, instead of at the next scan.
+  async scanNow(): Promise<void> {
+    for (let waited = 0; this.#scanActive && waited < 15_000; waited += 50)
+      await new Promise(resolve => setTimeout(resolve, 50));
+    if (this.#scanTimer && !this.#connected) await this.#scan();
+  }
+
   async #scan(): Promise<void> {
     if (this.#scanActive || this.#installing || !this.#config) return;
     this.#scanActive = true;

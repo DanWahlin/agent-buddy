@@ -343,6 +343,15 @@
         <span><strong>Use a physical device</strong><span class="hint">Turn this off for desktop-only use. The USB port is released and device discovery stops.</span></span>
         <input id="physical-device-toggle" class="toggle" type="checkbox" role="switch">
       </label>
+      <div class="setting-row static device-connection-row">
+        <span>
+          <strong>Device connection <span id="device-connection-state" class="pill offline">Checking…</span></strong>
+          <span class="hint" id="device-connection-hint" role="status">Waiting for the companion service…</span>
+        </span>
+        <span class="row-actions">
+          <button type="button" class="secondary" id="device-detect">Detect device</button>
+        </span>
+      </div>
       <div class="connection-control">
         <div class="control-title">
           <span id="modes-label" class="control-label">Connection mode</span>

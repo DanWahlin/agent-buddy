@@ -46,7 +46,8 @@ export interface SettingsServerOptions {
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
     | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
-    | 'restartOnboarding' | 'navigateOnboarding' | 'installOnboardingAgents' | 'detectUsbDevices' | 'applyOnboardingDisplay'
+    | 'restartOnboarding' | 'navigateOnboarding' | 'installOnboardingAgents' | 'detectUsbDevices' | 'detectDevice'
+    | 'applyOnboardingDisplay'
     | 'setupOnboardingDevice' | 'finishOnboarding' | 'exitOnboarding' | 'removeOnboardingAgent' | 'rescanAgents'
     | 'on' | 'off'>;
   port: number;
@@ -197,6 +198,8 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         if (segments[1] === 'finish') return json(response, 200, await service.finishOnboarding());
       }
     }
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'devices' && segments[1] === 'detect')
+      return json(response, 200, await service.detectDevice());
     if (method === 'GET' && segments.length === 1 && segments[0] === 'devices')
       return json(response, 200, await service.detectUsbDevices());
     if (segments[0] === 'agents') {

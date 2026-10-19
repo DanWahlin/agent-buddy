@@ -84,6 +84,24 @@ export interface InstallResult {
   error?: string;
 }
 
+// What Detect device in Settings found. `result` says what to do next:
+// - connected: the device is reached, over `transport` on `port`.
+// - disabled: Use a physical device is off, so nothing looks for the device.
+// - busy: an installation has the device now.
+// - no-device: no ESP32 is on USB, and no paired Wi-Fi device answers.
+// - wifi-mode: an ESP32 is on USB, but Wi-Fi mode does not use USB.
+// - usb-unavailable: the port could not be opened; another program has it, or no permission.
+// - usb-not-answering: the port opens, but the device does not answer as an Agent Buddy.
+export interface DeviceDetection {
+  result: 'connected' | 'disabled' | 'busy' | 'no-device' | 'wifi-mode' | 'usb-unavailable' | 'usb-not-answering';
+  transport: 'usb' | 'wifi' | null;
+  port: string | null;
+  ports: string[];
+  mode: ConnectionMode;
+  wifiPaired: boolean;
+  error: string | null;
+}
+
 export interface FirmwareStatus {
   // What the device runs and what the last `bash tools/arduino.sh build` made (16 hex digits).
   device: string | null;
@@ -768,6 +786,25 @@ export class CompanionService extends EventEmitter {
     }
     await this.#onboarding.update({agentsDeferred: false, agentStage: 'connect'});
     return results;
+  }
+
+  // Looks for the device now, for Detect device in Settings, and says why it is not reached.
+  async detectDevice(): Promise<DeviceDetection> {
+    const result = (value: DeviceDetection['result'], ports: string[] = [], error: string | null = null) =>
+      ({result: value, transport: this.#transport.connected ? this.#transport.transport : null,
+        port: this.#transport.connected ? this.#transport.address : null, ports, mode: this.#transport.mode,
+        wifiPaired: this.#wifiPaired, error});
+    if (!this.deviceEnabled) return result('disabled');
+    if (this.#installBusy || this.#usbInstalling || this.#firmwareUpdating || this.#transport.installing)
+      return result('busy');
+    const {ports, error} = await this.#transport.detect();
+    const paths = ports.map(port => port.path);
+    if (this.#transport.connected) return result('connected', paths);
+    if (paths.length === 0) return result('no-device');
+    if (this.#transport.mode === 'wifi') return result('wifi-mode', paths);
+    if (error && /access|denied|busy|permission|EACCES|EBUSY|EPERM|cannot open|could not open|unable to open/i.test(error))
+      return result('usb-unavailable', paths, error);
+    return result('usb-not-answering', paths, error);
   }
 
   async detectUsbDevices(): Promise<{ports: Awaited<ReturnType<DeviceTransport['usbPorts']>>; connected: string | null}> {

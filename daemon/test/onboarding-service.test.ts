@@ -43,6 +43,12 @@ class FakeTransport extends DeviceTransport {
     return this.active && (port.serialNumber ? this.serialNumber === port.serialNumber : this.usbPath === port.path);
   }
   override async withUsbReleased<T>(run: () => Promise<T>) { return run(); }
+  detectError: string | null = null;
+  detects = 0;
+  override async detect() {
+    this.detects++;
+    return {ports: await this.usbPorts(), error: this.active ? null : this.detectError};
+  }
 }
 
 class FakeDesktop extends DesktopApp {
@@ -688,6 +694,37 @@ test('a device that starts answering as another board during the download is not
     await assert.rejects(service.installFirmwareOverUsb(device.usbPath, 'waveshare-amoled-175'),
                          /reports that it is a Waveshare ESP32-S3-Touch-LCD-1\.54/);
     assert.deepEqual(flashes, []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('Detect device says why the device is not reached', async () => {
+  const {service, device, cleanup} = await fixture();
+  try {
+    device.active = true;
+    let found = await service.detectDevice();
+    assert.deepEqual([found.result, found.transport, found.port, found.ports], ['connected', 'usb', device.usbPath, [device.usbPath]]);
+    device.active = false;
+    device.usbAvailable = false;
+    found = await service.detectDevice();
+    assert.deepEqual([found.result, found.ports, found.wifiPaired], ['no-device', [], false]);
+    device.usbAvailable = true;
+    device.detectError = 'Opening COM7: Access denied';
+    found = await service.detectDevice();
+    assert.deepEqual([found.result, found.error], ['usb-unavailable', 'Opening COM7: Access denied']);
+    device.detectError = 'Timed out waiting for device acknowledgement.';
+    assert.equal((await service.detectDevice()).result, 'usb-not-answering');
+    device.detectError = null;
+    assert.equal((await service.detectDevice()).result, 'usb-not-answering');
+    device.connectionMode = 'wifi';
+    found = await service.detectDevice();
+    assert.deepEqual([found.result, found.mode], ['wifi-mode', 'wifi']);
+    // With Use a physical device off, nothing is scanned.
+    const scans = device.detects;
+    Object.defineProperty(service, 'deviceEnabled', {get: () => false});
+    assert.equal((await service.detectDevice()).result, 'disabled');
+    assert.equal(device.detects, scans);
   } finally {
     await cleanup();
   }

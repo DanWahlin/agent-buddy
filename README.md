@@ -810,6 +810,11 @@ Run these from the repository folder.
 <details>
 <summary><strong>"No device is connected"</strong></summary>
 
+In Settings, open the **Device** tab and select **Detect device**. It looks for the
+device right away and says what is wrong: no device on USB, the USB port in use by
+another program, a device that doesn't answer (it needs firmware), or Wi-Fi mode
+ignoring USB. Then:
+
 1. Make sure the cable carries data and is plugged in. Close any serial monitor or
    `flash.py` run that's still using the port.
 2. If the connection mode is **Wi-Fi only**, USB is ignored. Run
