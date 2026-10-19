@@ -81,16 +81,17 @@ export function copilotAppVersion(ctx: AgentContext,
   return undefined;
 }
 
-// Copilot denies every tool call when a preToolUse hook cannot run, and a running session keeps
-// the hooks it loaded at its start. So after an uninstall removes Node.js and the CLI, such a
-// session could use no tool until it restarted. The system shell, which is always there, runs
-// the hook only while Node.js and the CLI are on disk. Otherwise it reads the event that Copilot
-// writes to it, so that write can't fail, and exits with 0.
+// Copilot denies every tool call when a preToolUse hook fails, and a running session keeps the
+// hooks it loaded at its start. So after an uninstall removes Node.js and the CLI, or while it
+// removes them, such a session could use no tool until it restarted. The hook only reports
+// state, so the system shell, which is always there, runs it only while Node.js and the CLI are
+// on disk, then reads the rest of the event that Copilot writes to it, so that write can't fail,
+// and exits with 0 whatever Node.js did.
 export function copilotHookCommand(node: string, cli: string, event: string, platform: NodeJS.Platform,
                                    env: NodeJS.ProcessEnv): {exec: string; args: string[]} {
   const hook = [cli, 'hook', 'copilot', event];
   if (platform !== 'win32') {
-    return {exec: '/bin/sh', args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && exec "$0" "$@"; while read -r _; do :; done',
+    return {exec: '/bin/sh', args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && "$0" "$@"; while read -r _; do :; done',
                                     node, ...hook]};
   }
   // Copilot quotes an argument for cmd.exe only when it has a space, so a path with a character
@@ -98,8 +99,8 @@ export function copilotHookCommand(node: string, cli: string, event: string, pla
   if ([node, cli].some(path => /["%^&|<>()!,;=]/.test(path))) return {exec: node, args: hook};
   const root = env.SystemRoot?.trim() || env.windir?.trim() || 'C:\\Windows';
   return {exec: win32.join(root, 'System32', 'cmd.exe'),
-          args: ['/d', '/c', 'if', 'exist', node, '(if', 'exist', cli, '(', node, ...hook, ')', 'else', 'more', '>nul)',
-                 'else', 'more', '>nul']};
+          args: ['/d', '/c', 'if', 'exist', node, '(if', 'exist', cli, '(', node, ...hook, '&', 'more', '>nul', ')',
+                 'else', 'more', '>nul)', 'else', 'more', '>nul']};
 }
 
 export function createCopilotHooks(node: string, cli: string, platform: NodeJS.Platform = process.platform,

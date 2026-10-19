@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import {agentHookTimeoutMs, runDaemon} from './daemon.js';
 import {requestDaemon, streamDaemon} from './client.js';
 import {characterStates, hookEvents, type HookEvent, type HookPayload} from './protocol.js';
 import {characterRequestValue} from './character-pack.js';
@@ -12,6 +11,9 @@ import {isAgentId} from './agents/types.js';
 async function main(): Promise<void> {
   const [command, argument, file, ...options] = process.argv.slice(2);
   if (command === 'daemon') {
+    // Only the daemon and agent commands load it: it loads the serial port's native module, and a
+    // hook, which runs before every Copilot tool call, must start fast and never fail to load.
+    const {runDaemon} = await import('./daemon.js');
     // A daemon that cannot start (for example, another one holds the socket) ends at once. Its
     // timers would keep it alive otherwise, and the service manager would count it as running.
     await runDaemon().catch(error => {
@@ -59,7 +61,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(checked(await requestDaemon({
         type: argument === 'install' ? 'agentInstall' : 'agentUninstall',
         agent: file,
-      }, agentHookTimeoutMs + 1000)), null, 2));
+      }, (await import('./daemon.js')).agentHookTimeoutMs + 1000)), null, 2));
       return;
     }
     throw new Error('Usage: agent-companion agents [enable|disable|install|uninstall AGENT]');
