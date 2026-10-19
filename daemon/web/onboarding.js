@@ -385,9 +385,11 @@ export class Onboarding {
     });
     this.hookErrors = new Map(results.filter(result => !result.ok).map(result => [result.id, result.error]));
     this.guideId = null;
-    this.focusHeading = true;
     await this.refresh();
     this.state = this.status.onboarding;
+    // Set only now: the render during the refresh above still shows the agent list, and would
+    // focus its heading instead of the guide that appears below it.
+    this.focusHeading = true;
     const ready = this.state.agents.length > 0 && this.state.agents.every(id => {
       const agent = this.status.agents.find(entry => entry.id === id);
       return isAgentReady(agent) && !agent.warning;
@@ -467,12 +469,19 @@ export class Onboarding {
       : this.error || this.status?.onboarding?.error || missingCharacter;
     $('ob-error').hidden = !error;
     $('ob-error').textContent = error ?? '';
-    if (this.focusHeading) {
-      const selector = this.state.step === 'agents' && this.state.agentStage === 'connect' && this.guideId
-        ? '#ob-guide-title' : `[data-screen="${this.state.step}"] h2`;
-      this.root.querySelector(selector)?.focus();
-      this.focusHeading = false;
-    }
+    if (this.focusHeading) this.focusStep();
+  }
+
+  // Moves focus to the heading of what changed. The agent guide (the steps and the test prompt)
+  // appears below the agent list, so it scrolls to the top where it is seen.
+  focusStep() {
+    this.focusHeading = false;
+    const guide = this.state.step === 'agents' && this.state.agentStage === 'connect' && this.guideId;
+    const heading = this.root.querySelector(guide ? '#ob-guide-title' : `[data-screen="${this.state.step}"] h2`);
+    if (!heading) return;
+    heading.focus({preventScroll: Boolean(guide)});
+    if (guide) $('ob-agent-guide').scrollIntoView({
+      block: 'start', behavior: this.welcomeMotion?.matches ? 'auto' : 'smooth'});
   }
 
   syncWelcomeAnimation() {
