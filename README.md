@@ -136,6 +136,8 @@ app. You do not need Python, Node.js, or a clone of the repository.
 Setup resumes after an interruption. Existing installations do not receive a
 forced setup flow after an update. Use **Run setup wizard** in Settings to change
 your choices or continue deferred setup.
+After you finish setup once, **Exit setup** returns to Settings at any step.
+Choices that a step already applied stay; nothing else changes.
 Select a previously reached step in the top navigation to return to it.
 Saved choices stay intact. New steps unlock as you reach them, and navigation
 is disabled during an installation.
@@ -1170,6 +1172,20 @@ packages into `build/characters/openclaw.acpk`. The intermediate PNG renders sta
 local and are ignored by git.
 
 </details>
+
+### Publish a release
+
+Releases are made on GitHub, so you don't need anything installed locally on
+macOS, Linux, or Windows. After the changes are merged to `main`:
+
+1. Open **Actions**, choose **Release**, and select **Run workflow** on `main`.
+2. Enter the next version without a `v` (for example `0.14.17`). Check
+   **Only check that the release can be made** first for a dry run.
+
+The workflow updates `VERSION` and `CHANGELOG.md` (with `git-cliff`), commits
+them as you, tags `vX.Y.Z`, and starts **Build and Release**, which publishes
+the firmware, character packs, and desktop apps once every job passes. See
+[Tagging and publishing releases](docs/releases.md).
 
 ### More documentation
 

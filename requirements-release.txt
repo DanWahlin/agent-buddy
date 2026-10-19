@@ -1,0 +1,5 @@
+# git-cliff for tools/release.py, which writes CHANGELOG.md. Keep the version the same as the
+# release notes step in .github/workflows/build.yml.
+git-cliff==2.14.2 \
+    --hash=sha256:603ebf8d12e1f2a5214e0174c15c492bc36895f38784d6818869c09897433174 \
+    --hash=sha256:3fa091968b4765d9640a864d3f4cdfef467595804eaac0a1897ea05c1daa9a84

@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process';
+import {spawn, type ChildProcess} from 'node:child_process';
 import {posix, win32} from 'node:path';
 import {launchAgentLabel, macLogName, systemdUnit, windowsRunKey, windowsRunValue} from './service-names.js';
 
@@ -126,16 +126,31 @@ export function uninstallScript(plan: UninstallPlan): string {
 // manager stops (one started in a terminal).
 export function runUninstall(plan: UninstallPlan, exit: () => void = () => process.exit(0)): void {
   const child = plan.platform === 'win32'
-    ? spawn(windowsPowerShell(process.env), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                                             '-EncodedCommand', Buffer.from(uninstallScript(plan), 'utf16le')
-                                               .toString('base64')],
-            {detached: true, stdio: 'ignore', windowsHide: true})
+    ? startWindowsScript(uninstallScript(plan))
     : spawn('/bin/sh', ['-c', uninstallScript(plan)], {detached: true, stdio: 'ignore'});
   child.once('exit', exit);
   child.once('error', error => {
     console.error(`[uninstall] could not start the uninstall: ${error.message}`);
     exit();
   });
+}
+
+// Runs a PowerShell script that must outlive this process, which the launcher ends while the
+// script runs. Node puts each child it does not detach in a job that ends with Node, and a
+// detached Windows PowerShell has no console, so it exits at once without running its command.
+// So a child PowerShell, in that job, starts the script in a hidden console of its own, outside
+// the job, and waits for it. Both run in PowerShell's own folder: a process's working folder
+// cannot be deleted, and this service runs in the folder that an uninstall removes.
+export function startWindowsScript(script: string, env: NodeJS.ProcessEnv = process.env): ChildProcess {
+  const powershell = windowsPowerShell(env);
+  const folder = win32.dirname(powershell);
+  const options = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass'];
+  const encoded = (text: string) => Buffer.from(text, 'utf16le').toString('base64');
+  const inner = [...options, '-EncodedCommand', encoded(script)];
+  const relay = `Start-Process -FilePath ${powerShellQuote(powershell)} -WorkingDirectory ${powerShellQuote(folder)} `
+    + `-WindowStyle Hidden -Wait -ArgumentList ${inner.map(powerShellQuote).join(',')}`;
+  return spawn(powershell, [...options, '-EncodedCommand', encoded(relay)],
+               {cwd: folder, stdio: 'ignore', windowsHide: true});
 }
 
 // PowerShell, which every Windows has: it stops the launcher through its event, then removes the files.

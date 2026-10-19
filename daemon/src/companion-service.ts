@@ -254,6 +254,8 @@ export class CompanionService extends EventEmitter {
   #onboardingError: string | null = null;
   #onboardingDeviceSetup: CompanionStatus['onboarding']['deviceSetup'] = null;
   #operation: symbol | null = null;
+  // What the running operation is, for the busy message: "the Wi-Fi scan".
+  #operationTask = 'the current change';
   readonly #operationContext = new AsyncLocalStorage<symbol>();
   #charactersRevision = 0;
 
@@ -495,11 +497,11 @@ export class CompanionService extends EventEmitter {
       this.#wifiPaired = true;
       this.emit('change');
       return config.deviceId;
-    });
+    }, null, 'the Wi-Fi setup');
   }
 
   scanWifi(): Promise<WifiNetwork[]> {
-    return this.#mutate(() => this.#transport.scanWifi());
+    return this.#mutate(() => this.#transport.scanWifi(), null, 'the Wi-Fi scan');
   }
 
   reloadWifi(): Promise<void> {
@@ -579,7 +581,7 @@ export class CompanionService extends EventEmitter {
 
   #setupAvailable(): void {
     if (this.#operation || this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
-      throw new SetupError('Wait for the current installation to finish.');
+      throw new SetupError(`Wait for ${this.#busyTask()} to finish.`);
     if (this.#stopping || this.#restarting || this.#uninstalling)
       throw new SetupError('The companion service is stopping.');
   }
@@ -589,12 +591,20 @@ export class CompanionService extends EventEmitter {
       throw new SetupError('Run setup again before changing its choices.');
   }
 
-  #mutate<T>(work: () => Promise<T>, phase: string | null = null): Promise<T> {
+  #busyTask(): string {
+    if (this.#operation) return this.#operationTask;
+    return this.#firmwareUpdating || this.#usbInstalling ? 'the firmware install' : 'the character install';
+  }
+
+  // `task` names the operation in the message that other requests get while it runs.
+  #mutate<T>(work: () => Promise<T>, phase: string | null = null,
+             task = phase ? `setup (${phase.charAt(0).toLowerCase()}${phase.slice(1)})` : 'the current change'): Promise<T> {
     // Nested setup actions retain ownership across awaits; other requests cannot share it.
     if (this.#operation && this.#operationContext.getStore() === this.#operation) return work();
     this.#setupAvailable();
     const owner = Symbol();
     this.#operation = owner;
+    this.#operationTask = task;
     if (phase) {
       this.#onboardingPhase = phase;
       this.#onboardingError = null;
@@ -658,10 +668,23 @@ export class CompanionService extends EventEmitter {
         : available.some(entry => entry.id === current) ? current : 'copilot',
       display: previous.deviceDeferred ? previous.display
         : !this.deviceEnabled ? 'desktop' : this.#display.showDesktopCompanion ? 'both' : 'device',
-    }, true);
+    }, true, previous.completed || previous.rerun);
     this.#onboardingError = null;
     this.emit('change');
     return state;
+  }
+
+  // Leaves setup that runs again after it was finished. Steps already applied stay; nothing else changes.
+  exitOnboarding(): Promise<OnboardingState> {
+    return this.#mutate(async () => {
+      if (this.#onboarding.state.completed) return this.#onboarding.state;
+      if (!this.#onboarding.state.rerun)
+        throw new SetupError('Finish setup first. It has not been completed on this computer.');
+      await this.#transport.selectUsbPort(null);
+      const completed = await this.#onboarding.finish();
+      this.emit('change');
+      return completed;
+    }, 'Leaving setup');
   }
 
   async rescanAgents(): Promise<AgentStatus[]> {
@@ -999,7 +1022,7 @@ export class CompanionService extends EventEmitter {
   }
 
   installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
-    return this.#mutate(() => this.#installCharacter(character, progress));
+    return this.#mutate(() => this.#installCharacter(character, progress), null, 'the character install');
   }
 
   async #installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
@@ -1099,7 +1122,7 @@ export class CompanionService extends EventEmitter {
       const character = this.#transport.character ?? this.#characterPreference;
       await this.#installFirmwareOverUsb(selectedPort);
       await this.#restoreCharacterAfterFirmware(character);
-    });
+    }, null, 'the firmware install');
   }
 
   async #restoreCharacterAfterFirmware(character: string): Promise<void> {
@@ -1189,7 +1212,7 @@ export class CompanionService extends EventEmitter {
   // Sends the built firmware over Wi-Fi. The device restarts into it, and goes back to its old
   // firmware if the new one does not reach Wi-Fi within 90 seconds.
   updateFirmware(): Promise<void> {
-    return this.#mutate(() => this.#updateFirmware());
+    return this.#mutate(() => this.#updateFirmware(), null, 'the firmware update');
   }
 
   async #updateFirmware(): Promise<void> {

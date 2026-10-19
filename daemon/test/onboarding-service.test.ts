@@ -187,6 +187,54 @@ test('real service methods retain setup ownership through hook, display, charact
   }
 });
 
+test('setup that runs again after it was finished can be left without changes; a first setup cannot', async () => {
+  const {service, store, device, cleanup} = await fixture();
+  try {
+    await store.reset({display: 'both', character: 'claude'});
+    await assert.rejects(service.exitOnboarding(), /Finish setup first/);
+    assert.equal(store.state.completed, false);
+
+    await store.finish();
+    const restarted = await service.restartOnboarding();
+    assert.equal(restarted.rerun, true);
+    assert.equal(restarted.completed, false);
+    device.selected = '/dev/selected';
+    const left = await service.exitOnboarding();
+    assert.equal(left.completed, true);
+    assert.equal(left.rerun, false);
+    assert.equal(store.state.completed, true);
+    assert.equal(device.selected, null);
+    assert.deepEqual(service.displayChanges, []);
+    assert.deepEqual(service.installedCharacters, []);
+    // Leaving finished setup again changes nothing.
+    assert.deepEqual(await service.exitOnboarding(), store.state);
+    // A restart of a rerun is still a rerun.
+    await service.restartOnboarding();
+    assert.equal((await service.restartOnboarding()).rerun, true);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a Wi-Fi scan blocks setup with a message that names the scan', async () => {
+  const {service, device, cleanup} = await fixture();
+  const pending = gate();
+  let scan: Promise<unknown> | undefined;
+  try {
+    device.scanWifi = async () => { pending.enter(); await pending.resumed; return []; };
+    scan = service.scanWifi();
+    await pending.entered;
+    await assert.rejects(service.restartOnboarding(), /: Wait for the Wi-Fi scan to finish\.$/);
+    pending.resume();
+    await scan;
+    await service.restartOnboarding();
+  } finally {
+    pending.resume();
+    await scan;
+    await cleanup();
+  }
+});
+
 test('saving a character claims setup before catalog work and blocks concurrent setup or Settings changes', async () => {
   const {service, store, cleanup} = await fixture();
   const pending = gate();
@@ -198,10 +246,10 @@ test('saving a character claims setup before catalog work and blocks concurrent 
     save = service.updateOnboarding({character: 'claude'});
     await pending.entered;
     assert.equal(service.onboardingStatus().busy, true);
-    await assert.rejects(service.navigateOnboarding('welcome'), /current installation/);
-    assert.throws(() => service.setupOnboardingDevice(false), /current installation/);
-    await assert.rejects(CompanionService.prototype.setDesktop.call(service, {}), /current installation/);
-    await assert.rejects(service.setUsage({enabled: false}), /current installation/);
+    await assert.rejects(service.navigateOnboarding('welcome'), /: Wait for setup \(saving setup choices\) to finish\.$/);
+    assert.throws(() => service.setupOnboardingDevice(false), /setup \(saving setup choices\)/);
+    await assert.rejects(CompanionService.prototype.setDesktop.call(service, {}), /setup \(saving setup choices\)/);
+    await assert.rejects(service.setUsage({enabled: false}), /setup \(saving setup choices\)/);
     assert.equal(store.state.character, 'copilot');
     pending.resume();
     await save;
@@ -243,7 +291,7 @@ test('a running device setup rejects external character, hook, Wi-Fi, and shutdo
       () => service.stopService(),
     ];
     for (const action of actions)
-      await assert.rejects(Promise.resolve().then(action), /current installation|install to finish/);
+      await assert.rejects(Promise.resolve().then(action), /setup \(connecting to the device\)|install to finish/);
     assert.throws(() => service.stopDesktop(), /install to finish/);
     pending.resume();
     await operation;
@@ -346,8 +394,8 @@ test('Finish owns setup until completion is saved, and external setting changes 
     finish = service.finishOnboarding();
     await pending.entered;
     assert.equal(service.onboardingStatus().busy, true);
-    await assert.rejects(service.updateOnboarding({display: 'both'}), /current installation/);
-    await assert.rejects(service.restartOnboarding(), /current installation/);
+    await assert.rejects(service.updateOnboarding({display: 'both'}), /setup \(finishing setup\)/);
+    await assert.rejects(service.restartOnboarding(), /setup \(finishing setup\)/);
     assert.equal(store.state.completed, false);
     pending.resume();
     await finish;
@@ -360,8 +408,8 @@ test('Finish owns setup until completion is saved, and external setting changes 
     const connection = CompanionService.prototype.setConnection.call(service, 'usb');
     await setting.entered;
     try {
-      await assert.rejects(service.finishOnboarding(), /current installation/);
-      await assert.rejects(service.updateOnboarding({display: 'both'}), /current installation/);
+      await assert.rejects(service.finishOnboarding(), /: Wait for the current change to finish\.$/);
+      await assert.rejects(service.updateOnboarding({display: 'both'}), /the current change/);
     } finally {
       setting.resume();
       await connection;
@@ -752,7 +800,7 @@ test('setup status preserves character-only Wi-Fi intent while the device discon
     assert.equal(device.transport, null);
     assert.equal(service.onboardingStatus().busy, true);
     assert.deepEqual(service.onboardingStatus().deviceSetup, {flash: false, transport: 'wifi'});
-    await assert.rejects(service.navigateOnboarding('welcome'), /current installation/);
+    await assert.rejects(service.navigateOnboarding('welcome'), /setup \(connecting to the device\)/);
     assert.deepEqual(flashes, []);
     resume();
     await operation;

@@ -46,7 +46,8 @@ export interface SettingsServerOptions {
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
     | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
     | 'restartOnboarding' | 'navigateOnboarding' | 'installOnboardingAgents' | 'detectUsbDevices' | 'applyOnboardingDisplay'
-    | 'setupOnboardingDevice' | 'finishOnboarding' | 'removeOnboardingAgent' | 'rescanAgents' | 'on' | 'off'>;
+    | 'setupOnboardingDevice' | 'finishOnboarding' | 'exitOnboarding' | 'removeOnboardingAgent' | 'rescanAgents'
+    | 'on' | 'off'>;
   port: number;
   token: string;
   webDirectory?: string;
@@ -136,6 +137,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       }
       if (method === 'POST' && segments.length === 2) {
         if (segments[1] === 'restart') return json(response, 200, await service.restartOnboarding());
+        if (segments[1] === 'exit') return json(response, 200, await service.exitOnboarding());
         if (segments[1] === 'rescan') return json(response, 200, await service.rescanAgents());
         if (segments[1] === 'navigate') {
           const body = await readJson(request) as {step?: unknown} | null;

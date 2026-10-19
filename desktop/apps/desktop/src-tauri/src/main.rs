@@ -92,6 +92,9 @@ fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
         } else {
             "Waiting for the companion service. Start it with: npm run setup"
         };
+        // The message replaces the character on the page, so the next pack must load
+        // again even when it is the one the page had before.
+        *app.current.lock().unwrap() = None;
         let _ = window.emit("to-view", serde_json::json!({ "type": "error", "message": message }));
         return;
     };

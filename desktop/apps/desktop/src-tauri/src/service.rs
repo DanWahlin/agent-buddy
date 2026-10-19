@@ -260,8 +260,9 @@ fn replace(bundled: &Path, installed: &Path) -> std::io::Result<()> {
         .status();
     if installed.exists() {
         // Windows cannot rename a folder while a program in it runs. The
-        // installer starts the service again.
-        #[cfg(windows)]
+        // installer starts the service again. Tests must not stop this
+        // computer's real service.
+        #[cfg(all(windows, not(test)))]
         if !crate::launcher::stop_service() {
             eprintln!("[service] the old companion service did not stop");
         }

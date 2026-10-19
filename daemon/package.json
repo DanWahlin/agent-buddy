@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "24.10.1",
+    "node-gyp": "13.1.0",
     "typescript": "7.0.2"
   }
 }
