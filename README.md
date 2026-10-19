@@ -1173,6 +1173,20 @@ local and are ignored by git.
 
 </details>
 
+### Publish a release
+
+Releases are made on GitHub, so you don't need anything installed locally on
+macOS, Linux, or Windows. After the changes are merged to `main`:
+
+1. Open **Actions**, choose **Release**, and select **Run workflow** on `main`.
+2. Enter the next version without a `v` (for example `0.14.17`). Check
+   **Only check that the release can be made** first for a dry run.
+
+The workflow updates `VERSION` and `CHANGELOG.md` (with `git-cliff`), commits
+them as you, tags `vX.Y.Z`, and starts **Build and Release**, which publishes
+the firmware, character packs, and desktop apps once every job passes. See
+[Tagging and publishing releases](docs/releases.md).
+
 ### More documentation
 
 - [Build from source](docs/build-from-source.md)
