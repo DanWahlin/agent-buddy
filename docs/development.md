@@ -1257,8 +1257,9 @@ re-reads `i` after each `READY` banner, so the protocol and firmware ID stay
 current after an update. The `i` reply also has a
 `BOARD id=<board> variant=<variant>` line, after the `INFO` line: the board in
 `firmware/boards.json` that the firmware is built for, so the app installs only
-firmware for that board. It is its own line because the `INFO` line is near the
-384-byte limit of the firmware's log messages, and a longer one is dropped. A
+firmware for that board. It is its own line, so the `INFO` line keeps its fields
+and stays well within the 512-byte limit of the firmware's log messages (a longer
+message is dropped; `tests/test_boards.py` checks the longest `INFO` line). A
 reply without a `BOARD` line comes from firmware built before more than one board
 was supported, which is always the default board. Keep `maxProtocol` in `daemon/src/usb-transport.ts`
 equal to `kDeviceProtocol` in the firmware. A join attempt in
