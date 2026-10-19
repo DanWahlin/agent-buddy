@@ -2,6 +2,24 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.15.0]
+
+### Build and maintenance
+
+- Board-aware firmware: per-board release ZIPs and board checks for USB installs (#39)
+
+
+### Features and improvements
+
+- Add the Waveshare ESP32-S3-Touch-LCD-1.54 as a second board (#35)
+
+- Add Detect device to Settings (#40)
+
+
+### Fixes
+
+- Fix USB device detection on Windows on Arm, and Windows uninstall and Stop (#38)
+
 ## [v0.14.16]
 
 ### Other changes
