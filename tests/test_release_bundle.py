@@ -108,6 +108,36 @@ class ReleaseBundleTests(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_every_board_gets_its_own_firmware_zip(self):
+        lcd = "waveshare-lcd-154"
+        build = firmware_artifacts.artifacts(lcd)[0]
+        for path in firmware_artifacts.binaries(build):
+            self.put(path, b"lcd-" + path.name.encode())
+        self.put(build / "boot_app0.bin", b"\xff" * 8192)
+        with mock.patch.dict("os.environ", {"BOARD": lcd}):
+            firmware_artifacts.snapshot(self.root)
+            firmware_artifacts.record(self.root)
+        default, characters = package_release.package(self.root, "1.2.3")
+        other, _ = package_release.package(self.root, "1.2.3", board=lcd)
+        self.assertEqual(default.name, "agent-buddy-v1.2.3-firmware.zip")
+        self.assertEqual(other.name, "agent-buddy-v1.2.3-waveshare-lcd-154-firmware.zip")
+        for archive_path, board, application in ((default, "waveshare-amoled-175", b"compiled-"),
+                                                 (other, lcd, b"lcd-")):
+            with zipfile.ZipFile(archive_path) as archive:
+                self.assertEqual(json.loads(archive.read("manifest.json"))["board"], board)
+                self.assertTrue(archive.read("bin/application.bin").startswith(application))
+                self.assertIn(f"({board})".encode(), archive.read("INSTALL.txt"))
+        # One SHA256SUMS covers every board's firmware and the characters.
+        sums = (default.parent / "SHA256SUMS").read_text().splitlines()
+        self.assertEqual(sorted(line.split("  ", 1)[1] for line in sums),
+                         sorted((default.name, other.name, characters.name)))
+        self.assertEqual(package_release.firmware_zip_name("x", "1.0.0", lcd, "waveshare-amoled-175"),
+                         "x-v1.0.0-waveshare-lcd-154-firmware.zip")
+        # A board that was not built cannot be packaged.
+        (self.root / firmware_artifacts.artifacts(lcd)[2]).unlink()
+        with self.assertRaises(OSError):
+            package_release.package(self.root, "1.2.3", board=lcd)
+
     def test_release_identity_matches_daemon_download(self):
         daemon = (ROOT / "daemon/src/firmware-release.ts").read_text()
         self.assertIn(f"export const releaseName = '{package_release.RELEASE_NAME}';", daemon)
@@ -289,9 +319,9 @@ class ReleaseBundleTests(unittest.TestCase):
         original_check = firmware_artifacts.check
         calls = 0
 
-        def change_after_first_check(root):
+        def change_after_first_check(root, board=None):
             nonlocal calls
-            original_check(root)
+            original_check(root, board)
             calls += 1
             if calls == 1:
                 self.put("build/firmware/boot_app0.bin", b"changed")

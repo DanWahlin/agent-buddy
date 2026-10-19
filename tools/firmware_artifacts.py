@@ -116,8 +116,8 @@ def record(root):
     write_json(root / bundle_path, dict(inputs=inputs, binaries={path.as_posix(): digest(root / path) for path in outputs}))
 
 
-def check(root):
-    wanted = selected_board()
+def check(root, board=None):
+    wanted = board or selected_board()
     build, _, bundle_path = artifacts(wanted)
     bundle = json.loads((root / bundle_path).read_text())
     built = bundle["inputs"].get("board")
