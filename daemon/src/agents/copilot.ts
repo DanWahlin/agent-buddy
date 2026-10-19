@@ -91,8 +91,9 @@ export function copilotHookCommand(node: string, cli: string, event: string, pla
                                    env: NodeJS.ProcessEnv): {exec: string; args: string[]} {
   const hook = [cli, 'hook', 'copilot', event];
   if (platform !== 'win32') {
-    return {exec: '/bin/sh', args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && "$0" "$@"; while read -r _; do :; done',
-                                    node, ...hook]};
+    // cat reads a large event at once; the shell's own read loop, a fallback, reads one byte at a time.
+    return {exec: '/bin/sh', args: ['-c',
+      '[ -x "$0" ] && [ -f "$1" ] && "$0" "$@"; cat >/dev/null 2>&1 || while read -r _; do :; done', node, ...hook]};
   }
   // Copilot quotes an argument for cmd.exe only when it has a space, so a path with a character
   // that cmd.exe reads in its command line runs Node.js directly, as before.

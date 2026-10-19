@@ -18,7 +18,7 @@ test('Copilot hooks run through the system shell', () => {
   });
   assert.deepEqual(copilotHookCommand('/a b/node', '/a b/cli.js', 'preToolUse', 'darwin', {}), {
     exec: '/bin/sh',
-    args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && "$0" "$@"; while read -r _; do :; done', '/a b/node',
+    args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && "$0" "$@"; cat >/dev/null 2>&1 || while read -r _; do :; done', '/a b/node',
            '/a b/cli.js', 'hook', 'copilot', 'preToolUse'],
   });
   // cmd.exe would read these characters, so Node.js runs directly.
@@ -93,6 +93,14 @@ process.stdin.on('data', chunk => input += chunk).on('end', () =>
   assert.deepEqual(await runHook(failing, large), {code: 0, writeFailed: false});
   await writeFile(kept, 'import "./missing-module.js";\n');
   assert.deepEqual(await runHook(failing, large), {code: 0, writeFailed: false});
+  // Copilot stops a hook after 2 seconds and then denies the call, so even a large event is read
+  // well within that.
+  if (process.platform !== 'win32') {
+    const started = Date.now();
+    assert.deepEqual(await runHook(failing, JSON.stringify({toolArgs: 'x'.repeat(8 * 1024 * 1024)})),
+                     {code: 0, writeFailed: false});
+    assert.ok(Date.now() - started < 1500, `reading 8 MB took ${Date.now() - started} ms`);
+  }
 });
 
 test('a hook loads neither the daemon nor the serial port, so it starts fast and a native module cannot break it',
