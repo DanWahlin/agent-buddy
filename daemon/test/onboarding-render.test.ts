@@ -36,6 +36,8 @@ class Element {
   }
   get firstElementChild() { return this.children[0]; }
   focus() {}
+  scrolled: unknown[] = [];
+  scrollIntoView(options: unknown) { this.scrolled.push(options); }
   append(...items: Element[]) {
     for (const item of items) { item.parent = this; this.children.push(item); }
   }
@@ -251,6 +253,52 @@ test('waiting for real activity or an installation warning keeps the agent setup
     assert.equal(runInContext('controller.state.agentStage', context), 'connect');
     assert.equal(runInContext('calls.length', context), 2);
   }
+});
+
+test('after the hook check, the agent guide with the test prompt is focused and scrolled into view', async () => {
+  const context = hookController();
+  runInContext(`
+    controller.status.agents.forEach(agent => { agent.enabled = true; agent.hookStatus = 'installed'; });
+    controller.status.agents[0].action = {kind: 'restart'};
+    // The real refresh renders while setup is still busy, before the agent stage changes.
+    const atRefresh = [];
+    controller.refresh = async () => { atRefresh.push(Boolean(controller.focusHeading)); };
+  `, context);
+  await runInContext('controller.installHooks()', context);
+  assert.deepEqual(JSON.parse(runInContext('JSON.stringify(atRefresh)', context)), [false, false]);
+  assert.equal(runInContext('controller.focusHeading', context), true);
+
+  const elements = new Map<string, Element>();
+  const element = (id: string) => {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id)!;
+  };
+  const focused: string[] = [];
+  const title = element('ob-guide-title');
+  title.focus = () => { focused.push('guide'); };
+  const heading = new Element();
+  heading.focus = () => { focused.push('heading'); };
+  const page = createContext({document: {getElementById: element}});
+  const source = readFileSync(new URL('../../web/onboarding.js', import.meta.url), 'utf8');
+  runInContext(source.replace(/^import .*;\s*$/gm, '').replace(/^export /gm, ''), page);
+  page.title = title;
+  page.heading = heading;
+  runInContext(`
+    const controller = Object.create(Onboarding.prototype);
+    controller.root = {querySelector: selector => selector === '#ob-guide-title' ? title : heading};
+    controller.welcomeMotion = {matches: false};
+    controller.state = {step: 'agents', agentStage: 'connect'};
+    controller.guideId = 'copilot';
+    controller.focusHeading = true;
+    controller.focusStep();
+  `, page);
+  assert.deepEqual(focused, ['guide']);
+  assert.deepEqual(JSON.parse(JSON.stringify(element('ob-agent-guide').scrolled)), [{block: 'start', behavior: 'smooth'}]);
+  assert.equal(runInContext('controller.focusHeading', page), false);
+  // Other steps focus their heading without scrolling the guide.
+  runInContext("controller.state = {step: 'character'}; controller.focusStep()", page);
+  assert.deepEqual(focused, ['guide', 'heading']);
+  assert.equal(element('ob-agent-guide').scrolled.length, 1);
 });
 
 test('hook consent lists only changed locations and Cancel performs no hook operation', async () => {
