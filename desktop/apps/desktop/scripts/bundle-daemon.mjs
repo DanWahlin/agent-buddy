@@ -63,9 +63,18 @@ function run(command, args, cwd) {
 }
 
 async function download(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Could not download ${url}: HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  // nodejs.org sometimes times out from CI runners.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Could not download ${url}: HTTP ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      if (attempt === 3) throw error;
+      console.log(`Downloading ${url} failed; trying again (${attempt + 1} of 3)`);
+      await new Promise(resolve => setTimeout(resolve, attempt * 10_000));
+    }
+  }
 }
 
 // A file of the Node.js release, checked against the release's SHASUMS256.txt.

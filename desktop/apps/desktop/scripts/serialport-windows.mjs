@@ -17,6 +17,7 @@ export const PATCHED_VERSION = '13.0.0';
 
 // The machine field of a Windows binary's PE header.
 const MACHINES = {x64: 0x8664, arm64: 0xaa64};
+const HEADER_ATTEMPTS = 3;
 
 const FIXES = [
   {
@@ -116,8 +117,21 @@ export function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp
     writeFileSync(join(copy, 'src', 'serialport_win.cpp'), patched);
     const addonApi = dirname(createRequire(join(bindings, 'package.json')).resolve('node-addon-api/package.json'));
     cpSync(addonApi, join(work, 'node_modules', 'node-addon-api'), {recursive: true});
-    execFileSync(process.execPath, [nodeGyp, 'rebuild', '--release', `--arch=${arch}`, `--target=${nodeVersion}`],
-                 {cwd: copy, stdio: ['ignore', 'inherit', 'inherit']});
+    const gyp = args => execFileSync(process.execPath, [nodeGyp, ...args, `--arch=${arch}`, `--target=${nodeVersion}`],
+                                     {cwd: copy, stdio: ['ignore', 'inherit', 'inherit']});
+    // Only the Node.js headers need the network, and nodejs.org sometimes times out from CI runners.
+    // node-gyp checks them against the release's SHASUMS256.txt and caches them for the build.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        gyp(['install']);
+        break;
+      } catch (error) {
+        if (attempt === HEADER_ATTEMPTS) throw error;
+        console.log(`Downloading the Node.js headers failed; trying again (${attempt + 1} of ${HEADER_ATTEMPTS})`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 10_000);
+      }
+    }
+    gyp(['rebuild', '--release']);
     const built = join(copy, 'build', 'Release', 'bindings.node');
     if (windowsMachine(readFileSync(built)) !== MACHINES[arch])
       throw new Error(`node-gyp did not build serialport's Windows binding for ${arch}.`);
