@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.15.1]
+
+### Other changes
+
+- Scroll setup to the agent guide after the hook check (#41)
+
 ## [v0.15.0]
 
 ### Build and maintenance
