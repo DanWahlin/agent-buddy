@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {PATCHED_VERSION, buildPatchedWindowsBinding, patchWindowsSource}
+import {PATCHED_VERSION, buildPatchedWindowsBinding, patchWindowsSource, windowsMachine}
   from '../../apps/desktop/scripts/serialport-windows.mjs';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
@@ -48,6 +49,46 @@ test('another binding version is refused before anything is built', async t => {
   await writeFile(join(bindings, 'package.json'), JSON.stringify({version: '13.0.1'}));
   await writeFile(join(bindings, 'src', 'serialport_win.cpp'), 'unchanged');
   assert.throws(() => buildPatchedWindowsBinding({bindings, arch: 'x64', nodeVersion: '24.21.0', nodeGyp: 'none'}),
-                /fixes @serialport\/bindings-cpp 13\.0\.0, not 13\.0\.1/);
+                process.platform === 'win32' ? /fixes @serialport\/bindings-cpp 13\.0\.0, not 13\.0\.1/
+                  : /can only be built on Windows/);
   assert.equal(await readFile(join(bindings, 'src', 'serialport_win.cpp'), 'utf8'), 'unchanged');
+});
+
+test('a Windows binary\'s machine is read from its PE header', () => {
+  const binary = Buffer.alloc(0x90);
+  binary.write('MZ', 0, 'latin1');
+  binary.writeUInt32LE(0x80, 0x3c);
+  binary.write('PE\0\0', 0x80, 'latin1');
+  binary.writeUInt16LE(0xaa64, 0x84);
+  assert.equal(windowsMachine(binary), 0xaa64);
+  assert.equal(windowsMachine(Buffer.concat([Buffer.from('\x7fELF', 'latin1'), Buffer.alloc(0x90)])), null);
+  binary.writeUInt32LE(0x8e, 0x3c);
+  assert.equal(windowsMachine(binary), null);
+});
+
+// Compiles the binding, so it needs Visual Studio's C++ tools; CI runs it on each Windows runner.
+test('the fixed binding builds for this computer and loads', {
+  skip: (process.platform !== 'win32' || !process.env.AGENT_COMPANION_BUILD_SERIALPORT || !existsSync(installed))
+    && 'set AGENT_COMPANION_BUILD_SERIALPORT=1 on Windows, with daemon dependencies installed, to build it',
+}, async t => {
+  // Inside daemon/node_modules, so the build resolves node-addon-api as the bundled runtime does.
+  const bindings = await mkdtemp(join(repository, 'daemon', 'node_modules', '.serialport-test-'));
+  t.after(() => rm(bindings, {recursive: true, force: true}));
+  await cp(installed, bindings, {recursive: true});
+  const prebuilds = join(bindings, 'prebuilds', `win32-${process.arch}`);
+  const [name] = (await readdir(prebuilds)).filter(file => file.endsWith('.node'));
+  const published = await readFile(join(prebuilds, name));
+
+  buildPatchedWindowsBinding({
+    bindings, arch: process.arch, nodeVersion: process.versions.node,
+    nodeGyp: join(repository, 'daemon', 'node_modules', 'node-gyp', 'bin', 'node-gyp.js'),
+  });
+
+  const built = await readFile(join(prebuilds, name));
+  assert.notDeepEqual(built, published);
+  assert.equal(windowsMachine(built), {x64: 0x8664, arm64: 0xaa64}[process.arch]);
+  assert.equal(existsSync(join(bindings, 'build')), false);
+  // A child process, so Windows lets go of the binding before the copy is removed.
+  const loads = `require(${JSON.stringify(bindings)}).autoDetect().list().then(ports => console.log(Array.isArray(ports)))`;
+  assert.equal(execFileSync(process.execPath, ['-e', loads], {encoding: 'utf8'}).trim(), 'true');
 });

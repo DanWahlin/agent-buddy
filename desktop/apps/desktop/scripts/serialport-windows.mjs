@@ -12,6 +12,9 @@ import {join} from 'node:path';
 
 export const PATCHED_VERSION = '13.0.0';
 
+// The machine field of a Windows binary's PE header.
+const MACHINES = {x64: 0x8664, arm64: 0xaa64};
+
 const FIXES = [
   {
     before: `  WriteBaton* baton = static_cast<WriteBaton*>(ov->hEvent);
@@ -76,9 +79,19 @@ export function patchWindowsSource(source) {
   return patched;
 }
 
+export function windowsMachine(binary) {
+  if (binary.length < 0x40 || binary.toString('latin1', 0, 2) !== 'MZ') return null;
+  const header = binary.readUInt32LE(0x3c);
+  if (header + 6 > binary.length || binary.toString('latin1', header, header + 4) !== 'PE\0\0') return null;
+  return binary.readUInt16LE(header + 4);
+}
+
 // Replaces the prebuilt binding for `arch` in an installed @serialport/bindings-cpp with one
 // built from the fixed source. Needs Visual Studio's C++ tools for that architecture.
 export function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp}) {
+  // node-gyp builds for the computer it runs on, whatever --arch says about the CPU.
+  if (process.platform !== 'win32') throw new Error('serialport\'s Windows binding can only be built on Windows.');
+  if (!MACHINES[arch]) throw new Error(`serialport's Windows binding cannot be built for ${arch}.`);
   const {version} = JSON.parse(readFileSync(join(bindings, 'package.json'), 'utf8'));
   if (version !== PATCHED_VERSION) {
     throw new Error(`serialport-windows.mjs fixes @serialport/bindings-cpp ${PATCHED_VERSION}, not ${version}. `
@@ -95,7 +108,10 @@ export function buildPatchedWindowsBinding({bindings, arch, nodeVersion, nodeGyp
   try {
     execFileSync(process.execPath, [nodeGyp, 'rebuild', '--release', `--arch=${arch}`, `--target=${nodeVersion}`],
                  {cwd: bindings, stdio: ['ignore', 'inherit', 'inherit']});
-    copyFileSync(join(build, 'Release', 'bindings.node'), join(prebuilds, prebuilt[0]));
+    const built = join(build, 'Release', 'bindings.node');
+    if (windowsMachine(readFileSync(built)) !== MACHINES[arch])
+      throw new Error(`node-gyp did not build serialport's Windows binding for ${arch}.`);
+    copyFileSync(built, join(prebuilds, prebuilt[0]));
   } finally {
     // node-gyp-build loads build/Release before prebuilds, so nothing may stay there.
     rmSync(build, {recursive: true, force: true});
