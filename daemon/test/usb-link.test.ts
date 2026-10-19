@@ -182,3 +182,21 @@ test('the USB link reports the board that the device names, and no board for fir
     await old.stop();
   }
 });
+
+test('an immediate scan reports why a device on USB is not reached', async () => {
+  const device = fakeDevice({silentAfterRestart: false, silent: true});
+  const usb = new UsbTransport(undefined, undefined, {serial: SerialPortMock, requestTimeoutMs: 50});
+  try {
+    usb.start();
+    const found = await usb.scanNow();
+    assert.deepEqual(found.ports.map(port => port.path), [path]);
+    assert.equal(usb.connected, false);
+    assert.match(found.error ?? '', /Timed out/);
+    // A device that starts answering connects on the next immediate scan, which then reports no error.
+    device.silent = false;
+    assert.equal((await usb.scanNow()).error, null);
+    assert.equal(usb.connected, true);
+  } finally {
+    await usb.stop();
+  }
+});

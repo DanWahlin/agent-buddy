@@ -204,6 +204,17 @@ export class DeviceTransport {
     return this.#mode === 'wifi' ? null : this.#usb.unanswered;
   }
 
+  // Looks for the device now over the links that the mode uses. `error` is why the USB device
+  // on its port was not reached, when there is one.
+  async detect(): Promise<{ports: UsbPort[]; error: string | null}> {
+    if (!this.#enabled || this.#installing) return {ports: await this.#usb.ports(), error: null};
+    const [usb] = await Promise.all([
+      this.#mode === 'wifi' ? null : this.#usb.scanNow(),
+      this.#mode === 'usb' || this.#usb.connected ? null : this.#wifi.scanNow(),
+    ]);
+    return usb ?? {ports: await this.#usb.ports(), error: null};
+  }
+
   usbPorts(): Promise<UsbPort[]> {
     return this.#usb.ports();
   }

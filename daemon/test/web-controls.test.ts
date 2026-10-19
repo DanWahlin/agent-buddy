@@ -45,6 +45,7 @@ test('web alignment controls initialize once and send confirmed settings', async
       createElement: () => ({textContent: '', className: ''}),
     },
     location: {hash: '', pathname: '/'},
+    navigator: {userAgent: 'Windows NT'},
     history: {replaceState() {}},
     sessionStorage: {getItem: () => null, setItem() {}, removeItem() {}},
     matchMedia: () => ({matches: false, addEventListener() {}}),
@@ -82,6 +83,30 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('fact-connection').textContent, 'USB connected');
   assert.equal(element('fact-connection').className, 'connected');
   assert.equal(element('fact-address').textContent, 'cu.usbmodem7');
+  // Device connection says how the device is reached, and Detect device says why it is not.
+  assert.equal(element('device-connection-state').textContent, 'USB connected');
+  assert.equal(element('device-connection-hint').textContent, 'Connected over USB on /dev/cu.usbmodem7.');
+  assert.equal(element('device-detect').disabled, false);
+  const views = JSON.parse(runInContext(`JSON.stringify(['no-device', 'wifi-mode', 'usb-unavailable', 'usb-not-answering']
+    .map(result => detectionView({result, ports: ['COM3'], mode: 'auto', wifiPaired: true, error: 'Access denied'})))`,
+  context)) as Array<{pill: string; hint: string}>;
+  assert.equal(views[0]!.pill, 'Not found');
+  assert.match(views[0]!.hint, /charge-only cable.*not to a WSL terminal.*paired Wi-Fi device did not answer/);
+  assert.match(views[1]!.hint, /\(COM3\).*Connection mode is Wi-Fi/);
+  assert.equal(views[2]!.pill, 'USB port in use');
+  assert.match(views[2]!.hint, /COM3 could not be opened \(Access denied\)\. Close other programs/);
+  assert.match(views[3]!.hint, /COM3.*does not answer as Agent Buddy.*USB release install or recovery/);
+  runInContext('detection = {found: {result: "usb-not-answering", ports: ["COM3"]}, key: connectionKey()}; '
+    + 'renderDeviceConnection()', context);
+  assert.equal(element('device-connection-state').textContent, 'Not answering');
+  // A change in the connection replaces what Detect device found.
+  runInContext('status.connected = false; renderDeviceConnection()', context);
+  assert.equal(element('device-connection-state').textContent, 'Not connected');
+  assert.match(element('device-connection-hint').textContent, /select Detect device to find out why/);
+  runInContext('status.deviceEnabled = false; renderDeviceConnection()', context);
+  assert.equal(element('device-connection-state').textContent, 'Off');
+  assert.equal(element('device-detect').disabled, true);
+  runInContext('status.connected = true; status.deviceEnabled = true; renderDeviceConnection()', context);
   await runInContext('updateOrientationOffset(1.5)', context);
   assert.deepEqual(calls, [{path: '/api/orientation', offsetDegrees: 1.5}]);
   assert.equal(element('orientation-offset').value, '1.5');

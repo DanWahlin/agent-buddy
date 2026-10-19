@@ -286,6 +286,7 @@ function renderStatus() {
     renderOrientation();
     renderUsage();
     renderFirmware();
+    renderDeviceConnection();
     return;
   }
   const connected = status.connected;
@@ -307,6 +308,7 @@ function renderStatus() {
     ? `${status.network.ssid}${status.network.connected ? '' : ' (not connected)'}`
     : connected ? 'Not reported' : 'Not connected';
   renderUsage();
+  renderDeviceConnection();
   const state = $('fact-state');
   state.textContent = stateNames[status.state] ?? status.state;
   const active = (status.agents ?? []).filter(agent => agent.activeSessions > 0 || agent.driving);
@@ -711,6 +713,84 @@ async function updateDesktop(change, message) {
     if (status) renderStatus();
   }
 }
+
+// What the last Detect device found, until the connection changes.
+let detection = null;
+let detecting = false;
+
+function connectionKey() {
+  return status ? `${status.connected}|${status.transport}|${status.port}|${status.deviceEnabled}|${status.mode}` : '';
+}
+
+function renderDeviceConnection() {
+  const pill = $('device-connection-state');
+  const hint = $('device-connection-hint');
+  const button = $('device-detect');
+  if (!pill || !hint || !button) return;
+  if (detection && detection.key !== connectionKey()) detection = null;
+  const view = !status ? {pill: 'Unknown', kind: 'offline', hint: 'Waiting for the companion service…'}
+    : detection ? detectionView(detection.found)
+    : status.connected ? {pill: `${status.transport === 'wifi' ? 'Wi-Fi' : 'USB'} connected`, kind: 'usb',
+      hint: status.transport === 'wifi' ? 'Connected over Wi-Fi.' : `Connected over USB on ${status.port}.`}
+    : status.deviceEnabled === false ? {pill: 'Off', kind: 'offline',
+      hint: 'Use a physical device is off, so Agent Buddy does not look for a device.'}
+    : {pill: 'Not connected', kind: 'offline', hint: 'Agent Buddy looks for the device by itself. '
+      + 'If it does not connect after you plug it in, select Detect device to find out why.'};
+  pill.textContent = view.pill;
+  pill.className = `pill ${view.kind}`;
+  hint.textContent = view.hint;
+  button.textContent = detecting ? 'Detecting…' : 'Detect device';
+  button.disabled = detecting || !status || status.deviceEnabled === false || Boolean(status.installing
+    || status.firmware?.usb?.installing || status.firmware?.updating || status.onboarding?.busy);
+}
+
+const cableSteps = 'Use a USB data cable (a charge-only cable powers the device but is not detected), '
+  + 'try another USB port, and check that the device is on.';
+
+function detectionView(found) {
+  const ports = found.ports.join(', ');
+  const wifi = found.wifiPaired && found.mode !== 'usb'
+    ? ' Your paired Wi-Fi device did not answer either: keep it on and on the same network as this computer.' : '';
+  switch (found.result) {
+    case 'connected': return {pill: `${found.transport === 'wifi' ? 'Wi-Fi' : 'USB'} connected`, kind: 'usb',
+      hint: found.transport === 'wifi' ? 'Found the device over Wi-Fi.' : `Found the device on ${found.port}.`};
+    case 'disabled': return {pill: 'Off', kind: 'offline', hint: 'Turn on Use a physical device first.'};
+    case 'busy': return {pill: 'Busy', kind: 'warning', hint: 'Wait for the current installation to finish, then try again.'};
+    case 'wifi-mode': return {pill: 'USB not used', kind: 'warning', hint: `A USB device is connected (${ports}), `
+      + 'but Connection mode is Wi-Fi, which does not use USB. Choose Auto or USB below.'};
+    case 'usb-unavailable': return {pill: 'USB port in use', kind: 'warning', hint: `${ports} could not be opened`
+      + `${found.error ? ` (${found.error})` : ''}. Close other programs that use the port, such as a serial monitor `
+      + 'or the Arduino IDE, then select Detect device again. On Linux, your user also needs serial-port access '
+      + '(the dialout or uucp group).'};
+    case 'usb-not-answering': return {pill: 'Not answering', kind: 'warning', hint: `A device is on ${ports}, but it `
+      + 'does not answer as Agent Buddy. Unplug the USB cable, connect it again, and select Detect device. '
+      + 'If it still does not answer, it needs firmware: use USB release install or recovery below.'};
+    default: return {pill: 'Not found', kind: 'offline', hint: `No device was found on USB. ${cableSteps}`
+      + `${navigator.userAgent.includes('Windows') ? ' Connect USB to Windows, not to a WSL terminal.' : ''}${wifi}`};
+  }
+}
+
+async function detectDevice() {
+  detecting = true;
+  detection = null;
+  renderDeviceConnection();
+  try {
+    const found = await api('/api/devices/detect', {method: 'POST'});
+    await refreshStatus();
+    detection = {found, key: connectionKey()};
+    if (found.result === 'usb-not-answering') {
+      $('usb-firmware-recovery').open = true;
+      void detectSettingsDevices().catch(() => undefined);
+    }
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    detecting = false;
+    renderDeviceConnection();
+  }
+}
+
+$('device-detect')?.addEventListener('click', () => void detectDevice());
 
 $('physical-device-toggle')?.addEventListener('change', event => {
   const deviceEnabled = event.target.checked;

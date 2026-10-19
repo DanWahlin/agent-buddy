@@ -167,6 +167,10 @@ class FakeService extends EventEmitter {
     this.setup.agents = this.setup.agents.filter(agent => agent !== id);
     return {state: this.setup};
   }
+  async detectDevice() {
+    return {result: 'no-device' as const, transport: null, port: null, ports: [], mode: 'auto' as const,
+      wifiPaired: false, error: null};
+  }
   async detectUsbDevices() {
     return {ports: [{path: '/dev/test', pid: 0x1001}], connected: this.connected ? '/dev/test' : null};
   }
@@ -607,6 +611,8 @@ test('onboarding APIs require authentication, valid choices, and explicit instal
     assert.deepEqual(service.setupActions, ['hooks']);
     assert.equal((await call('/api/devices', {token: false})).status, 401);
     assert.deepEqual(JSON.parse((await call('/api/devices')).body).ports, [{path: '/dev/test', pid: 0x1001}]);
+    assert.equal((await post('/api/devices/detect', {}, false)).status, 401);
+    assert.equal(JSON.parse((await post('/api/devices/detect', {})).body).result, 'no-device');
     assert.equal((await post('/api/onboarding/device', {flash: true})).status, 400);
     assert.equal((await post('/api/onboarding/device', {flash: 'true', confirmed: true})).status, 400);
     service.setupBusy = true;

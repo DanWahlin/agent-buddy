@@ -66,6 +66,8 @@ export class UsbTransport {
   #scanTimer: NodeJS.Timeout | undefined;
   #networkTimer: NodeJS.Timeout | undefined;
   #scanActive = false;
+  // Why the last attempt to reach the device on its port failed, or null.
+  #lastError: string | null = null;
   #networkRefreshActive = false;
   #buffer = '';
   #waiters: LineWaiter[] = [];
@@ -244,6 +246,14 @@ export class UsbTransport {
     this.#failures = 0;
   }
 
+  // Looks for the device now, instead of at the next scan, and says why it is not reached.
+  async scanNow(): Promise<{ports: UsbPort[]; error: string | null}> {
+    for (let waited = 0; this.#scanActive && waited < 15_000; waited += 50)
+      await new Promise(resolve => setTimeout(resolve, 50));
+    if (this.#enabled && !this.connected) await this.#scan();
+    return {ports: await this.ports(), error: this.connected ? null : this.#lastError};
+  }
+
   async #scan(): Promise<void> {
     if (!this.#enabled || this.#scanActive || this.connected) return;
     this.#scanActive = true;
@@ -256,17 +266,22 @@ export class UsbTransport {
         : pickPort(ports, this.#preferredPort);
       if (candidate?.path !== this.#seen?.path) this.#failures = 0;
       this.#seen = candidate;
-      if (!candidate) return;
+      if (!candidate) {
+        this.#lastError = null;
+        return;
+      }
       if (!this.#selectedSerial && this.#selectedPort === candidate.path)
         this.#selectedSerial = candidate.serialNumber ?? null;
       try {
         await this.#open(candidate.path);
         this.#failures = 0;
+        this.#lastError = null;
       } catch (error) {
         if (this.#enabled) this.#failures++;
         throw error;
       }
     } catch (error) {
+      this.#lastError = this.#message(error);
       console.error(`[usb] discovery failed: ${this.#message(error)}`);
     } finally {
       this.#scanActive = false;
