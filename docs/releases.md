@@ -50,7 +50,8 @@ An optional `COPILOT_SESSION_ID` adds Copilot attribution/session trailers.
 
 | Asset | Purpose |
 | --- | --- |
-| `<repo>-v<version>-firmware.zip` | Python installer, checksums, and all matching flash `.bin` files |
+| `<repo>-v<version>-firmware.zip` | Firmware for the default board (Waveshare ESP32-S3-Touch-AMOLED-1.75): Python installer, checksums, and all matching flash `.bin` files |
+| `<repo>-v<version>-<board>-firmware.zip` | The same for each other board in `firmware/boards.json`, such as `waveshare-lcd-154` |
 | `<repo>-v<version>-characters.zip` | Every built-in character pack (`copilot.acpk`, `openclaw.acpk`) |
 | `SHA256SUMS` | Checksums for every other release file, including the desktop apps |
 

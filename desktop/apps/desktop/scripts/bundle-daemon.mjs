@@ -3,12 +3,12 @@
 // The app copies this folder out of itself and installs the service from it,
 // so a user needs no clone of the repository and no Node.js.
 //
-//   node scripts/bundle-daemon.mjs [--target universal-apple-darwin] [--release-firmware <firmware.zip>]
+//   node scripts/bundle-daemon.mjs [--target universal-apple-darwin] [--release-firmware <firmware.zip>...]
 //
 // The target is a Rust target triple, as `tauri build --target` takes; without
-// one it is this computer's. The release firmware ZIP is the one for this VERSION;
-// with it, the service knows the release firmware ID, so Settings can show that an
-// update is available before it downloads anything.
+// one it is this computer's. The release firmware ZIPs are this VERSION's, one for
+// each board; with them, the service knows each board's release firmware ID, so
+// Settings can show that an update is available before it downloads anything.
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync}
@@ -30,7 +30,8 @@ const output = join(app, 'src-tauri', 'daemon-runtime');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const target = option('--target') ?? hostTarget();
-const releaseFirmware = option('--release-firmware');
+// CI passes every board's firmware ZIP: `--release-firmware a.zip b.zip`.
+const releaseFirmware = values('--release-firmware');
 const {platform, arches} = parseTarget(target);
 
 function option(name) {
@@ -39,6 +40,15 @@ function option(name) {
   const value = process.argv[index + 1];
   if (!value || value.startsWith('--')) throw new Error(`${name} needs a value.`);
   return value;
+}
+
+function values(name) {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return [];
+  const end = process.argv.findIndex((value, at) => at > index && value.startsWith('--'));
+  const found = process.argv.slice(index + 1, end < 0 ? undefined : end);
+  if (found.length === 0) throw new Error(`${name} needs a value.`);
+  return found;
 }
 
 function hostTarget() {
@@ -154,12 +164,22 @@ async function main() {
   mkdirSync(join(output, 'build', 'characters'), {recursive: true});
   for (const file of packFiles) cpSync(join(packs, file), join(output, 'build', 'characters', file));
   cpSync(join(root, 'VERSION'), join(output, 'VERSION'));
-  if (releaseFirmware) {
-    const {releaseFirmwareId} = await import(pathToFileURL(join(daemon, 'dist', 'src', 'firmware-release.js')));
-    const id = releaseFirmwareId(readFileSync(releaseFirmware), readFileSync(join(root, 'VERSION'), 'utf8').trim());
+  if (releaseFirmware.length > 0) {
+    const {releaseFirmwareInfo, firmwareBoards} =
+      await import(pathToFileURL(join(daemon, 'dist', 'src', 'firmware-release.js')));
+    const version = readFileSync(join(root, 'VERSION'), 'utf8').trim();
+    const ids = {};
+    for (const zip of releaseFirmware) {
+      const {board, id} = releaseFirmwareInfo(readFileSync(zip), version);
+      if (ids[board]) throw new Error(`Two release firmware ZIPs are for ${board}.`);
+      ids[board] = id;
+      console.log(`The ${board} release firmware ID is ${id}`);
+    }
+    // A release has firmware for every board, so a missing board is a packaging mistake.
+    const missing = firmwareBoards.map(entry => entry.id).filter(board => !ids[board]);
+    if (missing.length > 0) throw new Error(`No release firmware ZIP for: ${missing.join(', ')}.`);
     // The name is also in daemon/src/paths.ts.
-    writeFileSync(join(output, 'RELEASE_FIRMWARE_ID'), `${id}\n`);
-    console.log(`The release firmware ID is ${id}`);
+    writeFileSync(join(output, 'RELEASE_FIRMWARE_IDS'), `${JSON.stringify(ids)}\n`);
   }
 
   console.log(`Downloading Node.js ${NODE_VERSION} for ${target}`);

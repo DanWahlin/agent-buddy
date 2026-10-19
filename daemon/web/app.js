@@ -950,6 +950,7 @@ function firmwareView(firmware) {
   if (usbRestarting(firmware.usb)) return {pill: 'Restarting…', kind: 'warning',
     until: firmware.usb.last.at + firmwareRestartMs, hint: 'The device is restarting into the new firmware.'};
   if (!status.connected) return {pill: 'Not connected', kind: 'offline', hint: 'Connect the device to see its firmware.'};
+  if (otherBoard(firmware)) return {pill: 'Other board', kind: 'usb', hint: otherBoardHint(firmware)};
   if (!firmware.device) return {pill: 'Old firmware', kind: 'warning', update: true, overUsb: Boolean(firmware.usb?.release),
     hint: 'This firmware is older and does not report its version, so it cannot update over Wi-Fi. '
       + 'A newer release installs over USB.'};
@@ -965,6 +966,31 @@ function firmwareView(firmware) {
       + 'Updates go over Wi-Fi: connect the device to Wi-Fi first.'};
 }
 
+// The connected device's board, when releases have no firmware for it. Firmware for another board
+// can stop such a device, so neither firmware row offers one.
+function otherBoard(firmware) {
+  const board = firmware?.board, boards = firmware?.usb?.boards;
+  return status?.connected && board && boards && !boards.some(entry => entry.id === board) ? board : null;
+}
+
+function otherBoardHint(firmware) {
+  return `This device is a ${firmware.board} board, and releases have no firmware for it, so the app does not `
+    + `install one. Build and upload this board's firmware from source: BOARD=${firmware.board} bash tools/arduino.sh upload <port>.`;
+}
+
+function boardInfo(id) {
+  return status?.firmware?.usb?.boards?.find(entry => entry.id === id) ?? null;
+}
+
+// The board that the device on the selected USB port reports. Only then does the device decide
+// the board: over Wi-Fi, or on another port, the device to install can be a different one.
+function reportedUsbBoard() {
+  const selected = $('usb-firmware-port').value;
+  const board = status?.connected && status.transport === 'usb' && (!selected || selected === status.port)
+    ? status.firmware?.board : null;
+  return boardInfo(board) ? board : null;
+}
+
 // The desktop app has no firmware build of its own: it compares the device with the release
 // firmware for its version, which it installs over USB.
 function releaseFirmwareView(firmware) {
@@ -973,7 +999,8 @@ function releaseFirmwareView(firmware) {
   if (firmware.device === releaseId) return {pill: `v${release}`, kind: 'usb',
     hint: `The device runs release v${release}, the firmware for this app. No update is needed.`};
   return {pill: 'Update available', kind: 'warning', update: true, overUsb: true,
-    hint: `Firmware v${release} is available for this app. The device runs other firmware (ID ${firmware.device}). `
+    hint: `Firmware v${release} for the ${boardInfo(firmware.board)?.name ?? 'device'} is available for this app. `
+      + `The device runs other firmware (ID ${firmware.device}). `
       + 'Update installs it over USB: connect the device with a USB data cable. '
       + 'Wi-Fi settings stay, and the app then installs your character again.'};
 }
@@ -1031,6 +1058,7 @@ function usbFirmwareView(usb) {
     return {pill: 'Restarting…', kind: 'warning', hint: `Release v${last.version} is installed. The device is restarting.`};
   if (!release) return {pill: 'Unknown', kind: 'offline',
     hint: 'The companion service has no VERSION file, so it cannot choose a release.'};
+  if (otherBoard(status.firmware)) return {pill: 'Other board', kind: 'offline', hint: otherBoardHint(status.firmware)};
   if (!usb.flasher) return {pill: 'Needs the desktop app', kind: 'offline',
     hint: `The desktop app writes the ${release} firmware from GitHub to the device over USB. Open the desktop app, `
       + 'then come back here.'};
@@ -1069,9 +1097,35 @@ function renderUsbFirmware() {
     : usb?.releaseId && status.firmware?.device === usb.releaseId ? 'Reinstall' : 'Replace with';
   button.textContent = usb?.release ? `${action} v${usb.release}` : 'Install';
   button.disabled = usbFirmwareBlocked(usb);
+  renderBoardChoice(usb);
   // Recovery is for a device that does not answer at all; a device that answers updates with the row above.
   // Only for a device that does not answer; an install shows its progress in the row that started it.
   if (!status?.connected && usb?.unanswered && !usb.installing) $('usb-firmware-recovery').open = true;
+}
+
+let boardKey = '';
+
+// A device that answers over USB names its board; for any other, the person chooses it here.
+function renderBoardChoice(usb) {
+  const select = $('usb-firmware-board');
+  const boards = usb?.boards ?? [];
+  const key = JSON.stringify(boards.map(board => board.id));
+  if (key !== boardKey) {
+    boardKey = key;
+    const previous = select.value;
+    select.replaceChildren(new Option('Select the board', ''));
+    for (const board of boards) select.add(new Option(board.models, board.id));
+    select.value = boards.some(board => board.id === previous) ? previous : '';
+  }
+  const reported = reportedUsbBoard();
+  // A board that a device reported is not a choice for another device: the person chooses again.
+  if (reported) select.value = reported;
+  else if (select.dataset.reported) select.value = '';
+  select.dataset.reported = reported ?? '';
+  select.disabled = Boolean(reported) || usbFirmwareBlocked(usb);
+  $('usb-board-message').textContent = reported
+    ? `The device reports that it is a ${boardInfo(reported).name}.`
+    : 'Each board has its own firmware. Firmware for a different board can stop the device.';
 }
 
 function usbRestarting(usb) {
@@ -1081,7 +1135,7 @@ function usbRestarting(usb) {
 
 function usbFirmwareBlocked(usb) {
   return usbFirmwarePending || !usb?.flasher || !usb.release || Boolean(usb.installing)
-    || Boolean(status?.installing) || Boolean(status?.firmware?.updating);
+    || Boolean(status?.installing) || Boolean(status?.firmware?.updating) || Boolean(otherBoard(status?.firmware));
 }
 
 async function detectSettingsDevices() {
@@ -1095,10 +1149,12 @@ async function detectSettingsDevices() {
     : detection.ports.some(port => port.path === detection.connected) ? detection.connected
     : detection.ports.length === 1 ? detection.ports[0].path : '';
   $('usb-device-message').textContent = detection.ports.length
-    ? 'Confirm the device is a Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C before installation.'
+    ? 'Check that the board below matches the device before installation.'
     : 'No device found. Use a USB data cable and check serial-port permissions.';
   return select.value;
 }
+
+$('usb-firmware-port').addEventListener('change', () => renderUsbFirmware());
 
 $('usb-device-detect').addEventListener('click', () => {
   void detectSettingsDevices().catch(error => toast(error.message, 'error'));
@@ -1110,13 +1166,21 @@ async function installReleaseOverUsb() {
   try {
     const port = $('usb-firmware-port').value || await detectSettingsDevices();
     if (!port) throw new Error('Select your Waveshare device before installing firmware.');
+    const board = reportedUsbBoard() ?? $('usb-firmware-board').value;
+    const info = boardInfo(board);
+    if (!info) {
+      $('usb-firmware-recovery').open = true;
+      $('usb-firmware-board').focus();
+      throw new Error('Select the board of the device, then install again.');
+    }
     const release = status.firmware.usb?.release;
-    if (!await confirmAction(`Confirm that ${port} is your Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C.\n\n`
-      + `Install published release v${release}? This replaces the current firmware and partition table. `
+    if (!await confirmAction(`Confirm that ${port} is your ${info.models}.\n\n`
+      + `Install published release v${release} for the ${info.name}? `
+      + 'Firmware for a different board can stop the device. This replaces the current firmware and partition table. '
       + 'Back up other firmware first. Wi-Fi settings stay, and the app then installs your character again.',
       'Install firmware')) return;
     await api('/api/firmware/usb', {method: 'POST', type: 'application/json',
-      body: JSON.stringify({port, confirmed: true})});
+      body: JSON.stringify({port, board, confirmed: true})});
   } catch (error) {
     toast(error.message, 'error');
   } finally {

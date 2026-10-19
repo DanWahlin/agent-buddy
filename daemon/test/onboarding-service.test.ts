@@ -28,6 +28,8 @@ class FakeTransport extends DeviceTransport {
   override get connected() { return this.active; }
   override get character() { return this.active ? this.characterId : null; }
   override get firmware() { return this.firmwareId; }
+  boardId = 'waveshare-amoled-175';
+  override get board() { return this.active ? this.boardId : null; }
   override get address() { return this.active ? this.link === 'wifi' ? this.wifiAddress : this.usbPath : null; }
   override get transport(): 'usb' | 'wifi' | null { return this.active ? this.link : null; }
   override async setEnabled(enabled: boolean) { this.enabled = enabled; if (!enabled) this.active = false; }
@@ -115,7 +117,8 @@ async function fixture() {
   const store = new OnboardingStore(join(root, 'onboarding.json'));
   const flashes: string[] = [];
   const installer: UsbFirmwareInstaller = {
-    releases: {saved: async () => null, prepare: async version => ({version, dir: root, id: 'aaaaaaaaaaaaaaaa'})},
+    releases: {saved: async () => null, prepare: async (version, _progress, board = 'waveshare-amoled-175') =>
+      ({version, board, dir: root, id: 'aaaaaaaaaaaaaaaa'})},
     flash: async (_program, _dir, port) => {
       flashes.push(port.path);
       device.active = true;
@@ -132,7 +135,8 @@ async function fixture() {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      await rm(root, {recursive: true, force: true});
+      // A settings file the service saves in the background can land while the folder is removed.
+      await rm(root, {recursive: true, force: true, maxRetries: 10, retryDelay: 50});
     }};
 }
 
@@ -584,7 +588,7 @@ test('firmware setup targets the selected port and restores the chosen character
   const {service, store, device, flashes, cleanup} = await fixture();
   try {
     await store.reset({display: 'both', character: 'claude', port: device.usbPath});
-    await service.setupOnboardingDevice(true);
+    await service.setupOnboardingDevice(true, 'waveshare-amoled-175');
     assert.deepEqual(flashes, [device.usbPath]);
     assert.equal(device.characterId, 'claude');
     assert.equal(service.onboardingStatus().busy, false);
@@ -618,6 +622,72 @@ test('a Settings USB firmware install does not reinstall the character that the 
     await service.installFirmwareOverUsb(device.usbPath);
     assert.deepEqual(service.installedCharacters, []);
     assert.equal(device.characterId, 'copilot');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('USB installs write the firmware for the board the device is, and never another board', async () => {
+  const {service, device, flashes, installer, cleanup} = await fixture();
+  try {
+    const prepared: string[] = [];
+    const flashed: string[] = [];
+    installer.releases.prepare = async (version, _progress, board = 'waveshare-amoled-175') => {
+      prepared.push(board);
+      return {version, board, dir: '/test', id: 'aaaaaaaaaaaaaaaa'};
+    };
+    const flash = installer.flash;
+    installer.flash = async (program, dir, port, events, board) => {
+      flashed.push(board);
+      await flash(program, dir, port, events, board);
+    };
+    device.active = true;
+    device.boardId = 'waveshare-lcd-154';
+    const usb = service.status().firmware.usb;
+    assert.equal(service.status().firmware.board, 'waveshare-lcd-154');
+    assert.deepEqual(usb.boards.map(board => board.id), ['waveshare-amoled-175', 'waveshare-lcd-154']);
+
+    // A device that answers decides the board.
+    await service.installFirmwareOverUsb(device.usbPath);
+    assert.deepEqual([prepared, flashed], [['waveshare-lcd-154'], ['waveshare-lcd-154']]);
+    assert.equal(service.status().firmware.usb.last?.board, 'waveshare-lcd-154');
+    assert.equal(service.status().firmware.usb.releaseId, 'aaaaaaaaaaaaaaaa');
+    assert.equal(service.status().firmware.usb.boards[1]!.releaseId, 'aaaaaaaaaaaaaaaa');
+    assert.equal(service.status().firmware.usb.boards[0]!.releaseId, null);
+
+    // A different choice for a device that answers is refused before any download.
+    await assert.rejects(service.installFirmwareOverUsb(device.usbPath, 'waveshare-amoled-175'),
+                         /reports that it is a Waveshare ESP32-S3-Touch-LCD-1\.54/);
+    // A board that releases have no firmware for is refused.
+    device.boardId = 'custom-board';
+    await assert.rejects(service.installFirmwareOverUsb(device.usbPath), /BOARD=custom-board/);
+    assert.match(service.status().firmware.usb.last?.error ?? '', /no firmware for it/);
+    assert.equal(prepared.length, 1);
+
+    // A device that does not answer needs the person to choose its board.
+    device.active = false;
+    await assert.rejects(service.installFirmwareOverUsb(device.usbPath), /Choose its board/);
+    assert.equal(prepared.length, 1);
+    device.boardId = 'waveshare-amoled-175';
+    await service.installFirmwareOverUsb(device.usbPath, 'waveshare-amoled-175');
+    assert.deepEqual(flashed, ['waveshare-lcd-154', 'waveshare-amoled-175']);
+    assert.deepEqual(flashes, [device.usbPath, device.usbPath]);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a device that starts answering as another board during the download is not flashed', async () => {
+  const {service, device, installer, flashes, cleanup} = await fixture();
+  try {
+    installer.releases.prepare = async (version, _progress, board = 'waveshare-amoled-175') => {
+      device.active = true;
+      device.boardId = 'waveshare-lcd-154';
+      return {version, board, dir: '/test', id: 'aaaaaaaaaaaaaaaa'};
+    };
+    await assert.rejects(service.installFirmwareOverUsb(device.usbPath, 'waveshare-amoled-175'),
+                         /reports that it is a Waveshare ESP32-S3-Touch-LCD-1\.54/);
+    assert.deepEqual(flashes, []);
   } finally {
     await cleanup();
   }
@@ -691,7 +761,7 @@ test('a failed firmware write stays incomplete and exposes the error', async () 
   try {
     installer.flash = async () => { throw new Error('Test write failed.'); };
     await store.reset({display: 'both', character: 'claude', port: device.usbPath});
-    await assert.rejects(service.setupOnboardingDevice(true), /Test write failed/);
+    await assert.rejects(service.setupOnboardingDevice(true, 'waveshare-amoled-175'), /Test write failed/);
     assert.equal(store.state.completed, false);
     assert.equal(service.onboardingStatus().busy, false);
     assert.equal(service.onboardingStatus().error, 'Test write failed.');
@@ -710,7 +780,7 @@ test('the same USB device can reconnect on a new port without losing the selecte
       device.active = true;
       device.firmwareId = 'aaaaaaaaaaaaaaaa';
     };
-    await service.setupOnboardingDevice(true);
+    await service.setupOnboardingDevice(true, 'waveshare-amoled-175');
     assert.equal(store.state.port, device.usbPath);
     assert.equal(device.characterId, 'claude');
     await service.finishOnboarding();
@@ -726,9 +796,9 @@ test('swapping the selected USB device during a download never flashes the repla
     await store.reset({display: 'both', port: device.usbPath});
     installer.releases.prepare = async version => {
       device.serialNumber = 'different-board';
-      return {version, dir: '/test', id: 'aaaaaaaaaaaaaaaa'};
+      return {version, board: 'waveshare-amoled-175', dir: '/test', id: 'aaaaaaaaaaaaaaaa'};
     };
-    await assert.rejects(service.setupOnboardingDevice(true), /device changed/);
+    await assert.rejects(service.setupOnboardingDevice(true, 'waveshare-amoled-175'), /device changed/);
     assert.deepEqual(flashes, []);
     assert.equal(store.state.completed, false);
   } finally {

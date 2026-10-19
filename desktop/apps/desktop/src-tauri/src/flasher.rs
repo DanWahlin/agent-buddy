@@ -1,7 +1,7 @@
 //! Installs a release firmware bundle on the device over USB.
 //!
 //! The companion service runs `agent-companion-desktop --flash-firmware <dir>
-//! --port <path>` after it downloads and checks a release, and reads the lines
+//! --port <path> --board <id>` after it downloads and checks a release, and reads the lines
 //! this prints: `stage <name>`, `progress <percent>`, `log <message>` for its
 //! log, then `done` or `error <message>`. It runs before Tauri starts, so it needs
 //! no window and works while the pet is open.
@@ -35,12 +35,16 @@ const IMAGES: [&str; 5] = [
     "bin/character-copilot.acpk",
 ];
 const FIXED: [(u64, u64); 4] = [(0, 0x8000), (0x8000, 0x1000), (0xe000, 0x2000), (0x10000, 0x200000)];
+// Bundles from before the board layer have no board; they are for the default board in firmware/boards.json.
+const DEFAULT_BOARD: &str = "waveshare-amoled-175";
 
 #[derive(Deserialize)]
 struct Manifest {
     schema_version: u64,
     chip: String,
     flash_size: String,
+    #[serde(default)]
+    board: Option<String>,
     asset_sha256: String,
     images: Vec<Image>,
 }
@@ -58,9 +62,11 @@ pub struct Options {
     pub dir: String,
     pub port: String,
     pub pid: u16,
+    // The board the device is; the bundle must be for it. Firmware for another board can stop the device.
+    pub board: Option<String>,
 }
 
-/// Reads `--flash-firmware <dir> --port <path> [--pid <hex>]`; None for a normal launch.
+/// Reads `--flash-firmware <dir> --port <path> [--pid <hex>] [--board <id>]`; None for a normal launch.
 pub fn options(args: &[String]) -> Option<Result<Options, String>> {
     let dir = value(args, "--flash-firmware")?;
     Some((|| {
@@ -69,7 +75,12 @@ pub fn options(args: &[String]) -> Option<Result<Options, String>> {
             Some(pid) => u16::from_str_radix(pid.trim_start_matches("0x"), 16).map_err(|_| "--pid must be hex")?,
             None => USB_SERIAL_JTAG_PID,
         };
-        Ok(Options { dir: dir.to_string(), port: port.to_string(), pid })
+        let board = match value(args, "--board") {
+            Some(board) if !board.is_empty() && !board.starts_with("--") => Some(board.to_string()),
+            None if !args.iter().any(|arg| arg == "--board") => None,
+            _ => return Err("--board needs a value".to_string()),
+        };
+        Ok(Options { dir: dir.to_string(), port: port.to_string(), pid, board })
     })())
 }
 
@@ -93,7 +104,7 @@ pub fn run(options: Result<Options, String>) -> i32 {
 
 fn flash(options: &Options) -> Result<(), String> {
     println!("stage checking");
-    let segments = load(Path::new(&options.dir))?;
+    let segments = load(Path::new(&options.dir), options.board.as_deref())?;
     retry_writes(|| write(options, &segments), |line| println!("log {}", line.replace('\n', " ")))
 }
 
@@ -168,10 +179,14 @@ fn write(options: &Options, segments: &[Segment<'static>]) -> Result<(), Failure
 }
 
 /// Reads and checks a bundle the way tools/flash_release.py does, and returns what to write.
-pub fn load(dir: &Path) -> Result<Vec<Segment<'static>>, String> {
+pub fn load(dir: &Path, board: Option<&str>) -> Result<Vec<Segment<'static>>, String> {
     let text = fs::read(dir.join("manifest.json")).map_err(|error| format!("Couldn't read manifest.json: {error}"))?;
     let manifest: Manifest = serde_json::from_slice(&text).map_err(|error| format!("Invalid manifest.json: {error}"))?;
     validate(&manifest)?;
+    let bundle_board = manifest.board.as_deref().unwrap_or(DEFAULT_BOARD);
+    if let Some(board) = board.filter(|board| *board != bundle_board) {
+        return Err(format!("The firmware is for board {bundle_board}, not {board}."));
+    }
     let segments = manifest
         .images
         .iter()
@@ -349,7 +364,7 @@ mod tests {
     fn loads_a_valid_bundle_in_order() {
         let dir = temp("valid");
         bundle(&dir, |_| {});
-        let segments = load(&dir).unwrap();
+        let segments = load(&dir, None).unwrap();
         assert_eq!(segments.iter().map(|s| s.addr).collect::<Vec<_>>(), [0, 0x8000, 0xe000, 0x10000, 0x410000]);
         assert_eq!(segments[3].data.len(), 20);
         assert_eq!(segments[3].data[19], 0xff);
@@ -372,7 +387,7 @@ mod tests {
         for (name, change) in cases {
             let dir = temp(name);
             bundle(&dir, change);
-            assert!(load(&dir).is_err(), "{name} was accepted");
+            assert!(load(&dir, None).is_err(), "{name} was accepted");
             fs::remove_dir_all(dir).unwrap();
         }
     }
@@ -387,6 +402,23 @@ mod tests {
         assert_eq!((parsed.dir.as_str(), parsed.port.as_str(), parsed.pid), ("/tmp/fw", "/dev/cu.usbmodem1", 0x1001));
         assert!(options(&args[..1]).is_none());
         assert!(options(&args[..3]).unwrap().is_err());
+        assert_eq!(parsed.board, None);
+        let with_board: Vec<String> = args.iter().cloned().chain(["--board".into(), "waveshare-lcd-154".into()]).collect();
+        assert_eq!(options(&with_board).unwrap().unwrap().board.as_deref(), Some("waveshare-lcd-154"));
+        assert!(options(&with_board[..with_board.len() - 1]).unwrap().is_err());
+    }
+
+    #[test]
+    fn refuses_a_bundle_for_another_board() {
+        let dir = temp("board");
+        bundle(&dir, |_| {});
+        // A bundle without a board is for the default board.
+        assert!(load(&dir, Some(DEFAULT_BOARD)).is_ok());
+        assert!(load(&dir, Some("waveshare-lcd-154")).unwrap_err().contains("not waveshare-lcd-154"));
+        bundle(&dir, |m| m["board"] = "waveshare-lcd-154".into());
+        assert!(load(&dir, Some("waveshare-lcd-154")).is_ok());
+        assert!(load(&dir, Some(DEFAULT_BOARD)).is_err());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[derive(Debug)]

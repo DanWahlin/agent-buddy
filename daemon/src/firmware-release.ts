@@ -10,6 +10,7 @@ import {defaultDataDirectory} from './paths.js';
 // A release's firmware, checked and unpacked: the desktop app writes `dir` to the device over USB.
 export interface ReleaseFirmware {
   version: string;
+  board: string;
   dir: string;
   // The ID the device reports when it runs this firmware.
   id: string;
@@ -27,9 +28,66 @@ export interface FirmwareReleaseOptions {
 // Keep these the same as RELEASE_NAME and RELEASE_REPOSITORY in tools/package_release.py.
 export const releaseName = 'agent-buddy';
 export const releaseRepository = 'DanWahlin/agent-buddy';
-// The board that the release firmware ZIP is built for: the default board in firmware/boards.json.
-// Other boards get their own ZIP, which this updater does not download.
+// The default board in firmware/boards.json. Its release firmware ZIP keeps the name from before
+// there were other boards, and firmware from before the board layer is always for it.
 export const releaseBoard = 'waveshare-amoled-175';
+
+// Every board in firmware/boards.json; each release has a firmware ZIP for each one. Keep this the
+// same as firmware/boards.json (daemon/test/firmware-release.test.ts checks it).
+// `models` names the hardware to check before an install.
+export const firmwareBoards: readonly {id: string; name: string; models: string}[] = [
+  {id: 'waveshare-amoled-175', name: 'Waveshare ESP32-S3-Touch-AMOLED-1.75',
+   models: 'Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C'},
+  {id: 'waveshare-lcd-154', name: 'Waveshare ESP32-S3-Touch-LCD-1.54', models: 'Waveshare ESP32-S3-Touch-LCD-1.54'},
+];
+
+export function isFirmwareBoard(board: unknown): board is string {
+  return firmwareBoards.some(entry => entry.id === board);
+}
+
+export function boardName(board: string): string {
+  return firmwareBoards.find(entry => entry.id === board)?.name ?? board;
+}
+
+// The board a device reports, over Wi-Fi or on the BOARD line of its USB `i` reply. Firmware from
+// before the board layer reports none, and it is always for the release board.
+export function deviceBoard(value: unknown): string {
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value) ? value : releaseBoard;
+}
+
+// The board on a `BOARD id=<board> variant=<variant>` line, or null for any other line.
+export function parseBoardLine(line: string): string | null {
+  const match = /^BOARD id=([a-z0-9][a-z0-9-]{0,63})(?: |$)/.exec(line);
+  return match ? match[1]! : null;
+}
+
+// `bash tools/arduino.sh build` builds the default board, so only a device of that board takes the
+// built firmware over Wi-Fi. Firmware for a different board can stop the device.
+export function assertReleaseBoard(board: string): void {
+  if (board !== releaseBoard)
+    throw new Error(`This device is a ${board} board. The built firmware is for ${releaseBoard}; `
+      + `build and upload with: BOARD=${board} bash tools/arduino.sh upload-code`);
+}
+
+// The board whose release firmware goes to a USB device. A device that answers names its board,
+// and that board wins: a different choice is refused. A device that does not answer can't say,
+// so the person must choose its board.
+export function chooseFirmwareBoard(reported: string | null, chosen: string | null | undefined): string {
+  if (chosen != null && !isFirmwareBoard(chosen)) throw new Error(`Unknown board: ${chosen}.`);
+  if (reported !== null) {
+    if (!isFirmwareBoard(reported))
+      throw new Error(`This device is a ${reported} board, and releases have no firmware for it. `
+        + `Build and upload with: BOARD=${reported} bash tools/arduino.sh upload-code`);
+    if (chosen != null && chosen !== reported)
+      throw new Error(`This device reports that it is a ${boardName(reported)}, not a ${boardName(chosen)}. `
+        + 'Firmware for a different board can stop the device.');
+    return reported;
+  }
+  if (chosen == null)
+    throw new Error('The device does not report which board it is: it does not answer, or its firmware is older. '
+      + 'Choose its board, then try again.');
+  return chosen;
+}
 const imageNames = ['bin/bootloader.bin', 'bin/partitions.bin', 'bin/boot_app0.bin', 'bin/application.bin',
   'bin/character-copilot.acpk'] as const;
 const bundleNames = ['manifest.json', ...imageNames];
@@ -43,12 +101,18 @@ export function releaseFirmwareDirectory(): string {
   return join(defaultDataDirectory(process.platform, homedir(), process.env), 'firmware');
 }
 
-export function firmwareAssetName(version: string): string {
-  return `${releaseName}-v${version}-firmware.zip`;
+// Keep this the same as firmware_zip_name in tools/package_release.py.
+export function firmwareAssetName(version: string, board: string = releaseBoard): string {
+  return board === releaseBoard ? `${releaseName}-v${version}-firmware.zip`
+    : `${releaseName}-v${version}-${board}-firmware.zip`;
 }
 
-// Downloads the firmware of one release from GitHub, checks it against the release's SHA256SUMS
-// and its own manifest, and keeps it, so a second install needs no download.
+function bundleFolder(version: string, board: string): string {
+  return board === releaseBoard ? `v${version}` : `v${version}-${board}`;
+}
+
+// Downloads one board's firmware of one release from GitHub, checks it against the release's
+// SHA256SUMS and its own manifest, and keeps it, so a second install needs no download.
 export class FirmwareReleases {
   readonly #directory: string;
   readonly #baseUrl: string;
@@ -62,30 +126,33 @@ export class FirmwareReleases {
   }
 
   // The release's firmware when it is saved already; null when it must be downloaded.
-  async saved(version: string): Promise<ReleaseFirmware | null> {
-    if (!/^\d+\.\d+\.\d+$/.test(version)) return null;
-    const dir = join(this.#directory, `v${version}`);
+  async saved(version: string, board: string = releaseBoard): Promise<ReleaseFirmware | null> {
+    if (!/^\d+\.\d+\.\d+$/.test(version) || !isFirmwareBoard(board)) return null;
+    const dir = join(this.#directory, bundleFolder(version, board));
     if (!existsSync(join(dir, 'manifest.json'))) return null;
-    return readBundle(dir, version).catch(() => null);
+    return readBundle(dir, version, board).catch(() => null);
   }
 
-  async prepare(version: string, progress: DownloadProgress = () => undefined): Promise<ReleaseFirmware> {
+  async prepare(version: string, progress: DownloadProgress = () => undefined,
+                board: string = releaseBoard): Promise<ReleaseFirmware> {
     if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`Unsupported release version: ${version}.`);
-    const dir = join(this.#directory, `v${version}`);
+    if (!isFirmwareBoard(board)) throw new Error(`Releases have no firmware for board ${board}.`);
+    const dir = join(this.#directory, bundleFolder(version, board));
     if (existsSync(join(dir, 'manifest.json'))) {
       try {
-        return await readBundle(dir, version);
+        return await readBundle(dir, version, board);
       } catch (error) {
-        console.error(`[firmware] the saved v${version} firmware is not valid; downloading it again: ${message(error)}`);
+        console.error(`[firmware] the saved v${version} ${board} firmware is not valid; downloading it again: `
+          + message(error));
       }
     }
-    const asset = firmwareAssetName(version);
+    const asset = firmwareAssetName(version, board);
     const sums = parseSums((await this.#download(`v${version}/SHA256SUMS`, maxSumsBytes)).toString('utf8'));
     const expected = sums.get(asset);
     if (!expected) throw new Error(`Release v${version} has no SHA256 for ${asset}.`);
     const zip = await this.#download(`v${version}/${asset}`, maxZipBytes, progress);
     if (sha256(zip) !== expected) throw new Error(`SHA256 mismatch: ${asset}.`);
-    const files = unpackBundle(zip, version);
+    const files = unpackBundle(zip, version, board);
 
     const staging = `${dir}.partial-${process.pid}`;
     await rm(staging, {recursive: true, force: true});
@@ -95,8 +162,8 @@ export class FirmwareReleases {
     }
     await rm(dir, {recursive: true, force: true});
     await rename(staging, dir);
-    console.log(`[firmware] saved release v${version} firmware in ${dir}`);
-    return readBundle(dir, version);
+    console.log(`[firmware] saved release v${version} ${board} firmware in ${dir}`);
+    return readBundle(dir, version, board);
   }
 
   async #download(path: string, limit: number, progress?: DownloadProgress): Promise<Buffer> {
@@ -125,24 +192,38 @@ export class FirmwareReleases {
   }
 }
 
-// The ID the device reports when it runs the firmware in this release ZIP. The desktop build
-// records it, so the service knows the release firmware without a download.
-export function releaseFirmwareId(zip: Buffer, version: string): string {
-  return parseFirmwareImage(unpackBundle(zip, version).get('bin/application.bin')!).id;
+// The board and the ID the device reports when it runs the firmware in this release ZIP. The
+// desktop build records them, so the service knows the release firmware without a download.
+export function releaseFirmwareInfo(zip: Buffer, version: string): {board: string; id: string} {
+  const files = unpackBundle(zip, version, null);
+  return {board: manifestBoard(JSON.parse(files.get('manifest.json')!.toString('utf8'))),
+          id: parseFirmwareImage(files.get('bin/application.bin')!).id};
 }
 
-function unpackBundle(zip: Buffer, version: string): Map<string, Buffer> {
+export function releaseFirmwareId(zip: Buffer, version: string, board: string = releaseBoard): string {
+  return parseFirmwareImage(unpackBundle(zip, version, board).get('bin/application.bin')!).id;
+}
+
+// `board` null accepts the firmware of any supported board.
+function unpackBundle(zip: Buffer, version: string, board: string | null): Map<string, Buffer> {
   const files = unzip(zip, new Set([...bundleNames, 'SHA256SUMS']));
   checkInnerSums(files);
-  validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version);
+  const manifest = JSON.parse(files.get('manifest.json')!.toString('utf8'));
+  validateManifest(manifest, files, version, board ?? manifestBoard(manifest));
   return files;
 }
 
-async function readBundle(dir: string, version: string): Promise<ReleaseFirmware> {
+async function readBundle(dir: string, version: string, board: string): Promise<ReleaseFirmware> {
   const files = new Map<string, Buffer>();
   for (const name of bundleNames) files.set(name, await readFile(join(dir, name)));
-  validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version);
-  return {version, dir, id: parseFirmwareImage(files.get('bin/application.bin')!).id};
+  validateManifest(JSON.parse(files.get('manifest.json')!.toString('utf8')), files, version, board);
+  return {version, board, dir, id: parseFirmwareImage(files.get('bin/application.bin')!).id};
+}
+
+// Bundles from before the board layer have no board field; they are for the release board.
+function manifestBoard(manifest: unknown): string {
+  const board = typeof manifest === 'object' && manifest !== null ? (manifest as {board?: unknown}).board : undefined;
+  return board === undefined ? releaseBoard : typeof board === 'string' ? board : '';
 }
 
 function parseSums(text: string): Map<string, string> {
@@ -168,7 +249,8 @@ function checkInnerSums(files: Map<string, Buffer>): void {
 }
 
 // The same rules as tools/flash_release.py, so only an ESP32-S3 bundle with safe offsets is written.
-export function validateManifest(manifest: unknown, files: Map<string, Buffer>, version: string): void {
+export function validateManifest(manifest: unknown, files: Map<string, Buffer>, version: string,
+                                 board: string = releaseBoard): void {
   if (typeof manifest !== 'object' || manifest === null) throw new Error('Manifest must be an object.');
   const value = manifest as Record<string, unknown>;
   if (value.name !== releaseName || value.version !== version)
@@ -176,9 +258,9 @@ export function validateManifest(manifest: unknown, files: Map<string, Buffer>, 
   if (value.schema_version !== 1) throw new Error('Unsupported manifest schema.');
   if (value.chip !== 'esp32s3' || value.flash_size !== '16MB')
     throw new Error('Unsupported chip or flash size; expected ESP32-S3 with 16MB.');
-  // Bundles from before the board layer have no board field; they are for the release board.
-  if (value.board !== undefined && value.board !== releaseBoard)
-    throw new Error(`The firmware is for board ${String(value.board)}, not ${releaseBoard}.`);
+  const actual = manifestBoard(value);
+  if (!isFirmwareBoard(actual)) throw new Error(`The firmware is for an unsupported board: ${String(value.board)}.`);
+  if (actual !== board) throw new Error(`The firmware is for board ${actual}, not ${board}.`);
   const images = value.images;
   if (!Array.isArray(images) || images.length !== imageNames.length)
     throw new Error('Manifest must contain exactly the five supported images.');

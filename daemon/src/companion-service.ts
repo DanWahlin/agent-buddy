@@ -40,8 +40,10 @@ import {
 import {CharacterPackBuilder} from './character-build.js';
 import {DesktopApp, type DesktopAppReport, type DesktopAppStatus, type DesktopCommand} from './desktop-app.js';
 import {openBrowser} from './browser.js';
-import {FirmwareReleases, type ReleaseFirmware} from './firmware-release.js';
+import {FirmwareReleases, boardName, chooseFirmwareBoard, firmwareBoards, releaseBoard,
+  type ReleaseFirmware} from './firmware-release.js';
 import {runUsbFlasher, type UsbFlasher, type UsbFlashStage} from './usb-flasher.js';
+import type {UsbPort} from './usb-transport.js';
 import {saveConnectionMode, type ConnectionMode} from './connection-mode.js';
 import type {DeviceTransport} from './device-transport.js';
 import {
@@ -86,6 +88,8 @@ export interface FirmwareStatus {
   // What the device runs and what the last `bash tools/arduino.sh build` made (16 hex digits).
   device: string | null;
   built: string | null;
+  // The board the device's firmware is built for (see firmware/boards.json), or null with no device.
+  board: string | null;
   // The device can take an update over Wi-Fi now, and the built firmware is different.
   canUpdate: boolean;
   // `button` is true while the device waits for a BOOT press that allows the update.
@@ -98,9 +102,15 @@ export interface FirmwareStatus {
 // Installing the release firmware over USB, which the desktop app writes. It works on any ESP32-S3
 // board, also one that has no Agent Companion firmware yet.
 export interface UsbFirmwareStatus {
-  // The release with this service's version, and its firmware ID: from the desktop build, or once it is downloaded.
+  // The release with this service's version, and the firmware ID of its firmware for the connected
+  // device's board (or the default board): from the desktop build, or once it is downloaded.
   release: string | null;
   releaseId: string | null;
+  // The default board in firmware/boards.json; firmware from before the board layer is for it.
+  releaseBoard: string;
+  // Every board that releases have firmware for. A device that answers names its board; for one
+  // that does not, the person chooses one of these.
+  boards: {id: string; name: string; models: string; releaseId: string | null}[];
   // The desktop app that ran last can write firmware.
   flasher: boolean;
   // The USB port with the device: connected, or an ESP32 that does not answer as an Agent Companion.
@@ -108,7 +118,7 @@ export interface UsbFirmwareStatus {
   unanswered: boolean;
   installing: {stage: 'downloading' | UsbFlashStage; percent: number | null} | null;
   // `at` is when the install ended; the device then restarts into `id`.
-  last: {ok: boolean; version: string; id: string | null; at: number; error?: string} | null;
+  last: {ok: boolean; version: string; board: string | null; id: string | null; at: number; error?: string} | null;
 }
 
 export interface UsbFirmwareInstaller {
@@ -237,7 +247,7 @@ export class CompanionService extends EventEmitter {
   #firmwareUpdating: FirmwareStatus['updating'] = null;
   #lastFirmware: FirmwareStatus['last'] = null;
   readonly #usbInstaller: UsbFirmwareInstaller;
-  #release: ReleaseFirmware | null = null;
+  #releases = new Map<string, ReleaseFirmware>();
   // A character to install again when the device starts the new firmware later, for example after
   // the user power-cycles a device that stayed in download mode.
   #pendingRestore: symbol | null = null;
@@ -282,11 +292,15 @@ export class CompanionService extends EventEmitter {
     this.#onboarding = onboarding;
   }
 
-  // Finds a release firmware that an earlier install downloaded, so status can say if it is current.
+  // Finds the release firmware that earlier installs downloaded, so status can say if it is current.
   async loadSavedRelease(): Promise<void> {
     const version = this.#service.version;
-    this.#release = version ? await this.#usbInstaller.releases.saved(version).catch(() => null) : null;
-    if (this.#release) this.emit('change');
+    if (!version) return;
+    for (const {id: board} of firmwareBoards) {
+      const release = await this.#usbInstaller.releases.saved(version, board).catch(() => null);
+      if (release) this.#releases.set(board, release);
+    }
+    if (this.#releases.size > 0) this.emit('change');
   }
 
   // Reads usage now and then every USAGE_REFRESH_MS; the first read of a large log takes seconds.
@@ -787,17 +801,18 @@ export class CompanionService extends EventEmitter {
     if (!device) await this.setDesktop({character: state.character});
   }
 
-  setupOnboardingDevice(flash: boolean): Promise<void> {
+  // `board` is the board the person chose for a device that does not answer; see #installFirmwareOverUsb.
+  setupOnboardingDevice(flash: boolean, board?: string | null): Promise<void> {
     return this.#mutate(() => {
       const state = this.#onboarding.state;
       if (state.completed || state.display === 'desktop' || state.deviceDeferred)
         throw new SetupError('Device setup is not selected.');
       if (flash && !state.port) throw new SetupError('Detect and select the USB device first.');
-      return this.#setupOnboardingDevice(flash);
+      return this.#setupOnboardingDevice(flash, board);
     }, 'Connecting to the device');
   }
 
-  async #setupOnboardingDevice(flash: boolean): Promise<void> {
+  async #setupOnboardingDevice(flash: boolean, board?: string | null): Promise<void> {
     const state = await this.#setupState(!flash);
     const usbPath = state.port ?? (this.#transport.transport === 'usb' ? this.#transport.address : null);
     const target = usbPath ? await this.#transport.findUsbPort(usbPath) : null;
@@ -808,7 +823,7 @@ export class CompanionService extends EventEmitter {
     if (flash) {
       if (!target) throw new Error('The selected USB device disconnected.');
       // Setup installs its selected character itself, below.
-      await this.#installFirmwareOverUsb(state.port);
+      await this.#installFirmwareOverUsb(state.port, board);
       this.#onboardingPhase = 'Waiting for the device to restart';
       this.emit('change');
       const firmware = this.#lastUsbFirmware?.id;
@@ -1090,11 +1105,14 @@ export class CompanionService extends EventEmitter {
   #firmwareStatus(): FirmwareStatus {
     const device = this.#transport.firmware ?? null;
     const built = this.#firmwareImage()?.id ?? null;
+    const board = this.#transport.board ?? null;
     return {
       device,
       built,
+      board,
+      // The built firmware is the default board's, which is the release board.
       canUpdate: !this.#firmwareUpdating && !this.#installBusy && !this.#usbInstalling && built !== null && device !== null
-        && built !== device && this.#transport.firmwareOverWifi === true,
+        && built !== device && this.#transport.firmwareOverWifi === true && board === releaseBoard,
       updating: this.#firmwareUpdating,
       last: this.#lastFirmware,
       usb: this.#usbFirmwareStatus(),
@@ -1103,9 +1121,12 @@ export class CompanionService extends EventEmitter {
 
   #usbFirmwareStatus(): UsbFirmwareStatus {
     const unanswered = this.#transport.usbUnanswered;
+    const releaseId = (board: string) => this.#releases.get(board)?.id ?? this.#service.releaseFirmwareIds[board] ?? null;
     return {
       release: this.#service.version,
-      releaseId: this.#release?.id ?? this.#service.releaseFirmwareId,
+      releaseId: releaseId(this.#transport.board ?? releaseBoard),
+      releaseBoard,
+      boards: firmwareBoards.map(({id, name, models}) => ({id, name, models, releaseId: releaseId(id)})),
       flasher: this.#desktopApp.flasher() !== null,
       port: this.#transport.transport === 'usb' ? this.#transport.address : unanswered?.path ?? null,
       unanswered: unanswered !== null,
@@ -1117,10 +1138,10 @@ export class CompanionService extends EventEmitter {
   // Downloads this service's release firmware from GitHub and has the desktop app write it over
   // USB: bootloader, partition table, app and the Copilot character. Wi-Fi settings stay. The
   // device then gets its previous character back, so an update does not reset the character.
-  installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
+  installFirmwareOverUsb(selectedPort?: string | null, board?: string | null): Promise<void> {
     return this.#mutate(async () => {
       const character = this.#transport.character ?? this.#characterPreference;
-      await this.#installFirmwareOverUsb(selectedPort);
+      await this.#installFirmwareOverUsb(selectedPort, board);
       await this.#restoreCharacterAfterFirmware(character);
     }, null, 'the firmware install');
   }
@@ -1161,7 +1182,12 @@ export class CompanionService extends EventEmitter {
     if (this.#pendingRestore === token) this.#pendingRestore = null;
   }
 
-  async #installFirmwareOverUsb(selectedPort?: string | null): Promise<void> {
+  // The board that the device answering on this USB port reports, or null when none answers there.
+  #reportedUsbBoard(port: UsbPort): string | null {
+    return this.#transport.matchesUsbPort(port) ? this.#transport.board : null;
+  }
+
+  async #installFirmwareOverUsb(selectedPort?: string | null, chosenBoard?: string | null): Promise<void> {
     this.#pendingRestore = null;
     const version = this.#service.version;
     if (!version) throw new Error('The companion service has no VERSION file, so it cannot choose a release.');
@@ -1178,29 +1204,36 @@ export class CompanionService extends EventEmitter {
       this.emit('change');
     };
     let id: string | null = null;
+    let board: string | null = null;
     try {
       const target = await this.#transport.findUsbPort(selectedPort);
       if (!target) throw new Error('No device is on USB. Connect the device with a USB data cable, then try again.');
+      // A device that answers on this port names its board, and only that board's firmware goes to
+      // it. One that does not answer can't say; setup and Settings ask the person to choose.
+      const chosen = chooseFirmwareBoard(this.#reportedUsbBoard(target), chosenBoard);
+      board = chosen;
       const release = await this.#usbInstaller.releases.prepare(version, (received, total) =>
-        set({stage: 'downloading', percent: total ? Math.floor(received * 100 / total) : null}));
-      this.#release = release;
+        set({stage: 'downloading', percent: total ? Math.floor(received * 100 / total) : null}), chosen);
+      if (release.board !== chosen) throw new Error(`The downloaded firmware is not for ${boardName(chosen)}.`);
+      this.#releases.set(chosen, release);
       id = release.id;
       const port = await this.#transport.findUsbPort(target.path);
       if (!port) throw new Error('No device is on USB. Connect the device with a USB data cable, then try again.');
       if (target.serialNumber && target.serialNumber !== port.serialNumber)
         throw new Error('The selected USB device changed during the download. Detect and confirm the device again.');
+      chooseFirmwareBoard(this.#reportedUsbBoard(port), chosen);
       await this.#transport.selectUsbPort(port.path);
-      console.log(`[firmware] installing release v${version} (${release.id}) over USB on ${port.path}`);
+      console.log(`[firmware] installing release v${version} ${chosen} (${release.id}) over USB on ${port.path}`);
       await this.#transport.withUsbReleased(() => this.#usbInstaller.flash(program, release.dir, port, {
         stage: stage => set({stage, percent: stage === 'writing' ? 0 : null}),
         progress: percent => set({stage: 'writing', percent}),
-      }));
+      }, chosen));
       console.log(`[firmware] installed release v${version} over USB; the device restarts`);
-      this.#lastUsbFirmware = {ok: true, version, id, at: Date.now()};
+      this.#lastUsbFirmware = {ok: true, version, board, id, at: Date.now()};
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[firmware] USB install failed: ${message}`);
-      this.#lastUsbFirmware = {ok: false, version, id, at: Date.now(), error: message};
+      this.#lastUsbFirmware = {ok: false, version, board, id, at: Date.now(), error: message};
       throw error;
     } finally {
       this.#usbInstalling = null;

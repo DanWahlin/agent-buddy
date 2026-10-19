@@ -409,7 +409,35 @@ test('character setup names the installation and keeps Wi-Fi graphics during res
   runInContext('controller.status.connected = false; controller.renderFirmware(false);', context);
   assert.equal(element('ob-firmware-options').open, true);
   assert.equal(element('ob-firmware-options-title').textContent, 'Install firmware');
-  assert.match(element('ob-firmware-plan').textContent, /firmware v1.0.0, then the Claude character/);
+  // A device that does not answer cannot report its board, so setup asks for it.
+  runInContext(`controller.status.firmware.usb = {...controller.status.firmware.usb, boards: [{id: 'waveshare-amoled-175', name: 'Waveshare ESP32-S3-Touch-AMOLED-1.75', models: 'Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C'}, {id: 'waveshare-lcd-154', name: 'Waveshare ESP32-S3-Touch-LCD-1.54', models: 'Waveshare ESP32-S3-Touch-LCD-1.54'}]};
+    controller.renderFirmware(false);`, context);
+  assert.match(element('ob-firmware-plan').textContent, /does not report its board. Select its board.*Claude character/);
+  assert.equal(element('ob-board-label').hidden, false);
+  assert.deepEqual(element('ob-board').children.map(option => option.value), ['', 'waveshare-amoled-175', 'waveshare-lcd-154']);
+  assert.equal(element('ob-install-firmware').disabled, true);
+  runInContext("controller.board = 'waveshare-lcd-154'; controller.renderFirmware(false)", context);
+  assert.equal(element('ob-board').value, 'waveshare-lcd-154');
+  assert.equal(element('ob-install-firmware').disabled, false);
+  // A connected device reports its board, and that board's firmware is installed.
+  runInContext(`
+    controller.status.connected = true;
+    controller.status.firmware = {...controller.status.firmware, board: 'waveshare-amoled-175'};
+    controller.renderFirmware(false);
+  `, context);
+  assert.equal(element('ob-firmware-options-title').textContent, 'Replace firmware (optional)');
+  assert.match(element('ob-firmware-plan').textContent,
+               /firmware v1.0.0 for the Waveshare ESP32-S3-Touch-AMOLED-1.75, which the device reports, then the Claude character/);
+  assert.equal(element('ob-board-label').hidden, true);
+  assert.equal(element('ob-install-firmware').disabled, false);
+  // A connected device of a board without release firmware keeps its firmware.
+  runInContext(`
+    controller.status.firmware = {...controller.status.firmware, board: 'custom-board'};
+    controller.renderFirmware(false);
+  `, context);
+  assert.match(element('ob-firmware-plan').textContent, /custom-board board, and releases have no firmware.*BOARD=custom-board/);
+  assert.equal(element('ob-board-label').hidden, true);
+  assert.equal(element('ob-install-firmware').disabled, true);
 });
 
 test('firmware replacement confirms the board and both stages, while character installation does not flash', async () => {
@@ -420,24 +448,36 @@ test('firmware replacement confirms the board and both stages, while character i
     const controller = Object.create(Onboarding.prototype);
     controller.state = {port: '/dev/test', character: 'claude', display: 'both'};
     controller.characters = [{id: 'claude', name: 'Claude'}];
-    controller.status = {firmware: {usb: {release: '1.0.0'}}};
+    controller.status = {firmware: {usb: {release: '1.0.0', boards: [{id: 'waveshare-amoled-175', name: 'Waveshare ESP32-S3-Touch-AMOLED-1.75', models: 'Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C'}, {id: 'waveshare-lcd-154', name: 'Waveshare ESP32-S3-Touch-LCD-1.54', models: 'Waveshare ESP32-S3-Touch-LCD-1.54'}]}}};
+    controller.board = null;
     const calls = [], prompts = [];
     let approved = false;
     controller.api = async (path, options) => { calls.push({path, body: JSON.parse(options.body)}); };
     controller.confirm = async (...args) => { prompts.push(args); return approved; };
     controller.refresh = async () => {};
   `, context);
+  // A device that does not answer needs its board first.
+  await assert.rejects(runInContext('controller.setupDevice(true)', context), /Select the board of the device first/);
+  assert.equal(runInContext('prompts.length', context), 0);
+  runInContext("controller.board = 'waveshare-lcd-154'", context);
   await runInContext('controller.setupDevice(true)', context);
   assert.equal(runInContext('calls.length', context), 0);
   const prompt = JSON.parse(runInContext('JSON.stringify(prompts[0])', context));
-  assert.match(prompt[0], /Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C/);
-  assert.match(prompt[0], /firmware v1.0.0, then the Claude character/);
+  assert.match(prompt[0], /^Confirm that \/dev\/test is your Waveshare ESP32-S3-Touch-LCD-1.54\./);
+  assert.match(prompt[0], /firmware v1.0.0 for the Waveshare ESP32-S3-Touch-LCD-1.54, then the Claude character/);
+  assert.match(prompt[0], /Firmware for a different board can stop the device/);
   assert.equal(prompt[1], 'Confirm and install');
   assert.equal(prompt[3].title, 'Install firmware and character?');
   runInContext('approved = true', context);
   await runInContext('controller.setupDevice(true)', context);
   assert.deepEqual(JSON.parse(runInContext('JSON.stringify(calls[0].body)', context)),
-    {flash: true, confirmed: true, port: '/dev/test', character: 'claude', display: 'both'});
+    {flash: true, confirmed: true, port: '/dev/test', character: 'claude', display: 'both', board: 'waveshare-lcd-154'});
+  // A device that answers over USB on the selected port decides the board.
+  runInContext(`controller.status = {...controller.status, connected: true, transport: 'usb', port: '/dev/test',
+    firmware: {...controller.status.firmware, board: 'waveshare-amoled-175'}}`, context);
+  await runInContext('controller.setupDevice(true)', context);
+  assert.equal(runInContext('calls[1].body.board', context), 'waveshare-amoled-175');
+  runInContext('calls.pop(); prompts.pop()', context);
   await runInContext('controller.setupDevice(false)', context);
   assert.equal(runInContext('prompts.length', context), 2);
   assert.equal(runInContext('calls[1].body.flash', context), false);

@@ -81,7 +81,9 @@ constexpr char kSoundVolumePreference[] = "volume";
 constexpr char kOrientationPreference[] = "orient-offset";
 
 void logMessage(const char* format, ...) {
-  char message[384];
+  // Holds the longest line, the INFO reply; tests/test_boards.py checks its worst case fits. A longer
+  // message is dropped, and a dropped INFO reply stops the app from finding the device.
+  char message[512];
   va_list arguments;
   va_start(arguments, format);
   const int length = vsnprintf(message, sizeof(message), format, arguments);
@@ -1084,6 +1086,9 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
                     patchBuffersInternal, static_cast<unsigned>(startupFreeInternal),
                     static_cast<unsigned>(network.connected()), ssid, network.firmwareId(),
                     board::variantName(board::variant()));
+      // Which board the firmware is built for, so the app installs firmware only for this board. It
+      // is its own line, so the app's INFO parsing is unchanged and the INFO line stays shorter.
+      logMessage("BOARD id=%s variant=%s\n", board::kId, board::variantName(board::variant()));
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",

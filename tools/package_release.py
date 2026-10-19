@@ -35,15 +35,23 @@ def write_zip(path, files):
             archive.writestr(info, data)
 
 
-def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_REPOSITORY):
+def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_REPOSITORY, board=None):
+    """Packages one board's firmware ZIP, the characters ZIP, and the release's SHA256SUMS.
+
+    The board is the selected one (BOARD, else the default). Each board's ZIP is named for it, so
+    packaging every board into one folder gives a release with a firmware ZIP for each board.
+    """
     root = Path(root)
     validate_identity(name, version)
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository, flags=re.ASCII):
         raise ValueError("Repository must be an owner/repository pair.")
-    firmware_artifacts.check(root)
-    board_id = json.loads((root / firmware_artifacts.BUNDLE).read_text())["inputs"]["board"]
+    board_id = board or firmware_artifacts.selected_board()
+    build, _, bundle_path = firmware_artifacts.artifacts(board_id)
+    firmware_artifacts.check(root, board_id)
+    if json.loads((root / bundle_path).read_text())["inputs"]["board"] != board_id:
+        raise ValueError(f"The firmware in {build.as_posix()} is not for {board_id}.")
     board_data = firmware_artifacts.boards.load()
-    board = board_data["boards"][board_id]
+    board_entry = board_data["boards"][board_id]
     app, assets = firmware_artifacts.layout(root)
     if not (root / character_pack.CHARACTERS / "built-in.json").is_file():
         raise ValueError("characters/built-in.json is required for release packaging.")
@@ -58,10 +66,10 @@ def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_RE
     if not characters:
         raise ValueError("No character packs found in build/characters.")
     sources = (
-        "build/firmware/AgentCompanion.ino.bootloader.bin",
-        "build/firmware/AgentCompanion.ino.partitions.bin",
-        "build/firmware/boot_app0.bin",
-        "build/firmware/AgentCompanion.ino.bin",
+        (build / "AgentCompanion.ino.bootloader.bin").as_posix(),
+        (build / "AgentCompanion.ino.partitions.bin").as_posix(),
+        (build / "boot_app0.bin").as_posix(),
+        (build / "AgentCompanion.ino.bin").as_posix(),
         str(firmware_artifacts.DEFAULT_PACK),
     )
     regions = [(0, 0x8000), (0x8000, 0x1000), (0xe000, 0x2000),
@@ -76,7 +84,8 @@ def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_RE
         files[filename] = data
         images.append(dict(file=filename, offset=offset, max_size=budget, size=len(data), sha256=sha256(data)))
     manifest = dict(schema_version=1, name=name, version=version, board=board_id,
-                    chip=board["chip"], flash_size=board["flash_size"], asset_sha256=images[-1]["sha256"], images=images)
+                    chip=board_entry["chip"], flash_size=board_entry["flash_size"], asset_sha256=images[-1]["sha256"],
+                    images=images)
     validate_manifest(manifest, files)
     files["manifest.json"] = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     files["flash.py"] = (root / "tools/flash_release.py").read_bytes()
@@ -84,9 +93,9 @@ def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_RE
     if files["requirements.txt"] != REQUIREMENTS.encode():
         raise ValueError(f"requirements-flash.txt must be exactly: {REQUIREMENTS.strip()}")
     files["INSTALL.txt"] = (
-        f"{name} v{version} — {board['name']} ({board_id})\n"
-        f"Chip: {board['chip']} / {board['flash_size']} flash\n"
-        f"Flash this firmware only to: {board.get('models') or board['name']}.\n"
+        f"{name} v{version} — {board_entry['name']} ({board_id})\n"
+        f"Chip: {board_entry['chip']} / {board_entry['flash_size']} flash\n"
+        f"Flash this firmware only to: {board_entry.get('models') or board_entry['name']}.\n"
         "Firmware for a different board does not work and can stop the device until it is flashed again.\n\n"
         "Download both ZIPs and SHA256SUMS from a trusted release:\n"
         f"https://github.com/{repository}/releases/tag/v{version}\n"
@@ -109,8 +118,8 @@ def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_RE
         "  npm run character path/to/openclaw.acpk\n"
     ).encode("utf-8")
     # Recheck after reading so changes during packaging cannot create a mismatched release.
-    firmware_artifacts.check(root)
-    recorded = json.loads((root / firmware_artifacts.BUNDLE).read_text())
+    firmware_artifacts.check(root, board_id)
+    recorded = json.loads((root / bundle_path).read_text())
     expected = dict(recorded["binaries"])
     expected.update(recorded["inputs"]["files"])
     for filename, source in zip(IMAGE_NAMES, sources):
@@ -122,17 +131,23 @@ def package(root, version, name=RELEASE_NAME, output=None, repository=RELEASE_RE
     files["SHA256SUMS"] = checksum_file(files)
     output = Path(output) if output is not None else root / "build/release"
     output.mkdir(parents=True, exist_ok=True)
-    # The default board keeps the original name, which the companion daemon downloads.
-    board_suffix = "" if board_id == board_data["default"] else f"-{board_id}"
-    firmware_zip = output / f"{name}-v{version}{board_suffix}-firmware.zip"
+    # The default board keeps the original name, which earlier companion daemons download.
+    firmware_zip = output / firmware_zip_name(name, version, board_id, board_data["default"])
     characters_zip = output / f"{name}-v{version}-characters.zip"
     write_zip(firmware_zip, files)
     write_zip(characters_zip, characters)
-    (output / "SHA256SUMS").write_bytes(checksum_file({
-        firmware_zip.name: firmware_zip.read_bytes(),
-        characters_zip.name: characters_zip.read_bytes(),
-    }))
+    # Every board's firmware ZIP of this version that is in the folder, so packaging the boards one
+    # after another gives one SHA256SUMS for the release.
+    released = sorted(output.glob(f"{name}-v{version}-*firmware.zip")) + [characters_zip]
+    (output / "SHA256SUMS").write_bytes(checksum_file({path.name: path.read_bytes() for path in released}))
     return firmware_zip, characters_zip
+
+
+def firmware_zip_name(name, version, board_id, default_board):
+    """The release asset with a board's firmware. Keep this the same as firmwareAssetName in
+    daemon/src/firmware-release.ts."""
+    suffix = "" if board_id == default_board else f"-{board_id}"
+    return f"{name}-v{version}{suffix}-firmware.zip"
 
 
 def main(argv=None):
@@ -142,10 +157,14 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
     parser.add_argument("--repository", default=RELEASE_REPOSITORY,
                         help="Owner/repository for INSTALL links")
+    parser.add_argument("--all-boards", action="store_true",
+                        help="Package the firmware of every board in firmware/boards.json; each must be built")
     args = parser.parse_args(argv)
     try:
-        for path in package(ROOT, args.version, args.name, args.output, args.repository):
-            print(path)
+        board_ids = list(firmware_artifacts.boards.load()["boards"]) if args.all_boards else [None]
+        for board_id in board_ids:
+            for path in package(ROOT, args.version, args.name, args.output, args.repository, board_id):
+                print(path)
         print(args.output / "SHA256SUMS")
         return 0
     except (OSError, ValueError, KeyError, TypeError) as error:

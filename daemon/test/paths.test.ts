@@ -70,12 +70,17 @@ test('uses a per-user named pipe and LOCALAPPDATA on Windows', () => {
 test('reports the folder the daemon runs from, its version and its release firmware', () => {
   const root = mkdtempSync(join(tmpdir(), 'companion-root-'));
   try {
-    assert.deepEqual(serviceInfo(`${root}/`), {root, version: null, releaseFirmwareId: null});
+    assert.deepEqual(serviceInfo(`${root}/`), {root, version: null, releaseFirmwareIds: {}});
     writeFileSync(join(root, 'VERSION'), '0.8.0\n');
-    writeFileSync(join(root, 'RELEASE_FIRMWARE_ID'), 'not an id\n');
-    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0', releaseFirmwareId: null});
-    writeFileSync(join(root, 'RELEASE_FIRMWARE_ID'), '0123456789abcdef\n');
-    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0', releaseFirmwareId: '0123456789abcdef'});
+    writeFileSync(join(root, 'RELEASE_FIRMWARE_IDS'), 'not json\n');
+    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0', releaseFirmwareIds: {}});
+    writeFileSync(join(root, 'RELEASE_FIRMWARE_IDS'), '["0123456789abcdef"]\n');
+    assert.deepEqual(serviceInfo(root).releaseFirmwareIds, {});
+    writeFileSync(join(root, 'RELEASE_FIRMWARE_IDS'), JSON.stringify({
+      'waveshare-amoled-175': '0123456789abcdef', 'waveshare-lcd-154': 'fedcba9876543210',
+      '../bad': '0123456789abcdef', 'other-board': 'not an id'}));
+    assert.deepEqual(serviceInfo(root), {root, version: '0.8.0', releaseFirmwareIds: {
+      'waveshare-amoled-175': '0123456789abcdef', 'waveshare-lcd-154': 'fedcba9876543210'}});
   } finally {
     rmSync(root, {recursive: true, force: true});
   }

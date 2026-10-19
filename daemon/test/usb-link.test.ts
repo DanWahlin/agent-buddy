@@ -12,10 +12,12 @@ const openPort = MockBinding.open.bind(MockBinding);
 
 // A device on the mock port that answers INFO, orientation, state, and upload requests. After
 // an upload it restarts, and `silentAfterRestart` makes it stop answering, as a wedged USB link does.
-function fakeDevice(options: {silentAfterRestart: boolean; silent?: boolean; stuckDrain?: boolean}) {
+function fakeDevice(options: {silentAfterRestart: boolean; silent?: boolean; stuckDrain?: boolean;
+                             board?: string | null}) {
   MockBinding.reset();
   MockBinding.createPort(path, {echo: false, record: false, vendorId: '303a', productId: '1001'});
-  const state = {character: 'copilot', silent: options.silent ?? false, received: 0, uploading: false};
+  const state = {character: 'copilot', silent: options.silent ?? false, received: 0, uploading: false,
+                 board: options.board ?? null};
   MockBinding.open = async openOptions => {
     const binding: MockPortBinding = await openPort(openOptions);
     const write = binding.write.bind(binding);
@@ -37,7 +39,9 @@ function fakeDevice(options: {silentAfterRestart: boolean; silent?: boolean; stu
         else setTimeout(() => reply('READY: character=bunny'), 5);
         return;
       }
-      if (text === 'i') return reply(`INFO protocol=12 firmware=0123456789abcdef character=${state.character}`);
+      // The BOARD line comes in the same chunk as INFO, as the firmware sends them together.
+      if (text === 'i') return reply(`INFO protocol=12 firmware=0123456789abcdef character=${state.character}`
+        + (state.board ? `\nBOARD id=${state.board} variant=standard` : ''));
       if (text === 'o') return reply('ORIENTATION_SETTINGS offset_tenths=0');
       if (text === 'u') {
         state.uploading = true;
@@ -143,5 +147,38 @@ test('a request to a device that stops reading fails at its timeout and does not
   } finally {
     process.off('unhandledRejection', record);
     await usb.stop();
+  }
+});
+
+test('the USB link reports the board that the device names, and no board for firmware without the line', async () => {
+  const device = fakeDevice({silentAfterRestart: false, board: 'waveshare-lcd-154'});
+  const usb = new UsbTransport(undefined, undefined, {serial: SerialPortMock, requestTimeoutMs: 50});
+  try {
+    assert.equal(usb.board, null);
+    usb.start();
+    await until(() => usb.connected);
+    assert.equal(usb.board, 'waveshare-lcd-154');
+    // A restart into firmware without a BOARD line, which can't say its board.
+    device.board = null;
+    await usb.installCharacter(Buffer.alloc(8));
+    // The restart clears the board, and the INFO reply after it names none.
+    await until(() => usb.character === 'bunny' && usb.board === null);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(usb.board, null);
+    assert.equal(usb.connected, true);
+  } finally {
+    await usb.stop();
+  }
+  assert.equal(usb.board, null);
+
+  fakeDevice({silentAfterRestart: false});
+  const old = new UsbTransport(undefined, undefined, {serial: SerialPortMock, requestTimeoutMs: 50});
+  try {
+    old.start();
+    await until(() => old.connected);
+    assert.equal(old.connected, true);
+    assert.equal(old.board, null);
+  } finally {
+    await old.stop();
   }
 });

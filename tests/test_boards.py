@@ -67,6 +67,43 @@ class BoardTargetTests(unittest.TestCase):
                             r"\bkDisplayQspi\w+", r"\bkDisplayDcPin\b"):
                 self.assertNotRegex(text, pattern, path.relative_to(ROOT).as_posix())
 
+    def test_usb_info_reply_names_the_board(self):
+        # The app must install firmware only for the board the device runs. The `i` reply names it on
+        # its own BOARD line, after the INFO line.
+        sketch = (FIRMWARE / "AgentCompanion.ino").read_text()
+        info = sketch.index('logMessage("INFO protocol=')
+        board = sketch.index('logMessage("BOARD id=%s variant=%s\\n", board::kId, board::variantName(board::variant()));')
+        self.assertLess(info, board)
+        self.assertLess(board, sketch.index('logMessage("CHARACTER id=', info))
+        self.assertNotIn("board=%s", sketch[info:board])
+
+    def test_longest_usb_info_reply_fits_a_log_message(self):
+        # logMessage() drops a message longer than its buffer, and the app finds the device only by its
+        # INFO reply. Each %s field's longest value: a mode name, a 16-character pack id, a 32-byte
+        # SSID in base64, a 16-digit firmware ID, and the longest board variant name.
+        sketch = (FIRMWARE / "AgentCompanion.ino").read_text()
+        buffer = int(re.search(r"void logMessage\(const char\* format, \.\.\.\) \{.*?char message\[(\d+)\];",
+                               sketch, re.S).group(1))
+        start = sketch.index('logMessage("INFO protocol=') + len("logMessage(")
+        literals = re.match(r'(\s*"(?:[^"\\]|\\.)*")+', sketch[start:]).group(0)
+        info = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', literals)).replace("\\n", "\n")
+        variants = [variant for path in boards.BOARD_SOURCES.glob("*/Board*.h")
+                    for body in re.findall(r'variantName\(Variant[^)]*\)\s*\{[^}]*', path.read_text())
+                    for variant in re.findall(r'"([a-z0-9-]+)"', body)]
+        longest = {"mode": 9, "requested": 9, "character": 16, "ssid_b64": 44, "firmware": 16,
+                   "board_variant": max(map(len, variants))}
+        length, position = 0, 0
+        for match in re.finditer(r"(\w+)=%(llu|u|s)", info):
+            length += match.start() - position + len(match.group(1)) + 1
+            kind = match.group(2)
+            if kind == "s":
+                self.assertIn(match.group(1), longest, f"Give the longest value of {match.group(1)}=")
+            length += 20 if kind == "llu" else 10 if kind == "u" else longest[match.group(1)]
+            position = match.end()
+        length += len(info) - position
+        self.assertNotIn("%", info[position:])
+        self.assertLess(length, buffer)
+
     def test_build_keeps_the_core_defines(self):
         # The ESP32 core sets -DBOARD_HAS_PSRAM in build.defines, so the board define must not replace it.
         script = (ROOT / "tools/arduino.sh").read_text()

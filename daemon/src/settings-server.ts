@@ -8,6 +8,7 @@ import type {CompanionService} from './companion-service.js';
 import {isConnectionMode} from './connection-mode.js';
 import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
 import {settingsInfoPath} from './paths.js';
+import {isFirmwareBoard} from './firmware-release.js';
 import {isAgentId} from './agents/types.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 import {isOrientationOffset} from './orientation-settings.js';
@@ -179,7 +180,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         }
         if (segments[1] === 'device') {
           const body = await readJson(request) as {flash?: unknown; confirmed?: unknown; port?: unknown;
-            character?: unknown; display?: unknown} | null;
+            character?: unknown; display?: unknown; board?: unknown} | null;
           if (typeof body?.flash !== 'boolean' || body.confirmed !== true)
             throw new HttpError(400, 'Confirm the device setup first.');
           if (service.onboardingStatus().busy || service.installBusy)
@@ -189,7 +190,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
             throw new HttpError(409, 'Select and detect the device in setup first.');
           if (body.port !== setup.port || body.character !== setup.character || body.display !== setup.display)
             throw new HttpError(409, 'Device choices changed. Review and approve the current device setup again.');
-          service.setupOnboardingDevice(body.flash).catch(error =>
+          service.setupOnboardingDevice(body.flash, boardChoice(body.board)).catch(error =>
             console.error(`[onboarding] device setup failed: ${error instanceof Error ? error.message : String(error)}`));
           return json(response, 202, {ok: true});
         }
@@ -273,7 +274,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       return json(response, 202, {ok: true});
     }
     if (method === 'POST' && segments.length === 2 && segments[0] === 'firmware' && segments[1] === 'usb') {
-      const body = await readJson(request) as {port?: unknown; confirmed?: unknown} | null;
+      const body = await readJson(request) as {port?: unknown; confirmed?: unknown; board?: unknown} | null;
       if (body?.confirmed !== true) throw new HttpError(400, 'Confirm the supported device and firmware replacement first.');
       if (body.port !== undefined && body.port !== null && typeof body.port !== 'string')
         throw new HttpError(400, 'USB port must be a device path.');
@@ -285,8 +286,8 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       if (!status.firmware.usb.release)
         throw new HttpError(409, 'The companion service has no VERSION file, so it cannot choose a release.');
       // Download and write progress, and the result, arrive through /api/events.
-      service.installFirmwareOverUsb(typeof body.port === 'string' ? body.port : undefined).catch(error =>
-        console.error(`[settings] USB firmware install failed: ${error instanceof Error ? error.message : String(error)}`));
+      service.installFirmwareOverUsb(typeof body.port === 'string' ? body.port : undefined, boardChoice(body.board))
+        .catch(error => console.error(`[settings] USB firmware install failed: ${error instanceof Error ? error.message : String(error)}`));
       return json(response, 202, {ok: true});
     }
     if (method === 'GET' && segments.length === 2 && segments[0] === 'wifi' && segments[1] === 'networks') {
@@ -406,6 +407,13 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       json(response, status, {error: error instanceof Error ? error.message : String(error)});
     });
   });
+}
+
+// The board the person chose for a USB device that does not answer; null when none was chosen.
+function boardChoice(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (!isFirmwareBoard(value)) throw new HttpError(400, 'Choose a supported board.');
+  return value;
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {
