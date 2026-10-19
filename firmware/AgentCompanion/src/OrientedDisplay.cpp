@@ -6,8 +6,10 @@
 #include <esp_memory_utils.h>
 
 namespace copilot {
-OrientedDisplay::OrientedDisplay(board::DisplayPanel* panel, Arduino_DataBus* bus)
-    : Arduino_Canvas(kDisplaySize, kDisplaySize, nullptr), panel_(panel), bus_(bus) {}
+OrientedDisplay::OrientedDisplay(board::DisplayPanel* panel, Arduino_DataBus* bus,
+                                 const DisplayScanout& scanout, void (*setBrightness)(uint8_t))
+    : Arduino_Canvas(kDisplaySize, kDisplaySize, nullptr), panel_(panel), bus_(bus),
+      setBrightness_(setBrightness), dma_(scanout) {}
 
 bool OrientedDisplay::begin(int32_t speed) {
   error_ = nullptr;
@@ -28,7 +30,7 @@ bool OrientedDisplay::begin(int32_t speed) {
 bool OrientedDisplay::setTransferBuffer(uint8_t* buffer, size_t bytes) {
   error_ = nullptr;
   if (!buffer || reinterpret_cast<uintptr_t>(buffer) % alignof(uint32_t)
-      || !esp_ptr_dma_capable(buffer) || bytes < 2 * kDisplaySize * sizeof(uint16_t)
+      || !esp_ptr_dma_capable(buffer) || bytes < 2 * kPanelSize * sizeof(uint16_t)
       || bytes % (2 * alignof(uint32_t))) {
     error_ = "Invalid display transfer buffer.";
     return false;
@@ -74,8 +76,9 @@ bool OrientedDisplay::flushSource(const ScreenPixels& source) {
     return false;
   }
 
-  // Upright character frames keep the original direct, DMA-staged transfer.
-  if (angle() == 0.0f && source.order == Rgb565Order::Display) {
+  // Upright character frames keep the original direct, DMA-staged transfer when the panel shows
+  // content at full size. A smaller panel always scales through the transform below.
+  if (kPanelSize == kDisplaySize && angle() == 0.0f && source.order == Rgb565Order::Display) {
     if (frameMarginsDirty_) {
       panel_->fillRect(0, 0, kDisplaySize, source.y, 0);
       panel_->fillRect(0, source.y + source.height, kDisplaySize,
@@ -100,19 +103,19 @@ bool OrientedDisplay::flushSource(const ScreenPixels& source) {
     return true;
   }
 
-  const ScreenTransform transform(kDisplaySize, angle());
+  const ScreenTransform transform(kPanelSize, kDisplaySize, angle());
   const size_t capacity = dma_.bufferBytes() / sizeof(uint16_t);
   const int rowsPerBatch = static_cast<int>(std::min(
-      capacity / kDisplaySize, static_cast<size_t>(kDisplaySize)));
+      capacity / kPanelSize, static_cast<size_t>(kPanelSize)));
   panel_->startWrite();
-  panel_->writeAddrWindow(0, 0, kDisplaySize, kDisplaySize);
+  panel_->writeAddrWindow(0, 0, kPanelSize, kPanelSize);
   panel_->endWrite();
   if (!dma_.start()) {
     error_ = dma_.error();
     return false;
   }
-  for (int y = 0; y < kDisplaySize; y += rowsPerBatch) {
-    const int rows = std::min(rowsPerBatch, kDisplaySize - y);
+  for (int y = 0; y < kPanelSize; y += rowsPerBatch) {
+    const int rows = std::min(rowsPerBatch, kPanelSize - y);
     const int64_t waiting = esp_timer_get_time();
     auto* output = reinterpret_cast<uint16_t*>(dma_.acquire());
     writeUs_ += esp_timer_get_time() - waiting;
@@ -124,7 +127,7 @@ bool OrientedDisplay::flushSource(const ScreenPixels& source) {
     }
     const int64_t composed = esp_timer_get_time();
     composeUs_ += composed - started;
-    if (!dma_.submit(rows * kDisplaySize * sizeof(uint16_t))) break;
+    if (!dma_.submit(rows * kPanelSize * sizeof(uint16_t))) break;
     writeUs_ += esp_timer_get_time() - composed;
   }
   const int64_t waiting = esp_timer_get_time();

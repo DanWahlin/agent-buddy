@@ -7,6 +7,8 @@
 // tests/test_boards.py keeps this list, BoardDrivers.h, and firmware/boards.json in step.
 #if defined(AGENT_BOARD_WAVESHARE_AMOLED_175)
 #include "waveshare_amoled_175/BoardConfig.h"
+#elif defined(AGENT_BOARD_WAVESHARE_LCD_154)
+#include "waveshare_lcd_154/BoardConfig.h"
 #else  // The default board in firmware/boards.json.
 #include "waveshare_amoled_175/BoardConfig.h"
 #endif

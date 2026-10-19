@@ -83,11 +83,19 @@ a small board layer holds the parts that change from one model to a different mo
 
 | File | Contents |
 | --- | --- |
-| `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` and CI build. |
+| `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` builds without `BOARD` and that releases package. CI builds every board. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | The display bus and panel, the touch driver, `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver and `configureTouch()`, `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
 | `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, and Espressif's ES8311 driver. They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
+
+Every board draws the same 466 x 466 content (`kDisplaySize`): the character
+packs, the settings layouts, and the effects use that size. `kPanelSize` is the
+panel's own size. A panel smaller than the content shows all of it scaled down
+(to half size at most): `ScreenTransform` averages 2 x 2 blocks of content
+pixels while it rotates, and touch maps back through the same transform. A
+smaller panel also uses the compact settings layout (`compact_layout` in
+`SettingsMenu.h`) and one size larger text on the other screens (`kCompactUi`).
 
 A board's `accelerometer()` gives `begin()` (returns `nullptr` or the failure
 reason) and `read(x, y, z)` (returns `false` when no new sample is ready). The
@@ -103,16 +111,28 @@ copy.
 passes the board define with `--build-property compiler.cpp.extra_flags=-D<define>`
 (and the same for C). Do not set `build.defines`: the ESP32 core uses it for
 `-DBOARD_HAS_PSRAM`.
-`build/firmware-bundle.json` records the board, so an upload for a different
-`BOARD` fails until you build again. The release manifest, `INSTALL.txt`,
+The default board builds in `build/firmware`; each other board builds in
+`build/firmware-<board>`, so building one board leaves the others in place.
+`build/firmware-bundle.json` (or `build/firmware-<board>-bundle.json`) records
+the board, so an upload for a different `BOARD` fails until you build again. The release manifest, `INSTALL.txt`,
 `flash.py`, the boot log, and the Wi-Fi status (`"board"`) also show the board ID.
 
 ```bash
 python3 tools/boards.py list
 BOARD=waveshare-amoled-175 bash tools/arduino.sh build
+BOARD=waveshare-lcd-154 bash tools/arduino.sh build
 ```
 
-Supported now: `waveshare-amoled-175` (Waveshare ESP32-S3-Touch-AMOLED-1.75-B and -C).
+Supported now:
+
+| Board ID | Hardware | Display | Touch |
+| --- | --- | --- | --- |
+| `waveshare-amoled-175` (default) | Waveshare ESP32-S3-Touch-AMOLED-1.75-B and -C | CO5300 466 x 466 round AMOLED, QSPI | CST9217 |
+| `waveshare-lcd-154` | Waveshare ESP32-S3-Touch-LCD-1.54 | ST7789 240 x 240 IPS LCD, SPI, PWM backlight | CST816 |
+
+Both boards use the same pinned Waveshare libraries (from the AMOLED-1.75
+repository: GFX Library for Arduino 1.6.4 and SensorLib 0.3.1), so one
+`WAVESHARE_DIR` serves both.
 
 #### Add a board
 
@@ -125,18 +145,48 @@ Supported now: `waveshare-amoled-175` (Waveshare ESP32-S3-Touch-AMOLED-1.75-B an
 
 Known limits for boards that are not similar to the current board:
 
-- The display path (`OrientedDisplay`, `DisplayDma`) is a QSPI backend for
-  CO5300-type panels. A parallel RGB panel (for example ST7701) needs a
+- The display path (`OrientedDisplay`, `DisplayDma`) sends pixels by DMA over
+  a QSPI or SPI bus that the panel driver started: `displayScanout()` gives the
+  bus, the SPI mode, any pixel-write prefix, and the chip select and
+  data/command pins. A parallel RGB panel (for example ST7701) needs a
   different display backend.
-- Character packs and the renderer use 466 x 466 art. A different panel size
-  needs scaling in the renderer or different art.
+- Character packs and the renderer use 466 x 466 art. A panel from 233 to 466
+  pixels shows it scaled; a smaller or larger panel needs a different scale or
+  different art.
 - A board without an IMU or a speaker must still give `accelerometer()` and
   `audioOutput()`. Their `begin()` can return a reason, and the firmware then
   runs without orientation or sound.
 - The partition layout and `flash.py` expect an ESP32-S3 with 16 MB flash.
 - Each board other than the default gets its own release ZIP
   (`...-v<version>-<board>-firmware.zip`). The daemon's firmware update
-  downloads only the default board's ZIP.
+  downloads only the default board's ZIP, and releases package only the default
+  board today, so other boards install from source (`BOARD=<id> bash
+  tools/arduino.sh upload <port>`).
+
+#### Waveshare ESP32-S3-Touch-LCD-1.54
+
+Pins come from Waveshare's examples at revision
+`5157db7c888e476fd57f8a95020800377447478f` of
+[ESP32-S3-Touch-LCD-1.54](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.54).
+
+| Part | Pins |
+| --- | --- |
+| ST7789 display (SPI2, 40 MHz, mode 3) | SCK 38, MOSI 39, CS 21, DC 45, RST 40, backlight 46 (LEDC PWM, 5 kHz) |
+| CST816 touch | SDA 42, SCL 41, INT 48, RST 47, address 0x15 |
+| QMI8658 IMU | Same I2C bus, address 0x6B |
+| ES8311 codec | MCLK 8, BCLK 9, WS 10, DOUT 12, amplifier enable 7, address 0x18 |
+| Power | GPIO2 holds the board on when it runs on battery; `beginBoard()` sets it first |
+
+Notes for this board:
+
+- The QMI8658 sits a quarter turn from the panel, so `accelerometer()` turns
+  its axes into the orientation frame.
+- The panel is square and the content is round, so the corners stay black
+  around the character.
+- The amplifier needs about 150 ms after it turns on before it plays sound, so
+  `audioOutput()` waits that long before each sound.
+- The firmware does not use the PWR and PLUS buttons, the battery voltage, the
+  ES7210 microphones, the SD card, or the RTC yet.
 
 ### Reproduce the toolchain
 

@@ -91,14 +91,18 @@ jobs:
           arduino-cli --config-file "$config" config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
           arduino-cli --config-file "$config" core update-index
           arduino-cli --config-file "$config" core install "$ARDUINO_CORE"
-          # Each board in firmware/boards.json pins its vendor libraries to one revision.
+          # Each board in firmware/boards.json pins its vendor libraries to one revision. The boards
+          # share the same Waveshare library revision, so one checkout serves them all.
           python3 tools/boards.py fetch-vendor .deps/waveshare
       - name: Build matched firmware
         run: |
-          ARDUINO_CLI="$(command -v arduino-cli)" \
-          ARDUINO_CONFIG="$RUNNER_TEMP/arduino/arduino-cli.yaml" \
-          WAVESHARE_DIR="$GITHUB_WORKSPACE/.deps/waveshare" \
-          bash tools/arduino.sh build
+          export ARDUINO_CLI="$(command -v arduino-cli)"
+          export ARDUINO_CONFIG="$RUNNER_TEMP/arduino/arduino-cli.yaml"
+          export WAVESHARE_DIR="$GITHUB_WORKSPACE/.deps/waveshare"
+          # Every board must build. Releases package the default board, which builds in build/firmware.
+          for board in $(python3 tools/boards.py list); do
+            BOARD="$board" bash tools/arduino.sh build
+          done
       - name: Package firmware and character packs
         run: |
           python tools/package_release.py --version "$(cat VERSION)" \

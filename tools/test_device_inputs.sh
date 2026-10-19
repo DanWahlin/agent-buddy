@@ -8,9 +8,13 @@ for TEST in deadline touch_input button_input settings_menu device_commands scre
     "tests/test_${TEST}.cpp" -o "build/test-${TEST}"
   "build/test-${TEST}"
 done
-clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror \
-  -fsanitize=address,undefined -fno-omit-frame-pointer -Itests/display_stubs -DARDUINO_ARCH_ESP32 \
-  tests/test_oriented_display.cpp firmware/AgentCompanion/src/OrientedDisplay.cpp \
-  firmware/AgentCompanion/src/DisplayDma.cpp \
-  -o build/test-oriented_display
-build/test-oriented_display
+# The display scanout differs by board, so it is tested once for each board.
+for BOARD_ID in $(python3 tools/boards.py list); do
+  BOARD_DEFINE="$(python3 tools/boards.py field define --board "$BOARD_ID")"
+  clang++ -std=c++17 -O1 -g -Wall -Wextra -Werror \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -Itests/display_stubs -DARDUINO_ARCH_ESP32 \
+    "-D$BOARD_DEFINE" tests/test_oriented_display.cpp firmware/AgentCompanion/src/OrientedDisplay.cpp \
+    firmware/AgentCompanion/src/DisplayDma.cpp \
+    -o "build/test-oriented_display-$BOARD_ID"
+  "build/test-oriented_display-$BOARD_ID"
+done

@@ -8,7 +8,7 @@ bundle or a suitable Linux/WSL development environment.
 
 - Git and Python 3.10+.
 - [Arduino CLI](https://arduino.github.io/arduino-cli/installation/), version **1.5.1**.
-- A USB data cable and the supported Waveshare board.
+- A USB data cable and a supported Waveshare board (see [Boards](development.md#boards)).
 
 Clone this repository and run the following from its root. The `.deps` and `.venv`
 directories are local development files and are not committed.
@@ -38,6 +38,15 @@ bash tools/arduino.sh build
 `tools/arduino.sh` builds the default board in `firmware/boards.json`. To select a
 board, set `BOARD` (`python3 tools/boards.py list` shows the IDs). See
 [Boards](development.md#boards) to add a board.
+
+Release bundles are for the default board. For another board, such as the
+Waveshare ESP32-S3-Touch-LCD-1.54, build and upload from the same configured
+shell; both boards use the same `WAVESHARE_DIR`:
+
+```bash
+BOARD=waveshare-lcd-154 bash tools/arduino.sh build
+BOARD=waveshare-lcd-154 bash tools/arduino.sh upload /dev/cu.usbmodem2101
+```
 
 The resulting ZIP files are in `build/release/`. Extract the firmware ZIP and
 follow the [flashing steps](../README.md#step-1-flash-the-firmware). Alternatively, from the same

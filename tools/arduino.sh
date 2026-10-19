@@ -8,6 +8,8 @@ BOARD="${BOARD:-$(python3 "$ROOT/tools/boards.py" default)}"
 export BOARD
 FQBN="$(python3 "$ROOT/tools/boards.py" field fqbn)"
 BOARD_DEFINE="$(python3 "$ROOT/tools/boards.py" field define)"
+# The default board builds in build/firmware; other boards build in build/firmware-<board>.
+BUILD_DIR="$(python3 "$ROOT/tools/firmware_artifacts.py" build-dir)"
 # The ESP32 core stamps __DATE__ and __TIME__ into the firmware. A fixed time makes a release
 # build of the same sources byte-identical, so its firmware ID changes only with the firmware.
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
@@ -32,7 +34,7 @@ case "$ACTION" in
     echo "Building firmware for board $BOARD"
     "$CLI" --config-file "$CONFIG" core list --format json |
       python3 -c 'import json,sys; d=json.load(sys.stdin); platforms=d.get("platforms",d) if isinstance(d,dict) else d; assert any(p["id"]=="esp32:esp32" and p.get("installed_version")=="3.3.10" for p in platforms), "Install esp32:esp32@3.3.10 (see README)"'
-    mkdir -p "$ROOT/build/firmware"
+    mkdir -p "$BUILD_DIR"
     python3 "$ROOT/tools/firmware_artifacts.py" snapshot
     APP_SIZE="$(python3 "$ROOT/tools/firmware_artifacts.py" app-size)"
     "$CLI" --config-file "$CONFIG" compile --fqbn "$FQBN" \
@@ -40,13 +42,13 @@ case "$ACTION" in
       --build-property "compiler.c.extra_flags=-D$BOARD_DEFINE" \
       --build-property "compiler.cpp.extra_flags=-D$BOARD_DEFINE" \
       "${LIBRARY_ARGS[@]}" --warnings default \
-      --build-path "$ROOT/build/firmware" "$ROOT/firmware/AgentCompanion"
+      --build-path "$BUILD_DIR" "$ROOT/firmware/AgentCompanion"
     python3 "$ROOT/tools/firmware_artifacts.py" record
     ;;
   upload|upload-code)
     PORT="${2:-/dev/cu.usbmodem2101}"
-    if [[ ! -f "$ROOT/build/firmware/AgentCompanion.ino.bin" ]]; then
-      echo "Build first: bash tools/arduino.sh build" >&2
+    if [[ ! -f "$BUILD_DIR/AgentCompanion.ino.bin" ]]; then
+      echo "Build first: BOARD=$BOARD bash tools/arduino.sh build" >&2
       exit 1
     fi
     python3 "$ROOT/tools/character_pack.py" build
@@ -60,7 +62,7 @@ case "$ACTION" in
     fi
     "$CLI" --config-file "$CONFIG" upload --fqbn "$FQBN" \
       --upload-property "upload.extra_flags=$EXTRA_FILES" \
-      --port "$PORT" --input-dir "$ROOT/build/firmware" "$ROOT/firmware/AgentCompanion"
+      --port "$PORT" --input-dir "$BUILD_DIR" "$ROOT/firmware/AgentCompanion"
     sleep 2
     ;;
   monitor)

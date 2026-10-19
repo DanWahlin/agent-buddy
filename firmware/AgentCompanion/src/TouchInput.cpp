@@ -56,7 +56,8 @@ bool initializeTouchInput() {
     error = "Unexpected touch controller point capacity.";
     return false;
   }
-  controller.setMaxCoordinates(kDisplaySize - 1, kDisplaySize - 1);
+  board::configureTouch(controller);
+  controller.setMaxCoordinates(kPanelSize - 1, kPanelSize - 1);
   controller.setMirrorXY(kTouchMirrorX, kTouchMirrorY);
   Wire.setTimeOut(8);
   pinMode(kTouchInterrupt, INPUT_PULLUP);
@@ -91,7 +92,7 @@ bool pollTouchGesture(TouchGesture& gesture) {
   if (count) {
     int16_t transformedX, transformedY;
     if (!ScreenOrientation::panelToContent(
-            touchRotation, kDisplaySize, x[0], y[0], transformedX, transformedY)) {
+            touchRotation, kPanelSize, kDisplaySize, x[0], y[0], transformedX, transformedY)) {
       return tracker.sample(false, 0, 0, now, gesture);
     }
     x[0] = transformedX;

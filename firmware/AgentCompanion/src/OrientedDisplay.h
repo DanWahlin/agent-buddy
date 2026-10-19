@@ -9,7 +9,9 @@
 namespace copilot {
 class OrientedDisplay : public Arduino_Canvas {
  public:
-  OrientedDisplay(board::DisplayPanel* panel, Arduino_DataBus* bus);
+  // setBrightness is the board's brightness control: a panel command or a backlight.
+  OrientedDisplay(board::DisplayPanel* panel, Arduino_DataBus* bus, const DisplayScanout& scanout,
+                  void (*setBrightness)(uint8_t));
   bool begin(int32_t speed = GFX_NOT_DEFINED) override;
   void flush(bool forceFlush = false) override;
   bool flushFrame(const uint16_t* pixels, int x, int y, int width, int height);
@@ -17,7 +19,7 @@ class OrientedDisplay : public Arduino_Canvas {
   bool setTrim(float radians);
   float angle() const { return ScreenOrientation::shortestAngle(orientation_.angle() + trim_); }
   bool setTransferBuffer(uint8_t* buffer, size_t bytes);
-  void setBrightness(uint8_t brightness) { panel_->setBrightness(brightness); }
+  void setBrightness(uint8_t brightness) { setBrightness_(brightness); }
   const char* error() const { return error_; }
   uint32_t composeUs() const { return composeUs_; }
   uint32_t writeUs() const { return writeUs_; }
@@ -26,6 +28,7 @@ class OrientedDisplay : public Arduino_Canvas {
   bool flushSource(const ScreenPixels& source);
   board::DisplayPanel* panel_;
   Arduino_DataBus* bus_;
+  void (*setBrightness_)(uint8_t);
   uint8_t* transferBuffer_ = nullptr;
   size_t transferBytes_ = 0;
   DisplayOrientation orientation_;
