@@ -43,7 +43,7 @@ def release(version, root=ROOT, dry_run=False):
     if run(["git", "status", "--porcelain"], root):
         raise ValueError("Commit or stash current work before releasing; the worktree must be clean.")
     if shutil.which("git-cliff") is None:
-        raise ValueError("Install git-cliff before releasing (see docs/releases.md).")
+        raise ValueError("Install git-cliff before releasing, or run the Release workflow (see docs/releases.md).")
     tag = "v" + version
     run(["git", "fetch", "--quiet", "origin", "main", "--tags"], root)
     if run(["git", "rev-parse", "HEAD"], root) != run(["git", "rev-parse", "origin/main"], root):

@@ -1,0 +1,70 @@
+name: Release
+
+# Publishes a version from GitHub, so a release needs nothing installed on the maintainer's
+# computer. Run it from the Actions tab on main: it updates VERSION and CHANGELOG.md, commits,
+# tags vX.Y.Z, pushes both, then starts Build and Release on the tag, which publishes the files.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The next stable version, without a v (for example 0.14.17)
+        required: true
+        type: string
+      dry_run:
+        description: Only check that the release can be made
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    permissions:
+      # Push the release commit and tag.
+      contents: write
+      # A tag that this workflow's token pushes starts no workflow, so this one starts Build and Release.
+      actions: write
+    steps:
+      - name: Checkout main with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # tools/release.py pushes the commit and tag with this job's token.
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install git-cliff
+        run: python -m pip install --require-hashes -r requirements-release.txt
+      - name: Release
+        env:
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          # The release commit is the work of the person who ran this workflow.
+          git config user.name "$ACTOR"
+          git config user.email "$ACTOR_ID+$ACTOR@users.noreply.github.com"
+          if [ "$DRY_RUN" = true ]; then
+            python tools/release.py "$VERSION" --dry-run
+          else
+            python tools/release.py "$VERSION"
+          fi
+      - name: Start Build and Release on the tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh workflow run build.yml --ref "v$VERSION"
+          echo "Started Build and Release for v$VERSION. It publishes the release when every job passes:" >> "$GITHUB_STEP_SUMMARY"
+          echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/build.yml" >> "$GITHUB_STEP_SUMMARY"

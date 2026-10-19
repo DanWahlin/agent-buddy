@@ -241,7 +241,8 @@ jobs:
 
   release:
     needs: [build, daemon-windows, desktop]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # A tag pushed by hand, or a run on a tag that the Release workflow starts (its tag push starts no workflow).
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -255,7 +256,8 @@ jobs:
         id: changelog
         uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4
         with:
-          version: v2.14.1
+          # Keep the same as requirements-release.txt, which tools/release.py uses for CHANGELOG.md.
+          version: v2.14.2
           config: cliff.toml
           args: --latest --strip header
       - name: Download validated bundles

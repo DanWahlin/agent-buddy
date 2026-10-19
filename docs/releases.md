@@ -2,28 +2,41 @@
 
 This follows the Agent Arcade convention: stable `vX.Y.Z` tags trigger a build,
 `git-cliff` groups commit messages into release notes, and GitHub Actions publishes
-the downloadable files. Branch/PR builds and manual workflow runs validate and
-upload workflow artifacts without publishing a release.
+the downloadable files. Branch/PR builds and manual workflow runs on a branch
+validate and upload workflow artifacts without publishing a release.
 
 ## Publish a version
 
-Maintainers need Git, Python 3.10+, and [git-cliff](https://git-cliff.org/docs/installation/).
-On macOS, `brew install git-cliff` installs the changelog tool.
+Merge the intended changes to `main` first. Then, on GitHub, open **Actions**,
+choose **Release**, select **Run workflow** on `main`, and enter the next stable
+version without a `v` (for example `0.14.17`). Nothing needs to be installed on
+your computer. Check **Only check that the release can be made** for a dry run.
 
-Commit and push the intended changes to `main` first. Then, from the repository root:
+The workflow runs [`tools/release.py`](../tools/release.py) on a GitHub runner with
+a pinned `git-cliff` ([`requirements-release.txt`](../requirements-release.txt)).
+The helper checks that `main` matches `origin/main` and the tag is unused. It
+updates only `VERSION` and `CHANGELOG.md`, commits them as the person who ran the
+workflow, creates an annotated tag, then atomically pushes the branch and tag. It
+never stages unrelated files or force-pushes.
+
+**A run without the dry run publishes a tag, then starts Build and Release on it.**
+A tag that a workflow's token pushes starts no workflow by itself, so the Release
+workflow starts Build and Release, which publishes the release when every job passes.
+A manual Build and Release run on a `v*` tag publishes that release again.
+
+### From a computer
+
+The same helper runs locally with Git, Python 3.10+, and
+[git-cliff](https://git-cliff.org/docs/installation/) (`brew install git-cliff` on
+macOS). From the repository root, on an up-to-date `main`:
 
 ```bash
 python3 tools/release.py 0.1.0 --dry-run
 python3 tools/release.py 0.1.0
 ```
 
-Use the next unused stable version. The helper checks that the worktree is clean,
-local `main` matches `origin/main`, and the tag is unused. It updates only `VERSION`
-and `CHANGELOG.md`, commits them, creates an annotated tag, then atomically pushes
-the branch and tag. It never stages unrelated files or force-pushes.
-
-**The second command publishes a tag and starts the release workflow.** If the
-final push fails, the local commit/tag remain for inspection; there is no automatic
+A tag pushed from a computer starts Build and Release itself. If the final push
+fails, the local commit/tag remain for inspection; there is no automatic
 rollback. After resolving the remote problem, push that existing release rather
 than rerunning the helper:
 
