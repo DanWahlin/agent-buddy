@@ -62,6 +62,11 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   In CI, the packs come from the release's `-characters.zip`, and
   `--release-firmware <firmware.zip>` records the release firmware ID in
   `RELEASE_FIRMWARE_ID`, so Settings can show that a firmware update is available.
+  For Windows targets it also rebuilds serialport's native binding from source with
+  [`scripts/serialport-windows.mjs`](apps/desktop/scripts/serialport-windows.mjs),
+  because the published binding cannot write to the device's USB port on Windows on
+  Arm (serialport/bindings-cpp#241). That step needs Visual Studio's C++ build tools
+  for the target architecture, and Python, as GitHub's Windows runners have.
 - [`tauri.daemon.conf.json`](apps/desktop/src-tauri/tauri.daemon.conf.json)
   adds that folder to the app's resources. A build without it (`npm start`,
   `cargo run`) carries no service and never installs one.

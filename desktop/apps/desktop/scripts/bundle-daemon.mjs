@@ -17,6 +17,8 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {builtInPackFiles} from './character-packs.mjs';
+import {PermanentError, retry} from './retry.mjs';
+import {buildPatchedWindowsBinding} from './serialport-windows.mjs';
 
 // Keep this the same as the Node.js in .github/workflows/build.yml.
 const NODE_VERSION = '24.21.0';
@@ -62,9 +64,14 @@ function run(command, args, cwd) {
 }
 
 async function download(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Could not download ${url}: HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  return retry(`Downloading ${url}`, async () => {
+    const response = await fetch(url);
+    if (response.ok) return Buffer.from(await response.arrayBuffer());
+    const message = `Could not download ${url}: HTTP ${response.status}`;
+    // A missing file stays missing; a busy server may answer the next time.
+    throw response.status < 500 && response.status !== 408 && response.status !== 429
+      ? new PermanentError(message) : new Error(message);
+  });
 }
 
 // A file of the Node.js release, checked against the release's SHASUMS256.txt.
@@ -131,6 +138,18 @@ async function main() {
     }
   }
   if (readdirSync(prebuilds).length === 0) throw new Error(`serialport has no prebuilt binding for ${target}.`);
+  if (platform === 'win32') {
+    // The published Windows binding cannot write to the device's USB port; see serialport-windows.mjs.
+    for (const arch of arches) {
+      console.log(`Building serialport's Windows binding for ${arch}`);
+      await buildPatchedWindowsBinding({
+        bindings: join(runtimeDaemon, 'node_modules', '@serialport', 'bindings-cpp'),
+        arch,
+        nodeVersion: NODE_VERSION,
+        nodeGyp: join(daemon, 'node_modules', 'node-gyp', 'bin', 'node-gyp.js'),
+      });
+    }
+  }
 
   mkdirSync(join(output, 'build', 'characters'), {recursive: true});
   for (const file of packFiles) cpSync(join(packs, file), join(output, 'build', 'characters', file));

@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import {execFile} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {promisify} from 'node:util';
-import {createServiceRestartPlan, createServiceStopPlan, createUninstallPlan, uninstallScript, type UninstallContext} from '../src/uninstaller.js';
+import {createServiceRestartPlan, createServiceStopPlan, createUninstallPlan, uninstallScript, type UninstallContext}
+  from '../src/uninstaller.js';
 
 const mac: UninstallContext = {
   platform: 'darwin',
@@ -173,4 +174,37 @@ test('a restart plan asks the service manager to start the service again', () =>
   assert.deepEqual(createServiceRestartPlan('linux', 1000).after,
                    [['systemctl', '--user', 'restart', 'esp32-agent-companion.service']]);
   assert.doesNotMatch(uninstallScript(createServiceRestartPlan('linux', 1000)), /rm -rf/);
+});
+
+// The launcher ends the service while its uninstall script runs, so the script must outlive it,
+// and it must be able to remove the folder the service ran in.
+test('a Windows script outlives the service that started it', {skip: process.platform !== 'win32' && 'Windows only'},
+     async t => {
+  const folder = await mkdtemp(join(tmpdir(), 'agent-companion-uninstall-'));
+  t.after(() => rm(folder, {recursive: true, force: true}));
+  const started = join(folder, 'started.txt');
+  const marker = join(folder, 'ran.txt');
+  const runtime = join(folder, 'runtime');
+  await mkdir(runtime);
+  const module = new URL('../src/uninstaller.js', import.meta.url).href;
+  const quote = (path: string) => `'${path.replace(/'/g, "''")}'`;
+  // The real script stops the launcher, which then ends the service, so the service ends only once
+  // the script runs. A slow computer can take seconds to start PowerShell.
+  const script = `Set-Content -LiteralPath ${quote(started)} -Value started\r\nStart-Sleep -Seconds 2\r\n`
+    + `Remove-Item -LiteralPath ${quote(runtime)} -Recurse -Force\r\nSet-Content -LiteralPath ${quote(marker)} -Value ran\r\n`;
+  const service = spawn(process.execPath, ['--input-type=module', '-e', `
+    const {startWindowsScript} = await import(${JSON.stringify(module)});
+    startWindowsScript(${JSON.stringify(script)});
+    setInterval(() => {}, 1000);`], {cwd: runtime, stdio: 'ignore'});
+  for (let waited = 0; !existsSync(started) && waited < 30_000; waited += 100)
+    await new Promise(resolve => setTimeout(resolve, 100));
+  assert.ok(existsSync(started), 'the script did not start');
+  // As the launcher does: TerminateProcess, with no chance to clean up.
+  service.kill('SIGKILL');
+  await new Promise(resolve => service.once('exit', resolve));
+  assert.equal(existsSync(marker), false);
+  for (let waited = 0; !existsSync(marker) && waited < 15_000; waited += 250)
+    await new Promise(resolve => setTimeout(resolve, 250));
+  assert.equal((await readFile(marker, 'utf8')).trim(), 'ran');
+  assert.equal(existsSync(runtime), false);
 });

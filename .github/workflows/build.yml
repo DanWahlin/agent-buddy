@@ -117,8 +117,13 @@ jobs:
   daemon-windows:
     # The companion service on native Windows: named pipes, the Run key, PowerShell
     # hooks, %LOCALAPPDATA% paths and WSL path mapping. The Rust launcher's tests run
-    # on Windows in desktop.yml.
-    runs-on: windows-latest
+    # on Windows in desktop.yml. Both runners also build the fixed serialport binding
+    # that the release bundles (desktop/apps/desktop/scripts/serialport-windows.mjs).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: daemon
@@ -136,6 +141,11 @@ jobs:
       - run: npm ci
       - name: Test companion daemon
         run: npm test
+      - name: Build and load the fixed serialport binding
+        working-directory: .
+        env:
+          AGENT_COMPANION_BUILD_SERIALPORT: '1'
+        run: node --test desktop/engine/test/serialport-windows.test.mjs
 
   desktop:
     # The desktop app, ready to run: no Rust or Emscripten needed to use it.
@@ -231,7 +241,8 @@ jobs:
 
   release:
     needs: [build, daemon-windows, desktop]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # A tag pushed by hand, or a run on a tag that the Release workflow starts (its tag push starts no workflow).
+    if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -245,7 +256,8 @@ jobs:
         id: changelog
         uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4
         with:
-          version: v2.14.1
+          # Keep the same as requirements-release.txt, which tools/release.py uses for CHANGELOG.md.
+          version: v2.14.2
           config: cliff.toml
           args: --latest --strip header
       - name: Download validated bundles

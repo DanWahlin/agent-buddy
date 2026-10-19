@@ -58,8 +58,13 @@ export function hasCommand(name: string, ctx: AgentContext): boolean {
 const versions = new Map<string, string | undefined>();
 const probing = new Set<string>();
 const versionTimeoutMs = 5000;
+// A failed probe is tried again a few times, for an agent that starts slowly the first time or that
+// Smart App Control blocks for a while. Each try can show a Smart App Control notice, so they stop.
+const versionRetryDelaysMs = [60_000, 10 * 60_000];
+const failedProbes = new Map<string, {count: number; retryAt: number}>();
 
-export function versionOf(command: string, ctx: AgentContext): string | undefined {
+export function versionOf(command: string, ctx: AgentContext,
+                          retryDelaysMs: readonly number[] = versionRetryDelaysMs): string | undefined {
   const executable = findExecutable(command, ctx.env, ctx.platform);
   if (!executable) return undefined;
   let key: string;
@@ -70,11 +75,19 @@ export function versionOf(command: string, ctx: AgentContext): string | undefine
     return undefined;
   }
   if (versions.has(key)) return versions.get(key);
+  if (Date.now() < (failedProbes.get(key)?.retryAt ?? 0)) return undefined;
   if (!probing.has(key)) {
     probing.add(key);
     void probeVersion(executable, ctx).then(version => {
-      versions.set(key, version);
       probing.delete(key);
+      const count = (failedProbes.get(key)?.count ?? 0) + 1;
+      const delay = retryDelaysMs[count - 1];
+      if (version !== undefined || delay === undefined) {
+        versions.set(key, version);
+        failedProbes.delete(key);
+      } else {
+        failedProbes.set(key, {count, retryAt: Date.now() + delay});
+      }
     });
   }
   return undefined;

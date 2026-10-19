@@ -1,5 +1,5 @@
 import {existsSync, readFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {join, win32} from 'node:path';
 import {isRecord, writeTextAtomically, removeFile} from './file-utils.js';
 import {attentionPayload, canonicalEvent, namespacePayload, normalized} from './normalize.js';
 import {versionOf} from './commands.js';
@@ -20,7 +20,8 @@ export const copilotAdapter: AgentAdapter = {
     return copilotHookStatus(ctx);
   },
   async install(ctx) {
-    await writeTextAtomically(copilotHookPath(ctx.home, ctx.env), `${JSON.stringify(createCopilotHooks(ctx.node, ctx.cli), null, 2)}\n`);
+    await writeTextAtomically(copilotHookPath(ctx.home, ctx.env),
+      `${JSON.stringify(createCopilotHooks(ctx.node, ctx.cli, ctx.platform, ctx.env), null, 2)}\n`);
   },
   async uninstall(ctx) {
     await removeFile(copilotHookPath(ctx.home, ctx.env));
@@ -80,11 +81,32 @@ export function copilotAppVersion(ctx: AgentContext,
   return undefined;
 }
 
-export function createCopilotHooks(node: string, cli: string): object {
+// Copilot denies every tool call when a preToolUse hook cannot run, and a running session keeps
+// the hooks it loaded at its start. So after an uninstall removes Node.js and the CLI, such a
+// session could use no tool until it restarted. The system shell, which is always there, runs
+// the hook only while Node.js and the CLI are on disk. Otherwise it reads the event that Copilot
+// writes to it, so that write can't fail, and exits with 0.
+export function copilotHookCommand(node: string, cli: string, event: string, platform: NodeJS.Platform,
+                                   env: NodeJS.ProcessEnv): {exec: string; args: string[]} {
+  const hook = [cli, 'hook', 'copilot', event];
+  if (platform !== 'win32') {
+    return {exec: '/bin/sh', args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && exec "$0" "$@"; while read -r _; do :; done',
+                                    node, ...hook]};
+  }
+  // Copilot quotes an argument for cmd.exe only when it has a space, so a path with a character
+  // that cmd.exe reads in its command line runs Node.js directly, as before.
+  if ([node, cli].some(path => /["%^&|<>()!,;=]/.test(path))) return {exec: node, args: hook};
+  const root = env.SystemRoot?.trim() || env.windir?.trim() || 'C:\\Windows';
+  return {exec: win32.join(root, 'System32', 'cmd.exe'),
+          args: ['/d', '/c', 'if', 'exist', node, '(if', 'exist', cli, '(', node, ...hook, ')', 'else', 'more', '>nul)',
+                 'else', 'more', '>nul']};
+}
+
+export function createCopilotHooks(node: string, cli: string, platform: NodeJS.Platform = process.platform,
+                                   env: NodeJS.ProcessEnv = process.env): object {
   const command = (event: string) => [{
     type: 'command',
-    exec: node,
-    args: [cli, 'hook', 'copilot', event],
+    ...copilotHookCommand(node, cli, event, platform, env),
     timeoutSec: 2,
   }];
   return {
@@ -108,6 +130,16 @@ export function createCopilotHooks(node: string, cli: string): object {
   };
 }
 
+// The Node.js and CLI of a companion hook: `<node> <cli> hook copilot EVENT` run directly, as earlier
+// versions wrote it, or through the system shell, with Node.js and the CLI just before `hook`.
+export function parseCopilotHookEntry(exec: unknown, args: unknown[]): {node: string; cli: string} | undefined {
+  const at = args.findIndex((arg, index) => arg === 'hook' && args[index + 1] === 'copilot');
+  if (at < 1) return undefined;
+  const cli = args[at - 1];
+  const node = at === 1 ? exec : args[at - 2];
+  return typeof cli === 'string' && typeof node === 'string' ? {node, cli} : undefined;
+}
+
 // The file is ours alone, so a file without readable companion hooks is 'outdated', not 'missing'.
 function copilotHookStatus(ctx: AgentContext): HookStatus {
   const path = copilotHookPath(ctx.home, ctx.env);
@@ -119,9 +151,8 @@ function copilotHookStatus(ctx: AgentContext): HookStatus {
     for (const [event, entries] of Object.entries(hooks)) {
       for (const entry of Array.isArray(entries) ? entries : []) {
         if (!isRecord(entry) || !Array.isArray(entry.args)) continue;
-        const [cli, verb, agent] = entry.args as unknown[];
-        if (typeof cli !== 'string' || verb !== 'hook' || agent !== 'copilot') continue;
-        found.push({event, node: String(entry.exec ?? ''), cli});
+        const hook = parseCopilotHookEntry(entry.exec, entry.args as unknown[]);
+        if (hook) found.push({event, ...hook});
       }
     }
   } catch {
