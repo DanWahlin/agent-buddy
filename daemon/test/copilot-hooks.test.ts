@@ -4,6 +4,7 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {copilotHookCommand, createCopilotHooks, parseCopilotHookEntry} from '../src/agents/copilot.js';
 
 const windowsEnv = {SystemRoot: 'C:\\Windows'};
@@ -12,11 +13,12 @@ test('Copilot hooks run through the system shell', () => {
   assert.deepEqual(copilotHookCommand('C:\\A B\\node.exe', 'C:\\A B\\cli.js', 'preToolUse', 'win32', windowsEnv), {
     exec: 'C:\\Windows\\System32\\cmd.exe',
     args: ['/d', '/c', 'if', 'exist', 'C:\\A B\\node.exe', '(if', 'exist', 'C:\\A B\\cli.js', '(', 'C:\\A B\\node.exe',
-           'C:\\A B\\cli.js', 'hook', 'copilot', 'preToolUse', ')', 'else', 'more', '>nul)', 'else', 'more', '>nul'],
+           'C:\\A B\\cli.js', 'hook', 'copilot', 'preToolUse', '&', 'more', '>nul', ')', 'else', 'more', '>nul)', 'else',
+           'more', '>nul'],
   });
   assert.deepEqual(copilotHookCommand('/a b/node', '/a b/cli.js', 'preToolUse', 'darwin', {}), {
     exec: '/bin/sh',
-    args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && exec "$0" "$@"; while read -r _; do :; done', '/a b/node',
+    args: ['-c', '[ -x "$0" ] && [ -f "$1" ] && "$0" "$@"; cat >/dev/null 2>&1 || while read -r _; do :; done', '/a b/node',
            '/a b/cli.js', 'hook', 'copilot', 'preToolUse'],
   });
   // cmd.exe would read these characters, so Node.js runs directly.
@@ -83,7 +85,55 @@ process.stdin.on('data', chunk => input += chunk).on('end', () =>
   await writeFile(kept, 'process.stdin.resume().on("end", () => process.exit(3));\n');
   const noNode = copilotHookCommand(join(runtime, 'node.exe'), kept, 'preToolUse', process.platform, process.env);
   assert.deepEqual(await runHook(noNode, large), {code: 0, writeFailed: false});
-  // The hook's own exit code still comes back.
-  assert.deepEqual(await runHook(copilotHookCommand(process.execPath, kept, 'preToolUse', process.platform, process.env),
-                                 '{}'), {code: 3, writeFailed: false});
+  // A CLI that fails, as while an uninstall removes the runtime or when a module can't load, still
+  // lets the tool call run: the hook exits with 0, and the rest of the event is read.
+  const failing = copilotHookCommand(process.execPath, kept, 'preToolUse', process.platform, process.env);
+  assert.deepEqual(await runHook(failing, '{}'), {code: 0, writeFailed: false});
+  await writeFile(kept, 'process.exit(1);\n');
+  assert.deepEqual(await runHook(failing, large), {code: 0, writeFailed: false});
+  await writeFile(kept, 'import "./missing-module.js";\n');
+  assert.deepEqual(await runHook(failing, large), {code: 0, writeFailed: false});
+  // Copilot stops a hook after 2 seconds and then denies the call, so even a large event is read
+  // well within that.
+  if (process.platform !== 'win32') {
+    const started = Date.now();
+    assert.deepEqual(await runHook(failing, JSON.stringify({toolArgs: 'x'.repeat(8 * 1024 * 1024)})),
+                     {code: 0, writeFailed: false});
+    assert.ok(Date.now() - started < 1500, `reading 8 MB took ${Date.now() - started} ms`);
+  }
+});
+
+test('a hook loads neither the daemon nor the serial port, so it starts fast and a native module cannot break it',
+     async t => {
+  const folder = await mkdtemp(join(tmpdir(), 'hook-imports-'));
+  t.after(() => rm(folder, {recursive: true, force: true}));
+  // Any import of these fails, as a native module that cannot load would.
+  const guard = join(folder, 'guard.mjs');
+  await writeFile(guard, `import {registerHooks} from 'node:module';
+registerHooks({resolve(specifier, context, next) {
+  if (specifier === 'serialport' || specifier.startsWith('@serialport/') || /[\\\\/]daemon\\.js$/.test(specifier)
+      || specifier === './daemon.js') throw new Error('loaded ' + specifier);
+  return next(specifier, context);
+}});
+`);
+  const cli = fileURLToPath(new URL('../src/cli.js', import.meta.url));
+  const code = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', pathToFileURL(guard).href, cli, 'hook', 'copilot', 'preToolUse'], {
+      stdio: ['pipe', 'ignore', 'inherit'],
+      env: {...process.env, AGENT_COMPANION_SOCKET: join(folder, 'no-daemon.sock')},
+    });
+    child.once('error', reject);
+    child.once('close', resolve);
+    child.stdin.end('{"toolName":"bash"}');
+  });
+  assert.equal(code, 0);
+  // The guard works: the daemon command does load it.
+  const daemon = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', pathToFileURL(guard).href, cli, 'daemon'], {
+      stdio: 'ignore', env: {...process.env, AGENT_COMPANION_SOCKET: join(folder, 'no-daemon.sock')},
+    });
+    child.once('error', reject);
+    child.once('close', resolve);
+  });
+  assert.notEqual(daemon, 0);
 });
