@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.15.2]
+
+### Other changes
+
+- Sign the Windows desktop apps with Azure Artifact Signing (#42)
+
 ## [v0.15.1]
 
 ### Other changes
