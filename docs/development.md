@@ -157,15 +157,23 @@ Known limits for boards that are not similar to the current board:
   `audioOutput()`. Their `begin()` can return a reason, and the firmware then
   runs without orientation or sound.
 - The partition layout and `flash.py` expect an ESP32-S3 with 16 MB flash.
-- Each board other than the default gets its own release ZIP
-  (`...-v<version>-<board>-firmware.zip`). The daemon's firmware update
-  downloads only the default board's ZIP, and releases package only the default
-  board today, so other boards install from source (`BOARD=<id> bash
-  tools/arduino.sh upload <port>`). The app installs the release firmware only on a
-  device that names the release board, over Wi-Fi (`"board"`) or USB (the `BOARD`
-  line), or that names none (firmware from before boards). Settings and setup show
-  **Other board** for any other board. A device that does not answer can't name its
-  board, so the app asks you to confirm it before it installs.
+- Every release has a firmware ZIP for each board in `firmware/boards.json`:
+  `...-v<version>-firmware.zip` for the default board (the name from before there
+  were other boards) and `...-v<version>-<board>-firmware.zip` for each other one
+  (`tools/package_release.py --all-boards`). Each ZIP's `manifest.json` names its
+  `board`. Add a new board to `firmwareBoards` in `daemon/src/firmware-release.ts`
+  too; a daemon test checks that the two lists match.
+- The app installs only the firmware for the device's board. A device that answers
+  over USB names its board (the `BOARD` line; firmware from before boards names
+  none and is the default board), and that board wins: a different choice is
+  refused. A device that does not answer can't name its board, so setup and
+  Settings ask the person to choose it, and the confirmation names the board. The
+  daemon checks the downloaded manifest's board, and the desktop app's flasher
+  (`--board <id>`) checks it again before it writes. A device of a board that
+  releases have no firmware for shows **Other board** and installs from source
+  (`BOARD=<id> bash tools/arduino.sh upload <port>`). Firmware written to the wrong
+  board can leave the screen dark; the ESP32-S3's ROM bootloader still works, so
+  hold BOOT while you connect USB and install the right board's firmware.
 
 #### Waveshare ESP32-S3-Touch-LCD-1.54
 
@@ -516,22 +524,28 @@ the Device tab install the release that matches
 the daemon's `VERSION` (`v<VERSION>`, not "latest"), so the firmware and the
 service always match. `POST /api/firmware/usb` starts it, and
 `status.firmware.usb` reports the release, the USB port, the stage, and the
-result. Its `releaseId` is the ID that the device reports when it runs the
-release firmware. The desktop build writes it to `RELEASE_FIRMWARE_ID` in the
-runtime (`bundle-daemon.mjs --release-firmware <zip>`), so Settings shows
-**Update available** before any download. A checkout has no such file, so
-`releaseId` comes from a release that an earlier install downloaded.
+result. `boards` lists every board that releases have firmware for, with each
+one's `releaseId`, the ID that the device reports when it runs that firmware;
+`releaseId` is the one for the connected device's board. The desktop build writes
+the IDs to `RELEASE_FIRMWARE_IDS` in the runtime (`bundle-daemon.mjs
+--release-firmware <zip>...`, one ZIP for each board), so Settings shows **Update
+available** before any download. A checkout has no such file, so the IDs come
+from releases that earlier installs downloaded. The request's `board` is the board
+the person chose for a device that does not answer (see [Boards](#boards)).
 
-1. `daemon/src/firmware-release.ts` downloads `SHA256SUMS` and
-   `agent-buddy-v<VERSION>-firmware.zip` from the GitHub release
-   (`AGENT_COMPANION_RELEASES_URL` overrides the base URL), checks the zip's
-   SHA-256, extracts `manifest.json` and `bin/`, checks the inner `SHA256SUMS`
-   and the manifest, and keeps the result in `<daemon data>/firmware/v<VERSION>`.
+1. `daemon/src/firmware-release.ts` downloads `SHA256SUMS` and the board's
+   firmware ZIP (`agent-buddy-v<VERSION>-firmware.zip` for the default board,
+   `agent-buddy-v<VERSION>-<board>-firmware.zip` for another) from the GitHub
+   release (`AGENT_COMPANION_RELEASES_URL` overrides the base URL), checks the
+   zip's SHA-256, extracts `manifest.json` and `bin/`, checks the inner
+   `SHA256SUMS` and the manifest, including its board, and keeps the result in
+   `<daemon data>/firmware/v<VERSION>` (`v<VERSION>-<board>` for another board).
    A later install uses that copy.
 2. The daemon closes its USB port and runs the desktop app's binary with
-   `--flash-firmware <folder> --port <port>` (`daemon/src/usb-flasher.ts`).
+   `--flash-firmware <folder> --port <port> --board <board>` (`daemon/src/usb-flasher.ts`).
 3. That mode ([`flasher.rs`](../desktop/apps/desktop/src-tauri/src/flasher.rs))
    checks the manifest again with the same rules as `tools/flash_release.py`,
+   and that it is for `--board`,
    then writes the five images with [espflash](https://github.com/esp-rs/espflash)
    and resets the device. If the write fails after the device connects, it
    connects again and writes once more; a connect failure is not tried again,

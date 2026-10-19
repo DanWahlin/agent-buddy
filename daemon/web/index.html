@@ -120,7 +120,7 @@
         <div id="ob-display-scene" class="ready-connection-scene"></div>
         <p id="ob-display-preview-fallback" class="hint" hidden>Still character preview unavailable.</p>
         <div id="ob-device-detection" hidden>
-        <p class="supported-device"><strong>Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C</strong><br><span id="ob-device-connection-hint">Connect it with a USB data cable. A charge-only cable cannot detect the device.</span></p>
+        <p class="supported-device"><strong>Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C, or ESP32-S3-Touch-LCD-1.54</strong><br><span id="ob-device-connection-hint">Connect it with a USB data cable. A charge-only cable cannot detect the device.</span></p>
         <button type="button" class="secondary" data-action="detect-device">Detect Device</button>
         <label id="ob-port-label" class="port-field" hidden>Select the USB device
           <select id="ob-port"></select>
@@ -129,7 +129,7 @@
           <p>For a paired Wi-Fi device, keep it powered on and on the same network as this computer. Agent Buddy checks its connection automatically.</p>
           <p>Try another USB data cable or USB port. Close any serial monitor that uses the device.</p>
           <p>On Linux, check serial-port permissions. On Windows, connect USB to the Windows desktop app, not to a WSL terminal.</p>
-          <p>USB detection cannot confirm the board model. Only install firmware on the supported Waveshare device.</p>
+          <p>A device without Agent Buddy firmware cannot report its board, so setup asks you to choose it. Firmware for a different board can stop the device.</p>
         </details>
         </div>
       </div>
@@ -155,6 +155,9 @@
         <details id="ob-firmware-options" class="device-help firmware-options" hidden>
           <summary id="ob-firmware-options-title">Install firmware</summary>
           <p id="ob-firmware-plan" class="hint"></p>
+          <label id="ob-board-label" class="port-field" hidden>Board
+            <select id="ob-board"></select>
+          </label>
           <div class="device-install-actions">
             <button type="button" id="ob-install-firmware" data-action="install-firmware">Install firmware</button>
           </div>
@@ -416,6 +419,9 @@
           <div class="field-row"><select id="usb-firmware-port"><option value="">Detect a device first</option></select>
             <button type="button" class="secondary" id="usb-device-detect">Detect</button></div>
           <p id="usb-device-message" class="hint" role="status"></p>
+          <label for="usb-firmware-board">Board</label>
+          <select id="usb-firmware-board"><option value="">Select the board</option></select>
+          <p id="usb-board-message" class="hint">Each board has its own firmware. Firmware for a different board can stop the device.</p>
         </div>
         <div class="setting-row static usb-firmware-row">
         <span>

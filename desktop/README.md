@@ -60,8 +60,9 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   the official Node.js binary, checked against its `SHASUMS256.txt`. Node.js is
   about 128 MB for each architecture, and the universal macOS build has two.
   In CI, the packs come from the release's `-characters.zip`, and
-  `--release-firmware <firmware.zip>` records the release firmware ID in
-  `RELEASE_FIRMWARE_ID`, so Settings can show that a firmware update is available.
+  `--release-firmware <firmware.zip>...` (one ZIP for each board) records each
+  board's release firmware ID in `RELEASE_FIRMWARE_IDS`, so Settings can show that
+  a firmware update is available.
   For Windows targets it also rebuilds serialport's native binding from source with
   [`scripts/serialport-windows.mjs`](apps/desktop/scripts/serialport-windows.mjs),
   because the published binding cannot write to the device's USB port on Windows on

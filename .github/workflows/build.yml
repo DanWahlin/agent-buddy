@@ -99,13 +99,13 @@ jobs:
           export ARDUINO_CLI="$(command -v arduino-cli)"
           export ARDUINO_CONFIG="$RUNNER_TEMP/arduino/arduino-cli.yaml"
           export WAVESHARE_DIR="$GITHUB_WORKSPACE/.deps/waveshare"
-          # Every board must build. Releases package the default board, which builds in build/firmware.
+          # Every board must build. Releases carry a firmware ZIP for each board.
           for board in $(python3 tools/boards.py list); do
             BOARD="$board" bash tools/arduino.sh build
           done
       - name: Package firmware and character packs
         run: |
-          python tools/package_release.py --version "$(cat VERSION)" \
+          python tools/package_release.py --version "$(cat VERSION)" --all-boards \
             --repository "$GITHUB_REPOSITORY"
       - name: Upload release bundles
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -299,8 +299,9 @@ jobs:
             Choose your agents and approve any required hook changes. Choose a character and display option. For a new device, connect USB, detect the device, and confirm the supported Waveshare board before installing firmware and your character. Select **Finish** to open Settings.
             To replace firmware later, use **USB release install or recovery** on the **Device** tab.
 
-            Without the desktop app, download **firmware.zip** below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
-            It includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
+            Without the desktop app, download the firmware ZIP for your board below and follow the [installation guide](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#quick-start).
+            **firmware.zip** is for the Waveshare ESP32-S3-Touch-AMOLED-1.75. A ZIP named for another board, such as **waveshare-lcd-154-firmware.zip**, is for that board. Never flash one board's firmware to a different board.
+            Each ZIP includes the matching application, boot files, the default Copilot character, and a checksum-validating Python installer.
             Then run `npm run setup` from a clone of the repository.
 
             The **characters.zip** asset holds every built-in character pack. Install one from a source checkout with `npm run character path/to/openclaw.acpk`.

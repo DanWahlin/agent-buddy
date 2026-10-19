@@ -10,6 +10,10 @@ test('web alignment controls initialize once and send confirmed settings', async
       value: '0', disabled: false, checked: false, hidden: false, open: false, className: '',
       style: {setProperty() {}}, dataset: {} as Record<string, string>,
       children: [] as string[],
+      options: [] as Array<{text: string; value: string}>,
+      replaceChildren(...items: Array<{text: string; value: string}>) { this.options = items; },
+      add(item: {text: string; value: string}) { this.options.push(item); },
+      focus() {},
       get textContent() { return this.text; },
       set textContent(value: string) { this.text = value; if (value === '') this.children = []; },
       text: '',
@@ -33,6 +37,7 @@ test('web alignment controls initialize once and send confirmed settings', async
   const calls: Array<{path: string; offsetDegrees: number}> = [];
   const context = createContext({
     Onboarding: class { update() {} },
+    Option: class { constructor(readonly text: string, readonly value: string) {} },
     document: {
       getElementById: element, querySelectorAll: () => [], addEventListener() {},
       documentElement: {dataset: {theme: 'light'}},
@@ -108,11 +113,48 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('firmware-update').disabled, false);
   assert.equal(element('firmware-update').textContent, 'Update to v0.9.0');
   assert.equal(element('firmware-update').dataset.usb, 'true');
-  // A device of another board keeps its firmware: neither row offers the release firmware.
-  runInContext('status.firmware.board = "waveshare-lcd-154"; '
-    + 'status.firmware.usb.releaseBoard = "waveshare-amoled-175"; renderFirmware()', context);
+  // Each board has its own release firmware; a device that answers over USB decides the board.
+  runInContext('status.firmware.board = "waveshare-lcd-154"; status.firmware.usb.boards = ['
+    + '{id: "waveshare-amoled-175", name: "Waveshare ESP32-S3-Touch-AMOLED-1.75", '
+    + 'models: "Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C", releaseId: "bbbbbbbbbbbbbbbb"}, '
+    + '{id: "waveshare-lcd-154", name: "Waveshare ESP32-S3-Touch-LCD-1.54", '
+    + 'models: "Waveshare ESP32-S3-Touch-LCD-1.54", releaseId: "cccccccccccccccc"}]; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Update available');
+  assert.match(element('firmware-hint').textContent, /for the Waveshare ESP32-S3-Touch-LCD-1.54 is available/);
+  assert.deepEqual(element('usb-firmware-board').options.map(option => option.value),
+                   ['', 'waveshare-amoled-175', 'waveshare-lcd-154']);
+  assert.equal(element('usb-firmware-board').value, 'waveshare-lcd-154');
+  assert.equal(element('usb-firmware-board').disabled, true);
+  assert.match(element('usb-board-message').textContent, /reports that it is a Waveshare ESP32-S3-Touch-LCD-1.54/);
+  assert.equal(element('usb-firmware-install').disabled, false);
+  const installs: unknown[] = [];
+  const prompts: string[] = [];
+  context.installs = installs;
+  context.prompts = prompts;
+  runInContext('confirmAction = async message => { prompts.push(message); return true; }; '
+    + 'api = async (path, options) => { installs.push({path, body: JSON.parse(options.body)}); return {}; }; '
+    + 'toast = message => prompts.push(`toast: ${message}`); '
+    + '$("usb-firmware-port").value = "/dev/test"', context);
+  await runInContext('installReleaseOverUsb()', context);
+  assert.deepEqual(JSON.parse(JSON.stringify(installs)), [{path: '/api/firmware/usb', body: {port: '/dev/test', board: 'waveshare-lcd-154', confirmed: true}}]);
+  assert.match(prompts[0]!, /^Confirm that \/dev\/test is your Waveshare ESP32-S3-Touch-LCD-1.54\.\n\nInstall published release v0.9.0 for the Waveshare ESP32-S3-Touch-LCD-1.54\?/);
+  // A device that does not answer cannot say: the person must choose a board first.
+  runInContext('status.connected = false; $("usb-firmware-board").value = ""; renderFirmware()', context);
+  assert.equal(element('usb-firmware-board').disabled, false);
+  assert.equal(element('usb-firmware-board').value, '');
+  await runInContext('installReleaseOverUsb()', context);
+  assert.equal(installs.length, 1);
+  assert.equal(prompts.at(-1), 'toast: Select the board of the device, then install again.');
+  assert.equal(element('usb-firmware-recovery').open, true);
+  runInContext('$("usb-firmware-board").value = "waveshare-amoled-175"', context);
+  await runInContext('installReleaseOverUsb()', context);
+  assert.deepEqual(JSON.parse(JSON.stringify((installs[1] as {body: unknown}).body)), {port: '/dev/test', board: 'waveshare-amoled-175', confirmed: true});
+  assert.match(prompts.at(-1)!, /Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C/);
+  runInContext('status.connected = true; renderFirmware()', context);
+  // A board that releases have no firmware for keeps its own firmware: neither row offers one.
+  runInContext('status.firmware.board = "custom-board"; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Other board');
-  assert.match(element('firmware-hint').textContent, /waveshare-lcd-154 board.*BOARD=waveshare-lcd-154/);
+  assert.match(element('firmware-hint').textContent, /custom-board board, and releases have no firmware.*BOARD=custom-board/);
   assert.equal(element('device-update-badge').hidden, true);
   assert.equal(element('firmware-update').hidden, true);
   assert.equal(element('usb-firmware-state').textContent, 'Other board');
@@ -120,7 +162,7 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext('status.firmware.board = "waveshare-amoled-175"; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Update available');
   assert.equal(element('usb-firmware-install').disabled, false);
-  runInContext('status.firmware.board = null; delete status.firmware.usb.releaseBoard; renderFirmware()', context);
+  runInContext('status.firmware.board = null; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Update available');
   runInContext('status.firmware.usb.installing = {stage: "writing", percent: 5}; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Writing 5%');

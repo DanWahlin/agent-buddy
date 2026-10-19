@@ -28,6 +28,12 @@ export function isDeviceConnected(status, state) {
   return Boolean(status?.connected && (status.transport === 'wifi' || !state.port || status.port === state.port));
 }
 
+// The board a device that answers on the selected USB port reports, when releases have firmware for it.
+export function reportedBoard(status, state) {
+  const board = isDeviceConnected(status, state) && status.transport === 'usb' ? status.firmware?.board : null;
+  return status?.firmware?.usb?.boards?.some(entry => entry.id === board) ? board : null;
+}
+
 export function isDeviceReady(status, state) {
   return isDeviceConnected(status, state) && status.character === state.character;
 }
@@ -62,6 +68,9 @@ export class Onboarding {
     this.guideId = null;
     this.ports = [];
     this.portKey = '';
+    // The board chosen for a device that does not answer, so it cannot report it.
+    this.board = null;
+    this.boardKey = '';
     this.hookErrors = new Map();
     this.error = '';
     this.agentKey = '';
@@ -153,7 +162,10 @@ export class Onboarding {
         } else if (input.name === 'companion-display') {
           await this.save({display: value, deviceDeferred: false});
         } else if (input.id === 'ob-port') {
+          this.board = null;
           await this.save({port: value || null});
+        } else if (input.id === 'ob-board') {
+          this.board = value || null;
         }
       });
     });
@@ -399,19 +411,24 @@ export class Onboarding {
 
   async setupDevice(flash) {
     const choice = {port: this.state.port, character: this.state.character, display: this.state.display};
+    let board = null;
     if (flash) {
       if (!choice.port) throw new Error('Detect and select the USB device first.');
+      board = reportedBoard(this.status, this.state) ?? this.board;
+      const info = this.status.firmware?.usb?.boards?.find(entry => entry.id === board);
+      if (!info) throw new Error('Select the board of the device first.');
       const name = this.characters.find(entry => entry.id === choice.character)?.name ?? choice.character;
       const version = this.status.firmware?.usb?.release;
-      if (!await this.confirm(`Confirm that ${choice.port} is your Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C.\n\n`
-        + `This installs firmware${version ? ` v${version}` : ''}, then the ${name} character. `
+      if (!await this.confirm(`Confirm that ${choice.port} is your ${info.models}.\n\n`
+        + `This installs firmware${version ? ` v${version}` : ''} for the ${info.name}, then the ${name} character. `
+        + 'Firmware for a different board can stop the device. '
         + 'It replaces the existing firmware and partition table.', 'Confirm and install', null, {
           title: 'Install firmware and character?', context: 'Device setup',
           note: 'Back up other firmware first. Keep the USB data cable connected until setup finishes.',
         })) return;
     }
     await this.api('/api/onboarding/device', {
-      method: 'POST', type: 'application/json', body: JSON.stringify({flash, confirmed: true, ...choice}),
+      method: 'POST', type: 'application/json', body: JSON.stringify({flash, confirmed: true, ...choice, board}),
     });
     await this.refresh();
   }
@@ -726,15 +743,31 @@ export class Onboarding {
       firmware.open = !connected;
     }
     $('ob-firmware-options-title').textContent = connected ? 'Replace firmware (optional)' : 'Install firmware';
-    // Release firmware is for one board; a connected device of another board keeps its own firmware.
+    // Each board has its own firmware. A device that answers names its board; for one that does not,
+    // the person chooses it. A connected device of a board without release firmware keeps its own.
+    const boards = usb?.boards ?? [];
     const board = this.status.firmware?.board;
-    const otherBoard = connected && board && usb?.releaseBoard && board !== usb.releaseBoard;
+    const reported = reportedBoard(this.status, this.state);
+    const otherBoard = connected && board && !reported && !boards.some(entry => entry.id === board);
+    const chosen = boards.find(entry => entry.id === (reported ?? this.board));
+    const boardSelect = $('ob-board');
+    const key = JSON.stringify(boards.map(entry => entry.id));
+    if (key !== this.boardKey) {
+      this.boardKey = key;
+      boardSelect.replaceChildren(new Option('Select the board', ''));
+      for (const entry of boards) boardSelect.add(new Option(entry.models, entry.id));
+    }
+    boardSelect.value = chosen && !reported ? chosen.id : '';
+    $('ob-board-label').hidden = Boolean(reported || otherBoard);
     $('ob-firmware-plan').textContent = otherBoard
-      ? `This device is a ${board} board. The release firmware is for ${usb.releaseBoard}, so setup does not `
-        + `install it. Build and upload this board's firmware from source: BOARD=${board} bash tools/arduino.sh upload <port>.`
-      : `Installs firmware${usb?.release ? ` v${usb.release}` : ''}, then the ${name} character.`;
+      ? `This device is a ${board} board, and releases have no firmware for it, so setup does not install one. `
+        + `Build and upload this board's firmware from source: BOARD=${board} bash tools/arduino.sh upload <port>.`
+      : reported ? `Installs firmware${usb?.release ? ` v${usb.release}` : ''} for the ${chosen.name}, which the device `
+        + `reports, then the ${name} character.`
+      : 'The device does not report its board. Select its board, then install firmware and the '
+        + `${name} character. Firmware for a different board can stop the device.`;
     $('ob-install-firmware').disabled = busy || active || !this.state.port || !usb?.flasher || !usb?.release
-      || Boolean(otherBoard);
+      || Boolean(otherBoard) || !chosen;
     $('ob-install-firmware').textContent = usb?.release ? `Install firmware v${usb.release}` : 'Install firmware';
     $('ob-device-help').hidden = active;
     $('ob-firmware-retry-hint').textContent = wifi

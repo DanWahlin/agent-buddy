@@ -121,9 +121,11 @@ class FakeService extends EventEmitter {
   async updateFirmware() {
     this.firmwareUpdates += 1;
   }
-  async installFirmwareOverUsb(port?: string) {
+  usbInstallBoards: Array<string | null | undefined> = [];
+  async installFirmwareOverUsb(port?: string, board?: string | null) {
     this.usbInstalls += 1;
     this.usbInstallPorts.push(port);
+    this.usbInstallBoards.push(board);
   }
   onboardingStatus() {
     return {...this.setup, busy: this.setupBusy, phase: null, error: null};
@@ -172,9 +174,11 @@ class FakeService extends EventEmitter {
     this.setupActions.push('display');
   }
   setupDeviceProblem = false;
-  setupOnboardingDevice(flash: boolean) {
+  setupBoards: Array<string | null | undefined> = [];
+  setupOnboardingDevice(flash: boolean, board?: string | null) {
     if (this.setupDeviceProblem) throw new SetupError('The companion service is stopping.');
     this.setupActions.push(flash ? 'flash' : 'existing-firmware');
+    this.setupBoards.push(board);
     return Promise.resolve();
   }
   async finishOnboarding() {
@@ -553,6 +557,13 @@ test('validates and performs actions', async () => {
       body: '{"confirmed":true,"port":"/dev/test"}'})).status, 202);
     assert.equal(service.usbInstalls, 1);
     assert.deepEqual(service.usbInstallPorts, ['/dev/test']);
+    // The board chosen for a device that does not answer goes to the service; an unknown one is refused.
+    assert.equal((await call('/api/firmware/usb', {method: 'POST', headers: json,
+      body: '{"confirmed":true,"port":"/dev/test","board":"other-board"}'})).status, 400);
+    assert.equal((await call('/api/firmware/usb', {method: 'POST', headers: json,
+      body: '{"confirmed":true,"port":"/dev/test","board":"waveshare-lcd-154"}'})).status, 202);
+    assert.deepEqual(service.usbInstallBoards, [null, 'waveshare-lcd-154']);
+    service.usbInstalls = 1;
     service.firmware = {...service.firmware, usb: {...service.usbFirmware, flasher: false}};
     const noApp = await call('/api/firmware/usb', {method: 'POST', headers: json, body: '{"confirmed":true}'});
     assert.equal(noApp.status, 409);
@@ -609,6 +620,12 @@ test('onboarding APIs require authentication, valid choices, and explicit instal
     assert.equal((await post('/api/onboarding/device', {flash: false, confirmed: true,
       port: '/dev/test', character: 'copilot', display: 'both'})).status, 202);
     assert.deepEqual(service.setupActions, ['hooks', 'existing-firmware']);
+    assert.equal((await post('/api/onboarding/device', {flash: true, confirmed: true,
+      port: '/dev/test', character: 'copilot', display: 'both', board: '../x'})).status, 400);
+    assert.equal((await post('/api/onboarding/device', {flash: true, confirmed: true,
+      port: '/dev/test', character: 'copilot', display: 'both', board: 'waveshare-lcd-154'})).status, 202);
+    assert.deepEqual(service.setupBoards, [null, 'waveshare-lcd-154']);
+    service.setupActions.pop();
     assert.equal((await post('/api/onboarding/remove-agent', {agent: 'copilot', confirmed: false, agents: ['copilot']})).status, 400);
     assert.equal((await post('/api/onboarding/remove-agent', {agent: 'copilot', confirmed: true, agents: ['codex']})).status, 409);
     assert.deepEqual(service.setup.agents, ['copilot']);

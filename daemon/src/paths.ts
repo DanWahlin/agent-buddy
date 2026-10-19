@@ -7,27 +7,40 @@ export interface ServiceInfo {
   // The folder the daemon runs from: this repository, or the copy the desktop app installs.
   root: string;
   version: string | null;
-  // The ID of the release firmware for this version. The desktop build writes it
-  // (desktop/apps/desktop/scripts/bundle-daemon.mjs); a checkout has none.
-  releaseFirmwareId: string | null;
+  // The ID of each board's release firmware for this version, by board. The desktop build writes
+  // them (desktop/apps/desktop/scripts/bundle-daemon.mjs); a checkout has none.
+  releaseFirmwareIds: Record<string, string>;
 }
 
 // This file runs from daemon/dist/src, so the root is three folders up.
 export function serviceInfo(root = fileURLToPath(new URL('../../../', import.meta.url))): ServiceInfo {
   const trimmed = root.length > 1 ? root.replace(/[\\/]+$/, '') : root;
-  const releaseFirmwareId = readTrimmed(join(trimmed, 'RELEASE_FIRMWARE_ID'));
   return {
     root: trimmed,
     version: readTrimmed(join(trimmed, 'VERSION')),
-    releaseFirmwareId: releaseFirmwareId && /^[0-9a-f]{16}$/.test(releaseFirmwareId) ? releaseFirmwareId : null,
+    releaseFirmwareIds: readFirmwareIds(join(trimmed, 'RELEASE_FIRMWARE_IDS')),
   };
+}
+
+function readFirmwareIds(path: string): Record<string, string> {
+  const ids: Record<string, string> = {};
+  try {
+    const value: unknown = JSON.parse(readTrimmed(path) ?? '{}');
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return ids;
+    for (const [board, id] of Object.entries(value))
+      if (/^[a-z0-9][a-z0-9-]{0,63}$/.test(board) && typeof id === 'string' && /^[0-9a-f]{16}$/.test(id))
+        ids[board] = id;
+  } catch {
+    // A damaged file only means Settings learns the release IDs when it downloads the firmware.
+  }
+  return ids;
 }
 
 function readTrimmed(path: string): string | null {
   try {
     return readFileSync(path, 'utf8').trim() || null;
   } catch {
-    // A checkout has no VERSION and no RELEASE_FIRMWARE_ID, and it still runs.
+    // A checkout has no VERSION and no RELEASE_FIRMWARE_IDS, and it still runs.
     return null;
   }
 }

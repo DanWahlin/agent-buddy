@@ -39,9 +39,10 @@ bash tools/arduino.sh build
 board, set `BOARD` (`python3 tools/boards.py list` shows the IDs). See
 [Boards](development.md#boards) to add a board.
 
-Release bundles are for the default board. For another board, such as the
-Waveshare ESP32-S3-Touch-LCD-1.54, build and upload from the same configured
-shell; both boards use the same `WAVESHARE_DIR`:
+Each release has a firmware ZIP for every board; the desktop app installs the one
+for your board. To build another board from source, such as the Waveshare
+ESP32-S3-Touch-LCD-1.54, build and upload from the same configured shell; both
+boards use the same `WAVESHARE_DIR`:
 
 ```bash
 BOARD=waveshare-lcd-154 bash tools/arduino.sh build

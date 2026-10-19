@@ -8,7 +8,9 @@ export interface UsbFlashEvents {
   progress(percent: number): void;
 }
 
-export type UsbFlasher = (program: string, dir: string, port: UsbPort, events: UsbFlashEvents) => Promise<void>;
+// `board` is the board the firmware in `dir` must be for; the desktop app checks its manifest.
+export type UsbFlasher = (program: string, dir: string, port: UsbPort, events: UsbFlashEvents, board: string)
+  => Promise<void>;
 
 // Writing 11 MB takes about a minute over the ESP32-S3's own USB port; a UART bridge is slower.
 const flashTimeoutMs = 15 * 60_000;
@@ -31,14 +33,14 @@ export function explainFlashError(error: string): string {
   return error;
 }
 
-export function usbFlashArguments(dir: string, port: UsbPort): string[] {
-  return ['--flash-firmware', dir, '--port', port.path,
+export function usbFlashArguments(dir: string, port: UsbPort, board: string): string[] {
+  return ['--flash-firmware', dir, '--port', port.path, '--board', board,
     ...(port.pid === null ? [] : ['--pid', port.pid.toString(16).padStart(4, '0')])];
 }
 
 // Runs the desktop app's `--flash-firmware` mode and follows the lines it prints (see flasher.rs).
-export const runUsbFlasher: UsbFlasher = (program, dir, port, events) => new Promise((resolve, reject) => {
-  const child = spawn(program, usbFlashArguments(dir, port), {stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true});
+export const runUsbFlasher: UsbFlasher = (program, dir, port, events, board) => new Promise((resolve, reject) => {
+  const child = spawn(program, usbFlashArguments(dir, port, board), {stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true});
   let output = '';
   let errors = '';
   let result: {ok: true} | {ok: false; error: string} | null = null;

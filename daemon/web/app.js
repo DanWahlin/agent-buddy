@@ -966,17 +966,27 @@ function firmwareView(firmware) {
       + 'Updates go over Wi-Fi: connect the device to Wi-Fi first.'};
 }
 
-// The connected device's board, when its firmware is for another board than the release firmware.
-// Release firmware can stop such a device, so neither firmware row offers it.
+// The connected device's board, when releases have no firmware for it. Firmware for another board
+// can stop such a device, so neither firmware row offers one.
 function otherBoard(firmware) {
-  const board = firmware?.board, release = firmware?.usb?.releaseBoard;
-  return status?.connected && board && release && board !== release ? board : null;
+  const board = firmware?.board, boards = firmware?.usb?.boards;
+  return status?.connected && board && boards && !boards.some(entry => entry.id === board) ? board : null;
 }
 
 function otherBoardHint(firmware) {
-  return `This device is a ${firmware.board} board. The release firmware is for ${firmware.usb.releaseBoard}, `
-    + `so the app does not install it. Build and upload this board's firmware from source: `
-    + `BOARD=${firmware.board} bash tools/arduino.sh upload <port>.`;
+  return `This device is a ${firmware.board} board, and releases have no firmware for it, so the app does not `
+    + `install one. Build and upload this board's firmware from source: BOARD=${firmware.board} bash tools/arduino.sh upload <port>.`;
+}
+
+function boardInfo(id) {
+  return status?.firmware?.usb?.boards?.find(entry => entry.id === id) ?? null;
+}
+
+// The board the connected device reports over USB. Only then does the device decide the board:
+// over Wi-Fi, the USB device can be another one.
+function reportedUsbBoard() {
+  const board = status?.connected && status.transport === 'usb' ? status.firmware?.board : null;
+  return boardInfo(board) ? board : null;
 }
 
 // The desktop app has no firmware build of its own: it compares the device with the release
@@ -987,7 +997,8 @@ function releaseFirmwareView(firmware) {
   if (firmware.device === releaseId) return {pill: `v${release}`, kind: 'usb',
     hint: `The device runs release v${release}, the firmware for this app. No update is needed.`};
   return {pill: 'Update available', kind: 'warning', update: true, overUsb: true,
-    hint: `Firmware v${release} is available for this app. The device runs other firmware (ID ${firmware.device}). `
+    hint: `Firmware v${release} for the ${boardInfo(firmware.board)?.name ?? 'device'} is available for this app. `
+      + `The device runs other firmware (ID ${firmware.device}). `
       + 'Update installs it over USB: connect the device with a USB data cable. '
       + 'Wi-Fi settings stay, and the app then installs your character again.'};
 }
@@ -1084,9 +1095,34 @@ function renderUsbFirmware() {
     : usb?.releaseId && status.firmware?.device === usb.releaseId ? 'Reinstall' : 'Replace with';
   button.textContent = usb?.release ? `${action} v${usb.release}` : 'Install';
   button.disabled = usbFirmwareBlocked(usb);
+  renderBoardChoice(usb);
   // Recovery is for a device that does not answer at all; a device that answers updates with the row above.
   // Only for a device that does not answer; an install shows its progress in the row that started it.
   if (!status?.connected && usb?.unanswered && !usb.installing) $('usb-firmware-recovery').open = true;
+}
+
+let boardKey = '';
+
+// A device that answers over USB names its board; for any other, the person chooses it here.
+function renderBoardChoice(usb) {
+  const select = $('usb-firmware-board');
+  const boards = usb?.boards ?? [];
+  const key = JSON.stringify(boards.map(board => board.id));
+  if (key !== boardKey) {
+    boardKey = key;
+    const previous = select.value;
+    select.replaceChildren(new Option('Select the board', ''));
+    for (const board of boards) select.add(new Option(board.models, board.id));
+    select.value = boards.some(board => board.id === previous) ? previous : '';
+  }
+  const reported = reportedUsbBoard();
+  if (reported) select.value = reported;
+  // A device on Wi-Fi names its board too, but the USB device can be another one: suggest it only.
+  else if (!select.value && boardInfo(status?.firmware?.board) && status?.connected) select.value = status.firmware.board;
+  select.disabled = Boolean(reported) || usbFirmwareBlocked(usb);
+  $('usb-board-message').textContent = reported
+    ? `The device reports that it is a ${boardInfo(reported).name}.`
+    : 'Each board has its own firmware. Firmware for a different board can stop the device.';
 }
 
 function usbRestarting(usb) {
@@ -1110,7 +1146,7 @@ async function detectSettingsDevices() {
     : detection.ports.some(port => port.path === detection.connected) ? detection.connected
     : detection.ports.length === 1 ? detection.ports[0].path : '';
   $('usb-device-message').textContent = detection.ports.length
-    ? 'Confirm the device is a Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C before installation.'
+    ? 'Check that the board below matches the device before installation.'
     : 'No device found. Use a USB data cable and check serial-port permissions.';
   return select.value;
 }
@@ -1125,13 +1161,21 @@ async function installReleaseOverUsb() {
   try {
     const port = $('usb-firmware-port').value || await detectSettingsDevices();
     if (!port) throw new Error('Select your Waveshare device before installing firmware.');
+    const board = reportedUsbBoard() ?? $('usb-firmware-board').value;
+    const info = boardInfo(board);
+    if (!info) {
+      $('usb-firmware-recovery').open = true;
+      $('usb-firmware-board').focus();
+      throw new Error('Select the board of the device, then install again.');
+    }
     const release = status.firmware.usb?.release;
-    if (!await confirmAction(`Confirm that ${port} is your Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C.\n\n`
-      + `Install published release v${release}? This replaces the current firmware and partition table. `
+    if (!await confirmAction(`Confirm that ${port} is your ${info.models}.\n\n`
+      + `Install published release v${release} for the ${info.name}? `
+      + 'Firmware for a different board can stop the device. This replaces the current firmware and partition table. '
       + 'Back up other firmware first. Wi-Fi settings stay, and the app then installs your character again.',
       'Install firmware')) return;
     await api('/api/firmware/usb', {method: 'POST', type: 'application/json',
-      body: JSON.stringify({port, confirmed: true})});
+      body: JSON.stringify({port, board, confirmed: true})});
   } catch (error) {
     toast(error.message, 'error');
   } finally {
