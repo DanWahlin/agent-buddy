@@ -726,8 +726,15 @@ export class Onboarding {
       firmware.open = !connected;
     }
     $('ob-firmware-options-title').textContent = connected ? 'Replace firmware (optional)' : 'Install firmware';
-    $('ob-firmware-plan').textContent = `Installs firmware${usb?.release ? ` v${usb.release}` : ''}, then the ${name} character.`;
-    $('ob-install-firmware').disabled = busy || active || !this.state.port || !usb?.flasher || !usb?.release;
+    // Release firmware is for one board; a connected device of another board keeps its own firmware.
+    const board = this.status.firmware?.board;
+    const otherBoard = connected && board && usb?.releaseBoard && board !== usb.releaseBoard;
+    $('ob-firmware-plan').textContent = otherBoard
+      ? `This device is a ${board} board. The release firmware is for ${usb.releaseBoard}, so setup does not `
+        + `install it. Build and upload this board's firmware from source: BOARD=${board} bash tools/arduino.sh upload <port>.`
+      : `Installs firmware${usb?.release ? ` v${usb.release}` : ''}, then the ${name} character.`;
+    $('ob-install-firmware').disabled = busy || active || !this.state.port || !usb?.flasher || !usb?.release
+      || Boolean(otherBoard);
     $('ob-install-firmware').textContent = usb?.release ? `Install firmware v${usb.release}` : 'Install firmware';
     $('ob-device-help').hidden = active;
     $('ob-firmware-retry-hint').textContent = wifi

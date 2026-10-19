@@ -30,6 +30,25 @@ export const releaseRepository = 'DanWahlin/agent-buddy';
 // The board that the release firmware ZIP is built for: the default board in firmware/boards.json.
 // Other boards get their own ZIP, which this updater does not download.
 export const releaseBoard = 'waveshare-amoled-175';
+
+// The board a device reports, over Wi-Fi or on the BOARD line of its USB `i` reply. Firmware from
+// before the board layer reports none, and it is always for the release board.
+export function deviceBoard(value: unknown): string {
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value) ? value : releaseBoard;
+}
+
+// The board on a `BOARD id=<board> variant=<variant>` line, or null for any other line.
+export function parseBoardLine(line: string): string | null {
+  const match = /^BOARD id=([a-z0-9][a-z0-9-]{0,63})(?: |$)/.exec(line);
+  return match ? match[1]! : null;
+}
+
+// The release firmware is for one board only. Firmware for a different board can stop the device.
+export function assertReleaseBoard(board: string): void {
+  if (board !== releaseBoard)
+    throw new Error(`This device is a ${board} board. The release firmware is for ${releaseBoard}; `
+      + `build and upload with: BOARD=${board} bash tools/arduino.sh upload-code`);
+}
 const imageNames = ['bin/bootloader.bin', 'bin/partitions.bin', 'bin/boot_app0.bin', 'bin/application.bin',
   'bin/character-copilot.acpk'] as const;
 const bundleNames = ['manifest.json', ...imageNames];

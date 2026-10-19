@@ -161,7 +161,11 @@ Known limits for boards that are not similar to the current board:
   (`...-v<version>-<board>-firmware.zip`). The daemon's firmware update
   downloads only the default board's ZIP, and releases package only the default
   board today, so other boards install from source (`BOARD=<id> bash
-  tools/arduino.sh upload <port>`).
+  tools/arduino.sh upload <port>`). The app installs the release firmware only on a
+  device that names the release board, over Wi-Fi (`"board"`) or USB (the `BOARD`
+  line), or that names none (firmware from before boards). Settings and setup show
+  **Other board** for any other board. A device that does not answer can't name its
+  board, so the app asks you to confirm it before it installs.
 
 #### Waveshare ESP32-S3-Touch-LCD-1.54
 

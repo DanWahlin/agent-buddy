@@ -410,6 +410,16 @@ test('character setup names the installation and keeps Wi-Fi graphics during res
   assert.equal(element('ob-firmware-options').open, true);
   assert.equal(element('ob-firmware-options-title').textContent, 'Install firmware');
   assert.match(element('ob-firmware-plan').textContent, /firmware v1.0.0, then the Claude character/);
+  // A connected device of another board keeps its firmware.
+  runInContext(`
+    controller.status.connected = true;
+    controller.status.firmware = {...controller.status.firmware, board: 'waveshare-lcd-154'};
+    controller.status.firmware.usb = {...controller.status.firmware.usb, releaseBoard: 'waveshare-amoled-175'};
+    controller.renderFirmware(false);
+  `, context);
+  assert.equal(element('ob-firmware-options-title').textContent, 'Replace firmware (optional)');
+  assert.match(element('ob-firmware-plan').textContent, /waveshare-lcd-154 board.*BOARD=waveshare-lcd-154/);
+  assert.equal(element('ob-install-firmware').disabled, true);
 });
 
 test('firmware replacement confirms the board and both stages, while character installation does not flash', async () => {

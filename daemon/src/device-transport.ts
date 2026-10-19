@@ -59,6 +59,11 @@ export class DeviceTransport {
     return (this.#usb.connected ? this.#usb.firmware : null) ?? this.#wifi.firmware;
   }
 
+  // The board the connected device's firmware is built for, or null with no device.
+  get board(): string | null {
+    return this.#usb.connected ? this.#usb.board : this.#wifi.board;
+  }
+
   // Firmware updates go over Wi-Fi, to protocol 9 or later firmware, which reports its ID there.
   get firmwareOverWifi(): boolean {
     return this.#wifi.connected && this.#wifi.firmware !== null;

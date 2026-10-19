@@ -40,7 +40,7 @@ import {
 import {CharacterPackBuilder} from './character-build.js';
 import {DesktopApp, type DesktopAppReport, type DesktopAppStatus, type DesktopCommand} from './desktop-app.js';
 import {openBrowser} from './browser.js';
-import {FirmwareReleases, type ReleaseFirmware} from './firmware-release.js';
+import {FirmwareReleases, assertReleaseBoard, releaseBoard, type ReleaseFirmware} from './firmware-release.js';
 import {runUsbFlasher, type UsbFlasher, type UsbFlashStage} from './usb-flasher.js';
 import {saveConnectionMode, type ConnectionMode} from './connection-mode.js';
 import type {DeviceTransport} from './device-transport.js';
@@ -86,6 +86,8 @@ export interface FirmwareStatus {
   // What the device runs and what the last `bash tools/arduino.sh build` made (16 hex digits).
   device: string | null;
   built: string | null;
+  // The board the device's firmware is built for (see firmware/boards.json), or null with no device.
+  board: string | null;
   // The device can take an update over Wi-Fi now, and the built firmware is different.
   canUpdate: boolean;
   // `button` is true while the device waits for a BOOT press that allows the update.
@@ -101,6 +103,8 @@ export interface UsbFirmwareStatus {
   // The release with this service's version, and its firmware ID: from the desktop build, or once it is downloaded.
   release: string | null;
   releaseId: string | null;
+  // The board that the release firmware is for. A device of another board does not get it.
+  releaseBoard: string;
   // The desktop app that ran last can write firmware.
   flasher: boolean;
   // The USB port with the device: connected, or an ESP32 that does not answer as an Agent Companion.
@@ -1090,11 +1094,14 @@ export class CompanionService extends EventEmitter {
   #firmwareStatus(): FirmwareStatus {
     const device = this.#transport.firmware ?? null;
     const built = this.#firmwareImage()?.id ?? null;
+    const board = this.#transport.board ?? null;
     return {
       device,
       built,
+      board,
+      // The built firmware is the default board's, which is the release board.
       canUpdate: !this.#firmwareUpdating && !this.#installBusy && !this.#usbInstalling && built !== null && device !== null
-        && built !== device && this.#transport.firmwareOverWifi === true,
+        && built !== device && this.#transport.firmwareOverWifi === true && board === releaseBoard,
       updating: this.#firmwareUpdating,
       last: this.#lastFirmware,
       usb: this.#usbFirmwareStatus(),
@@ -1106,6 +1113,7 @@ export class CompanionService extends EventEmitter {
     return {
       release: this.#service.version,
       releaseId: this.#release?.id ?? this.#service.releaseFirmwareId,
+      releaseBoard,
       flasher: this.#desktopApp.flasher() !== null,
       port: this.#transport.transport === 'usb' ? this.#transport.address : unanswered?.path ?? null,
       unanswered: unanswered !== null,
@@ -1181,6 +1189,10 @@ export class CompanionService extends EventEmitter {
     try {
       const target = await this.#transport.findUsbPort(selectedPort);
       if (!target) throw new Error('No device is on USB. Connect the device with a USB data cable, then try again.');
+      // A connected device names its board, and the release firmware is for one board only. A device
+      // that does not answer can't say; setup and Settings ask the person to confirm the board.
+      const board = this.#transport.board;
+      if (board) assertReleaseBoard(board);
       const release = await this.#usbInstaller.releases.prepare(version, (received, total) =>
         set({stage: 'downloading', percent: total ? Math.floor(received * 100 / total) : null}));
       this.#release = release;

@@ -19,6 +19,7 @@ import {
   type AgentBadgeIconDefinition,
 } from './agent-badges.js';
 import {shouldSendUsage, usagePacket} from './usage-tracker.js';
+import {parseBoardLine, releaseBoard} from './firmware-release.js';
 import {
   parseWifiProvisioningResponse,
   wifiProvisioningPacket,
@@ -78,6 +79,9 @@ export class UsbTransport {
   #character: string | null = null;
   #adaptivePatchRam = false;
   #firmware: string | null = null;
+  // The board the firmware is built for, from the BOARD line after INFO. Firmware without one is for
+  // the release board.
+  #board: string = releaseBoard;
   #network: DeviceNetwork | null = null;
   #orientation: DeviceOrientation | null = null;
   // The ESP32 port the last scan chose, and how many handshakes in a row it failed.
@@ -106,6 +110,10 @@ export class UsbTransport {
   // The first 16 hex digits of the firmware's ELF SHA-256; null before protocol 9.
   get firmware(): string | null {
     return this.connected ? this.#firmware : null;
+  }
+
+  get board(): string | null {
+    return this.connected ? this.#board : null;
   }
 
   get adaptivePatchRam(): boolean {
@@ -295,6 +303,8 @@ export class UsbTransport {
     this.#port = port;
     this.#path = path;
     this.#timeouts = 0;
+    // The BOARD line, when the firmware sends one, follows the INFO reply below.
+    this.#board = releaseBoard;
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
       this.#applyInfo(info);
@@ -565,6 +575,14 @@ export class UsbTransport {
       if (!line) continue;
       // Software restarts keep the USB port open, so the boot banner marks a new session.
       if (line.startsWith('READY:')) this.#rebooted(line);
+      const board = parseBoardLine(line);
+      if (board !== null) {
+        if (board !== this.#board) {
+          this.#board = board;
+          if (this.#answered) this.#changed();
+        }
+        continue;
+      }
       const presses = parseButtonLine(line);
       if (presses !== null) {
         this.#button(presses);
@@ -580,6 +598,8 @@ export class UsbTransport {
 
   #rebooted(line: string): void {
     this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(line)?.[1] ?? null;
+    // A restart can bring firmware for another board; the INFO reply below names it again.
+    this.#board = releaseBoard;
     this.#iconSignature = '';
     this.#activeSignature = '';
     this.#usageSignature = null;

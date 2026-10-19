@@ -28,6 +28,8 @@ class FakeTransport extends DeviceTransport {
   override get connected() { return this.active; }
   override get character() { return this.active ? this.characterId : null; }
   override get firmware() { return this.firmwareId; }
+  boardId = 'waveshare-amoled-175';
+  override get board() { return this.active ? this.boardId : null; }
   override get address() { return this.active ? this.link === 'wifi' ? this.wifiAddress : this.usbPath : null; }
   override get transport(): 'usb' | 'wifi' | null { return this.active ? this.link : null; }
   override async setEnabled(enabled: boolean) { this.enabled = enabled; if (!enabled) this.active = false; }
@@ -618,6 +620,35 @@ test('a Settings USB firmware install does not reinstall the character that the 
     await service.installFirmwareOverUsb(device.usbPath);
     assert.deepEqual(service.installedCharacters, []);
     assert.equal(device.characterId, 'copilot');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('release firmware is not installed over USB on a device of another board', async () => {
+  const {service, device, flashes, installer, cleanup} = await fixture();
+  try {
+    let downloads = 0;
+    const prepare = installer.releases.prepare;
+    installer.releases.prepare = async (...args) => { downloads++; return prepare(...args); };
+    device.active = true;
+    device.boardId = 'waveshare-lcd-154';
+    assert.equal(service.status().firmware.board, 'waveshare-lcd-154');
+    assert.equal(service.status().firmware.usb.releaseBoard, 'waveshare-amoled-175');
+    await assert.rejects(service.installFirmwareOverUsb(device.usbPath),
+                         /This device is a waveshare-lcd-154 board\. The release firmware is for waveshare-amoled-175/);
+    assert.deepEqual(flashes, []);
+    assert.equal(downloads, 0);
+    const last = service.status().firmware.usb.last;
+    assert.equal(last?.ok, false);
+    assert.match(last?.error ?? '', /BOARD=waveshare-lcd-154/);
+
+    // The release board, and a device that does not answer and so names no board, still install.
+    device.boardId = 'waveshare-amoled-175';
+    await service.installFirmwareOverUsb(device.usbPath);
+    device.active = false;
+    await service.installFirmwareOverUsb(device.usbPath);
+    assert.deepEqual(flashes, [device.usbPath, device.usbPath]);
   } finally {
     await cleanup();
   }

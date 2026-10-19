@@ -3,7 +3,7 @@ import {
   isOrientationOffset, isOrientationTenths, orientationFromTenths, orientationProtocol,
   type DeviceOrientation,
 } from './orientation-settings.js';
-import {releaseBoard} from './firmware-release.js';
+import {assertReleaseBoard, deviceBoard, releaseBoard} from './firmware-release.js';
 import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
 import {
   activePacket,
@@ -31,18 +31,6 @@ export function needsFirmwareApproval(protocol: number): boolean {
 
 // Polls the device until the person presses BOOT. `null` is a failed read, which is tried again;
 // `none` means the device stopped waiting.
-// The board in the device status. Firmware before the board layer does not send one.
-export function deviceBoard(value: unknown): string {
-  return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(value) ? value : releaseBoard;
-}
-
-// The release firmware is for one board only. Firmware for a different board can stop the device.
-export function assertReleaseBoard(board: string): void {
-  if (board !== releaseBoard)
-    throw new Error(`This device is a ${board} board. The release firmware is for ${releaseBoard}; `
-      + `build and upload with: BOARD=${board} bash tools/arduino.sh upload-code`);
-}
-
 export async function waitForFirmwareApproval(
     read: () => Promise<FirmwareApproval | null>, timeoutMs = firmwareApprovalMs,
     intervalMs = firmwareApprovalPollMs): Promise<void> {
@@ -103,6 +91,11 @@ export class WifiTransport {
   // The first 16 hex digits of the firmware's ELF SHA-256; null before protocol 9.
   get firmware(): string | null {
     return this.#connected ? this.#firmware : null;
+  }
+
+  // The board the device's firmware is built for.
+  get board(): string | null {
+    return this.#connected ? this.#board : null;
   }
 
   get orientation(): DeviceOrientation | null {

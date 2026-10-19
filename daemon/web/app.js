@@ -950,6 +950,7 @@ function firmwareView(firmware) {
   if (usbRestarting(firmware.usb)) return {pill: 'Restarting…', kind: 'warning',
     until: firmware.usb.last.at + firmwareRestartMs, hint: 'The device is restarting into the new firmware.'};
   if (!status.connected) return {pill: 'Not connected', kind: 'offline', hint: 'Connect the device to see its firmware.'};
+  if (otherBoard(firmware)) return {pill: 'Other board', kind: 'usb', hint: otherBoardHint(firmware)};
   if (!firmware.device) return {pill: 'Old firmware', kind: 'warning', update: true, overUsb: Boolean(firmware.usb?.release),
     hint: 'This firmware is older and does not report its version, so it cannot update over Wi-Fi. '
       + 'A newer release installs over USB.'};
@@ -963,6 +964,19 @@ function firmwareView(firmware) {
       + 'If the new firmware does not connect to Wi-Fi, the device goes back to the old firmware.'
     : `The built firmware (${firmware.built}) is different from the device's (${firmware.device}). `
       + 'Updates go over Wi-Fi: connect the device to Wi-Fi first.'};
+}
+
+// The connected device's board, when its firmware is for another board than the release firmware.
+// Release firmware can stop such a device, so neither firmware row offers it.
+function otherBoard(firmware) {
+  const board = firmware?.board, release = firmware?.usb?.releaseBoard;
+  return status?.connected && board && release && board !== release ? board : null;
+}
+
+function otherBoardHint(firmware) {
+  return `This device is a ${firmware.board} board. The release firmware is for ${firmware.usb.releaseBoard}, `
+    + `so the app does not install it. Build and upload this board's firmware from source: `
+    + `BOARD=${firmware.board} bash tools/arduino.sh upload <port>.`;
 }
 
 // The desktop app has no firmware build of its own: it compares the device with the release
@@ -1031,6 +1045,7 @@ function usbFirmwareView(usb) {
     return {pill: 'Restarting…', kind: 'warning', hint: `Release v${last.version} is installed. The device is restarting.`};
   if (!release) return {pill: 'Unknown', kind: 'offline',
     hint: 'The companion service has no VERSION file, so it cannot choose a release.'};
+  if (otherBoard(status.firmware)) return {pill: 'Other board', kind: 'offline', hint: otherBoardHint(status.firmware)};
   if (!usb.flasher) return {pill: 'Needs the desktop app', kind: 'offline',
     hint: `The desktop app writes the ${release} firmware from GitHub to the device over USB. Open the desktop app, `
       + 'then come back here.'};
@@ -1081,7 +1096,7 @@ function usbRestarting(usb) {
 
 function usbFirmwareBlocked(usb) {
   return usbFirmwarePending || !usb?.flasher || !usb.release || Boolean(usb.installing)
-    || Boolean(status?.installing) || Boolean(status?.firmware?.updating);
+    || Boolean(status?.installing) || Boolean(status?.firmware?.updating) || Boolean(otherBoard(status?.firmware));
 }
 
 async function detectSettingsDevices() {

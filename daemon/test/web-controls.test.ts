@@ -108,6 +108,20 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('firmware-update').disabled, false);
   assert.equal(element('firmware-update').textContent, 'Update to v0.9.0');
   assert.equal(element('firmware-update').dataset.usb, 'true');
+  // A device of another board keeps its firmware: neither row offers the release firmware.
+  runInContext('status.firmware.board = "waveshare-lcd-154"; '
+    + 'status.firmware.usb.releaseBoard = "waveshare-amoled-175"; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Other board');
+  assert.match(element('firmware-hint').textContent, /waveshare-lcd-154 board.*BOARD=waveshare-lcd-154/);
+  assert.equal(element('device-update-badge').hidden, true);
+  assert.equal(element('firmware-update').hidden, true);
+  assert.equal(element('usb-firmware-state').textContent, 'Other board');
+  assert.equal(element('usb-firmware-install').disabled, true);
+  runInContext('status.firmware.board = "waveshare-amoled-175"; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Update available');
+  assert.equal(element('usb-firmware-install').disabled, false);
+  runInContext('status.firmware.board = null; delete status.firmware.usb.releaseBoard; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Update available');
   runInContext('status.firmware.usb.installing = {stage: "writing", percent: 5}; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Writing 5%');
   assert.match(element('firmware-hint').textContent, /Keep the USB cable connected/);
