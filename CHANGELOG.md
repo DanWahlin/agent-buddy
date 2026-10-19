@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.15.3]
+
+### Other changes
+
+- Never let a companion hook block a Copilot tool call (#44)
+
 ## [v0.15.2]
 
 ### Other changes
