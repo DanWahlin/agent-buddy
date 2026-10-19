@@ -115,7 +115,7 @@ The default board builds in `build/firmware`; each other board builds in
 `build/firmware-<board>`, so building one board leaves the others in place.
 `build/firmware-bundle.json` (or `build/firmware-<board>-bundle.json`) records
 the board, so an upload for a different `BOARD` fails until you build again. The release manifest, `INSTALL.txt`,
-`flash.py`, the boot log, and the Wi-Fi status (`"board"`) also show the board ID.
+`flash.py`, the boot log, the Wi-Fi status (`"board"`), and the `BOARD` line of the USB `i` reply also show the board ID.
 
 ```bash
 python3 tools/boards.py list
@@ -1254,7 +1254,13 @@ its Settings window. If not, the daemon opens a browser tab. Protocol 11 needs
 a BOOT press before a Wi-Fi firmware update (see
 [Firmware updates over Wi-Fi](#firmware-updates-over-wi-fi)). The USB transport
 re-reads `i` after each `READY` banner, so the protocol and firmware ID stay
-current after an update. Keep `maxProtocol` in `daemon/src/usb-transport.ts`
+current after an update. The `i` reply also has a
+`BOARD id=<board> variant=<variant>` line, after the `INFO` line: the board in
+`firmware/boards.json` that the firmware is built for, so the app installs only
+firmware for that board. It is its own line because the `INFO` line is near the
+384-byte limit of the firmware's log messages, and a longer one is dropped. A
+reply without a `BOARD` line comes from firmware built before more than one board
+was supported, which is always the default board. Keep `maxProtocol` in `daemon/src/usb-transport.ts`
 equal to `kDeviceProtocol` in the firmware. A join attempt in
 progress pauses for the scan and resumes when it ends. The settings page reads
 the merged list from `GET /api/wifi/networks`. While the device reports a saved

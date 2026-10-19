@@ -67,6 +67,16 @@ class BoardTargetTests(unittest.TestCase):
                             r"\bkDisplayQspi\w+", r"\bkDisplayDcPin\b"):
                 self.assertNotRegex(text, pattern, path.relative_to(ROOT).as_posix())
 
+    def test_usb_info_reply_names_the_board(self):
+        # The app must install firmware only for the board the device runs. The `i` reply names it on
+        # its own BOARD line, after the INFO line, which is near logMessage()'s 384-byte limit.
+        sketch = (FIRMWARE / "AgentCompanion.ino").read_text()
+        info = sketch.index('logMessage("INFO protocol=')
+        board = sketch.index('logMessage("BOARD id=%s variant=%s\\n", board::kId, board::variantName(board::variant()));')
+        self.assertLess(info, board)
+        self.assertLess(board, sketch.index('logMessage("CHARACTER id=', info))
+        self.assertNotIn("board=%s", sketch[info:board])
+
     def test_build_keeps_the_core_defines(self):
         # The ESP32 core sets -DBOARD_HAS_PSRAM in build.defines, so the board define must not replace it.
         script = (ROOT / "tools/arduino.sh").read_text()

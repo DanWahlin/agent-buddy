@@ -1084,6 +1084,9 @@ void processCommand(DeviceCommand command, const DeviceCommands& parser, const F
                     patchBuffersInternal, static_cast<unsigned>(startupFreeInternal),
                     static_cast<unsigned>(network.connected()), ssid, network.firmwareId(),
                     board::variantName(board::variant()));
+      // Which board the firmware is built for, so the app installs firmware only for this board. Its
+      // own line: the INFO line is near logMessage()'s limit, and a longer line would be dropped.
+      logMessage("BOARD id=%s variant=%s\n", board::kId, board::variantName(board::variant()));
       if (pack) {
         logMessage("CHARACTER id=%s layout=%s bytes=%u name=%s\n", pack->header.id,
                    pack->header.layout == PackLayout::FullFrame ? "full-frame" : "base-patch",
