@@ -1,5 +1,5 @@
 import type {CharacterState, HookEvent, HookPayload} from './protocol.js';
-import type {AgentId} from './agents/types.js';
+import {agentIds, type AgentId} from './agents/types.js';
 import type {AgentBadgeActive} from './agent-badges.js';
 
 export interface PersistedSubagent {
@@ -457,8 +457,7 @@ export class StateCoordinator {
 
   #agentFromSession(sessionId: string): AgentId | undefined {
     const prefix = sessionId.split(':', 1)[0] ?? '';
-    return ['copilot', 'claude', 'codex', 'grok', 'hermes', 'openclaw'].includes(prefix)
-      ? prefix as AgentId : undefined;
+    return (agentIds as readonly string[]).includes(prefix) ? prefix as AgentId : undefined;
   }
 }
 

@@ -3,7 +3,8 @@ import {readFileSync} from 'node:fs';
 import {basename} from 'node:path';
 import type {AgentId} from './types.js';
 
-// An agent started with a one-shot prompt (copilot -p, claude -p, codex exec, grok -p, hermes -z) has
+// An agent started with a one-shot prompt (copilot -p, claude -p, codex exec, grok -p,
+// cursor-agent -p, hermes -z) has
 // no one to answer permission or question prompts. Copilot still fires its notification hook and then
 // denies the request on its own, so those notifications must not put the device in Needs attention.
 
@@ -30,6 +31,8 @@ const rules: Partial<Record<AgentId, HeadlessRule>> = {
   },
   codex: {programs: ['codex', '@openai/codex'], headless: args => ['exec', 'e'].includes(args.find(arg => !arg.startsWith('-')) ?? '')},
   grok: {programs: ['grok'], headless: args => promptFlag(args, ['-p', '--single', '--prompt-file', '--prompt-json'])},
+  // `agent` is Cursor's CLI when the hook's parent is that process. Print mode has no approval UI.
+  cursor: {programs: ['agent', 'cursor-agent'], headless: args => promptFlag(args, ['-p', '--print'])},
   // hermes chat -q seeds an interactive session on a terminal and answers once without one.
   hermes: {
     programs: ['hermes'],
