@@ -84,7 +84,8 @@ export function chooseFirmwareBoard(reported: string | null, chosen: string | nu
     return reported;
   }
   if (chosen == null)
-    throw new Error('The device does not answer, so it cannot say which board it is. Choose its board, then try again.');
+    throw new Error('The device does not report which board it is: it does not answer, or its firmware is older. '
+      + 'Choose its board, then try again.');
   return chosen;
 }
 const imageNames = ['bin/bootloader.bin', 'bin/partitions.bin', 'bin/boot_app0.bin', 'bin/application.bin',
