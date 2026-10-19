@@ -7,7 +7,7 @@ import test from 'node:test';
 import {parseDocument} from 'yaml';
 import {claudeAdapter, claudeConfigPath} from '../src/agents/claude.js';
 import {codexAdapter} from '../src/agents/codex.js';
-import {codexQuote} from '../src/agents/commands.js';
+import {codexQuote, versionOf} from '../src/agents/commands.js';
 import {copilotAdapter, copilotAppVersion, copilotVersions} from '../src/agents/copilot.js';
 import {grokAdapter, runsClaudeHooks} from '../src/agents/grok.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
@@ -828,6 +828,62 @@ test('agent versions come from a background probe, and a found command counts as
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     assert.equal(hermesAdapter.detect(withBin).version, 'Hermes Agent v1.2.3');
+  } finally {
+    await cleanup();
+  }
+});
+
+// An agent whose `--version` fails until it has been run `failures` times, and that counts its runs.
+async function flakyAgent(root: string, name: string, failures: number) {
+  const bin = join(root, `bin-${name}`);
+  await mkdir(bin, {recursive: true});
+  const runs = join(root, `${name}-runs.txt`);
+  const script = join(root, `${name}.cjs`);
+  await writeFile(script, `const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(runs)}, 'x');
+if (fs.readFileSync(${JSON.stringify(runs)}, 'utf8').length <= ${failures}) process.exit(1);
+console.log('${name} v2.0');
+`);
+  const windows = process.platform === 'win32';
+  if (windows) await writeFile(join(bin, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
+  else {
+    await writeFile(join(bin, name), `#!/bin/sh\nexec '${process.execPath}' '${script}' "$@"\n`);
+    await chmod(join(bin, name), 0o755);
+  }
+  const system = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
+  const env = windows ? {PATH: `${bin};${system}`, PATHEXT: '.CMD;.EXE', ComSpec: join(system, 'cmd.exe')}
+    : {PATH: bin};
+  return {env, runs: async () => existsSync(runs) ? (await readFile(runs, 'utf8')).length : 0};
+}
+
+async function pollVersion(name: string, ctx: AgentContext, delays: number[], forMs: number): Promise<string | undefined> {
+  const until = Date.now() + forMs;
+  let version: string | undefined;
+  while (Date.now() < until && !(version = versionOf(name, ctx, delays)))
+    await new Promise(resolve => setTimeout(resolve, 20));
+  return version;
+}
+
+test('a failed version probe is tried again, so a slow or blocked first start still shows the version', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const agent = await flakyAgent(root, 'flaky', 1);
+    const withBin = {...ctx, platform: process.platform, env: agent.env};
+    assert.equal(await pollVersion('flaky', withBin, [100], 10_000), 'flaky v2.0');
+    assert.equal(await agent.runs(), 2);
+  } finally {
+    await cleanup();
+  }
+});
+
+// Each try can show a Smart App Control notice on Windows, so a probe that keeps failing stops.
+test('a version probe that keeps failing stops after its retries', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const agent = await flakyAgent(root, 'broken', 99);
+    const withBin = {...ctx, platform: process.platform, env: agent.env};
+    assert.equal(await pollVersion('broken', withBin, [50, 50], 4_000), undefined);
+    assert.equal(await agent.runs(), 3);
   } finally {
     await cleanup();
   }
