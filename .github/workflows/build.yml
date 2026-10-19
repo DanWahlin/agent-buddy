@@ -265,8 +265,15 @@ jobs:
         if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
         shell: pwsh
         run: |
-          $release = 'apps/desktop/src-tauri/target/${{ matrix.target }}/release'
-          ./apps/desktop/scripts/windows-signing.ps1 -Verify (Get-Item "$release/agent-companion-desktop.exe", "$release/bundle/nsis/*-setup.exe").FullName
+          # The files that the installer writes: Tauri signs its own copies of the app, not target/.
+          $installer = (Get-Item 'apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe').FullName
+          $contents = Join-Path $env:RUNNER_TEMP 'installer-contents'
+          7z x -y "-o$contents" $installer | Out-Null
+          if ($LASTEXITCODE) { throw "7-Zip couldn't open $installer." }
+          $programs = @(Get-ChildItem $contents -Recurse -File -Include *.exe, *.dll, *.node |
+            Where-Object { $_.Name -ne 'node.exe' -and $_.FullName -notmatch '\\\$PLUGINSDIR\\' })
+          if (-not ($programs | Where-Object Name -eq 'agent-companion-desktop.exe')) { throw 'The installer has no agent-companion-desktop.exe.' }
+          ./apps/desktop/scripts/windows-signing.ps1 -Verify (@($installer) + $programs.FullName)
       - name: Package
         run: |
           version="$(cat ../VERSION)"
