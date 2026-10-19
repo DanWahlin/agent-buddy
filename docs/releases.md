@@ -87,6 +87,42 @@ runs the companion service's tests on native Windows, and a release waits for it
 This needs no Azure credentials or image-generation calls: all approved source
 artwork is checked in.
 
+### Windows signing
+
+Tag builds sign the Windows desktop apps with
+[Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/),
+so Smart App Control runs them; an unsigned app is blocked on PCs that have it on.
+The `desktop` job signs, on both Windows runners:
+
+- every unsigned `.exe`, `.dll` and `.node` in the bundled daemon runtime (the
+  patched serialport binding; Node.js is signed by its maker),
+- the app, its uninstaller and its installer (Tauri's `signCommand`).
+
+It then checks that the app and the installer carry the expected signature with
+a timestamp, and the build fails if signing fails, so a tag never publishes an
+unsigned Windows app. The script is
+[`windows-signing.ps1`](../desktop/apps/desktop/scripts/windows-signing.ps1). It
+downloads pinned, SHA-256-checked signtool and Artifact Signing packages. The
+signing library is x64 only, so on the Arm64 runner the x64 signtool runs under
+emulation with an x64 .NET 8.
+
+The job signs in to Azure with OpenID Connect; no secret is stored. The GitHub
+`release` environment allows only `v*` tags and holds these variables:
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
+`ARTIFACT_SIGNING_ENDPOINT`, `ARTIFACT_SIGNING_ACCOUNT` and
+`ARTIFACT_SIGNING_PROFILE`. The Entra app's federated credential trusts that
+environment's tokens for this repository
+(`repo:DanWahlin@1767249/agent-buddy@1365556684:environment:release`), and it
+has the **Artifact Signing Certificate Profile Signer** role on the signing
+account.
+
+A manual run builds unsigned Windows apps unless **sign_windows** is selected.
+That also needs a branch rule on the `release` environment for the branch.
+Certificates last three days and Azure renews them; the timestamp keeps each
+signature valid after its certificate expires. The identity validation expires
+after a set time, and Azure emails reminders before then. If it lapses, signing
+fails until it is renewed.
+
 Actions are pinned to revisions. Build jobs have read-only repository permissions;
 only the tag-triggered publishing job receives `contents: write`. The tag must
 match `VERSION`. A manual run produces downloadable workflow artifacts, not a

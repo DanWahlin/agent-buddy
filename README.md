@@ -1014,7 +1014,7 @@ On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
   | OS | File | First run |
   | --- | --- | --- |
   | macOS | `agent-companion-desktop-<version>-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
-  | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for an Arm PC | Choose **Keep** if the browser warns, then **More info > Run anyway**. |
+  | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for an Arm PC | Signed by Dan Wahlin. If Windows still warns, choose **Keep**, then **More info > Run anyway**. |
   | Linux | `agent-companion-desktop-<version>-linux-x86_64.AppImage` or `agent-companion-desktop-<version>-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./agent-companion-desktop-<version>-linux-amd64.deb`. |
 
   The running app appears in the macOS Dock or the taskbar on Windows and
