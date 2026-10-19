@@ -114,7 +114,8 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('firmware-update').textContent, 'Update to v0.9.0');
   assert.equal(element('firmware-update').dataset.usb, 'true');
   // Each board has its own release firmware; a device that answers over USB decides the board.
-  runInContext('status.firmware.board = "waveshare-lcd-154"; status.firmware.usb.boards = ['
+  runInContext('status.port = "/dev/test"; $("usb-firmware-port").value = "/dev/test"; '
+    + 'status.firmware.board = "waveshare-lcd-154"; status.firmware.usb.boards = ['
     + '{id: "waveshare-amoled-175", name: "Waveshare ESP32-S3-Touch-AMOLED-1.75", '
     + 'models: "Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C", releaseId: "bbbbbbbbbbbbbbbb"}, '
     + '{id: "waveshare-lcd-154", name: "Waveshare ESP32-S3-Touch-LCD-1.54", '
@@ -133,10 +134,18 @@ test('web alignment controls initialize once and send confirmed settings', async
   context.prompts = prompts;
   runInContext('confirmAction = async message => { prompts.push(message); return true; }; '
     + 'api = async (path, options) => { installs.push({path, body: JSON.parse(options.body)}); return {}; }; '
-    + 'toast = message => prompts.push(`toast: ${message}`); '
-    + '$("usb-firmware-port").value = "/dev/test"', context);
+    + 'toast = message => prompts.push(`toast: ${message}`)', context);
   await runInContext('installReleaseOverUsb()', context);
   assert.deepEqual(JSON.parse(JSON.stringify(installs)), [{path: '/api/firmware/usb', body: {port: '/dev/test', board: 'waveshare-lcd-154', confirmed: true}}]);
+  // The board that a device on another port reports is not used for the selected port.
+  runInContext('$("usb-firmware-port").value = "/dev/other"; renderFirmware()', context);
+  assert.equal(element('usb-firmware-board').value, '');
+  assert.equal(element('usb-firmware-board').disabled, false);
+  await runInContext('installReleaseOverUsb()', context);
+  assert.equal(installs.length, 1);
+  assert.equal(prompts.at(-1), 'toast: Select the board of the device, then install again.');
+  runInContext('$("usb-firmware-port").value = "/dev/test"; renderFirmware()', context);
+  assert.equal(element('usb-firmware-board').value, 'waveshare-lcd-154');
   assert.match(prompts[0]!, /^Confirm that \/dev\/test is your Waveshare ESP32-S3-Touch-LCD-1.54\.\n\nInstall published release v0.9.0 for the Waveshare ESP32-S3-Touch-LCD-1.54\?/);
   // A device that does not answer cannot say: the person must choose a board first.
   runInContext('status.connected = false; $("usb-firmware-board").value = ""; renderFirmware()', context);

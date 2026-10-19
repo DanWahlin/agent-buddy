@@ -982,10 +982,12 @@ function boardInfo(id) {
   return status?.firmware?.usb?.boards?.find(entry => entry.id === id) ?? null;
 }
 
-// The board the connected device reports over USB. Only then does the device decide the board:
-// over Wi-Fi, the USB device can be another one.
+// The board that the device on the selected USB port reports. Only then does the device decide
+// the board: over Wi-Fi, or on another port, the device to install can be a different one.
 function reportedUsbBoard() {
-  const board = status?.connected && status.transport === 'usb' ? status.firmware?.board : null;
+  const selected = $('usb-firmware-port').value;
+  const board = status?.connected && status.transport === 'usb' && (!selected || selected === status.port)
+    ? status.firmware?.board : null;
   return boardInfo(board) ? board : null;
 }
 
@@ -1116,9 +1118,10 @@ function renderBoardChoice(usb) {
     select.value = boards.some(board => board.id === previous) ? previous : '';
   }
   const reported = reportedUsbBoard();
+  // A board that a device reported is not a choice for another device: the person chooses again.
   if (reported) select.value = reported;
-  // A device on Wi-Fi names its board too, but the USB device can be another one: suggest it only.
-  else if (!select.value && boardInfo(status?.firmware?.board) && status?.connected) select.value = status.firmware.board;
+  else if (select.dataset.reported) select.value = '';
+  select.dataset.reported = reported ?? '';
   select.disabled = Boolean(reported) || usbFirmwareBlocked(usb);
   $('usb-board-message').textContent = reported
     ? `The device reports that it is a ${boardInfo(reported).name}.`
@@ -1150,6 +1153,8 @@ async function detectSettingsDevices() {
     : 'No device found. Use a USB data cable and check serial-port permissions.';
   return select.value;
 }
+
+$('usb-firmware-port').addEventListener('change', () => renderUsbFirmware());
 
 $('usb-device-detect').addEventListener('click', () => {
   void detectSettingsDevices().catch(error => toast(error.message, 'error'));

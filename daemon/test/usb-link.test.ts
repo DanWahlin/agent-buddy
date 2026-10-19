@@ -150,7 +150,7 @@ test('a request to a device that stops reading fails at its timeout and does not
   }
 });
 
-test('the USB link reports the board that the device names, and the release board for older firmware', async () => {
+test('the USB link reports the board that the device names, and no board for firmware without the line', async () => {
   const device = fakeDevice({silentAfterRestart: false, board: 'waveshare-lcd-154'});
   const usb = new UsbTransport(undefined, undefined, {serial: SerialPortMock, requestTimeoutMs: 50});
   try {
@@ -158,10 +158,14 @@ test('the USB link reports the board that the device names, and the release boar
     usb.start();
     await until(() => usb.connected);
     assert.equal(usb.board, 'waveshare-lcd-154');
-    // A restart into firmware without a BOARD line, which is always for the release board.
+    // A restart into firmware without a BOARD line, which can't say its board.
     device.board = null;
     await usb.installCharacter(Buffer.alloc(8));
-    await until(() => usb.character === 'bunny' && usb.board === 'waveshare-amoled-175');
+    // The restart clears the board, and the INFO reply after it names none.
+    await until(() => usb.character === 'bunny' && usb.board === null);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(usb.board, null);
+    assert.equal(usb.connected, true);
   } finally {
     await usb.stop();
   }
@@ -172,7 +176,8 @@ test('the USB link reports the board that the device names, and the release boar
   try {
     old.start();
     await until(() => old.connected);
-    assert.equal(old.board, 'waveshare-amoled-175');
+    assert.equal(old.connected, true);
+    assert.equal(old.board, null);
   } finally {
     await old.stop();
   }
