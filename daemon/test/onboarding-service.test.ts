@@ -135,7 +135,8 @@ async function fixture() {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      await rm(root, {recursive: true, force: true});
+      // A settings file the service saves in the background can land while the folder is removed.
+      await rm(root, {recursive: true, force: true, maxRetries: 10, retryDelay: 50});
     }};
 }
 
