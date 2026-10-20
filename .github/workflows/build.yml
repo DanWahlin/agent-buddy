@@ -366,7 +366,7 @@ jobs:
             > [!TIP]
             > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:
             > `copilot -p "Install the latest Agent Companion desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
-            > The app isn't code-signed, so you may still need the step for your OS below.
+            > The Windows app is code-signed. The macOS and Linux apps aren't, so you may still need the step for your OS below.
 
             #### 🍎 macOS (Apple Silicon and Intel)
 

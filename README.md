@@ -117,9 +117,9 @@ app. You do not need Python, Node.js, or a clone of the repository.
    `agent-companion-desktop-<version>-windows-arm64-setup.exe`,
    `agent-companion-desktop-<version>-linux-x86_64.AppImage`, or
    `agent-companion-desktop-<version>-linux-amd64.deb`.
-2. Open the app. It is not code-signed, so see
-   [Run the desktop app](#run-the-desktop-app) for the first-run step on your
-   OS. On a new installation, the app starts its local companion service and
+2. Open the app. The Windows app is code-signed; the macOS and Linux apps
+   aren't, so see [Run the desktop app](#run-the-desktop-app) for the first-run
+   step on your OS. On a new installation, the app starts its local companion service and
    opens the welcome screen. Select **Get Started**.
 3. Select your agents. If hooks need installation or an update, approve the
    changes. Follow the short guide for each selected agent. The guide waits for real agent activity. You can
@@ -1009,7 +1009,8 @@ change back to the repository's service, run `npm run setup` in the clone.
 On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
 
 - **Download it** from [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest).
-  The app is not code-signed. Your OS can need one extra step:
+  The Windows app is code-signed. The macOS and Linux apps aren't, so they can
+  need one extra step:
 
   | OS | File | First run |
   | --- | --- | --- |
