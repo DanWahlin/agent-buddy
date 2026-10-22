@@ -35,7 +35,18 @@
       ExecWait '"$R7" /S _?=$R6' $R5
       ${IfNot} ${Errors}
       ${AndIf} $R5 = 0
-        Delete "$R7"
+        ; Windows can keep the uninstaller locked for a short time after it exits.
+        StrCpy $R5 0
+        ${Do}
+          ClearErrors
+          Delete "$R7"
+          ${IfNot} ${Errors}
+          ${OrIf} $R5 >= 40
+            ${Break}
+          ${EndIf}
+          IntOp $R5 $R5 + 1
+          Sleep 250
+        ${Loop}
         RMDir "$R6"
       ${EndIf}
     ${EndIf}
