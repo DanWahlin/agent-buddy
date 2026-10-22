@@ -86,7 +86,7 @@ pub fn find_client(clients: &str, pid: u32) -> Option<Client> {
         .iter()
         .find(|client| client.get("pid").and_then(Value::as_u64) == Some(pid as u64)
             && client.get("initialTitle").or_else(|| client.get("title")).and_then(Value::as_str)
-                == Some("Agent Companion"))?;
+                == Some(crate::APP_NAME))?;
     let pair = |key: &str| -> Option<(f64, f64)> {
         let values = client.get(key)?.as_array()?;
         Some((values.first()?.as_f64()?, values.get(1)?.as_f64()?))
@@ -180,9 +180,9 @@ mod tests {
     #[test]
     fn the_character_is_found_by_process_and_initial_title() {
         let clients = r#"[
-            {"address":"0xaaa","pid":1,"title":"Agent Companion","at":[0,0],"size":[10,10],"floating":false,"pinned":false},
-            {"address":"0xsettings","pid":4242,"title":"Agent Buddy","at":[0,0],"size":[1000,800],"floating":false,"pinned":false},
-            {"address":"0xbbb","pid":4242,"initialTitle":"Agent Companion","title":"Copilot","at":[2200,1000],"size":[280,280],"floating":true,"pinned":false}
+            {"address":"0xaaa","pid":1,"title":"Agent Buddy","at":[0,0],"size":[10,10],"floating":false,"pinned":false},
+            {"address":"0xsettings","pid":4242,"initialTitle":"Agent Buddy Settings","title":"Agent Buddy","at":[0,0],"size":[1000,800],"floating":false,"pinned":false},
+            {"address":"0xbbb","pid":4242,"initialTitle":"Agent Buddy","title":"Copilot","at":[2200,1000],"size":[280,280],"floating":true,"pinned":false}
         ]"#;
         let client = find_client(clients, 4242).unwrap();
         assert_eq!(client.address, "0xbbb");
@@ -209,7 +209,7 @@ mod tests {
             {"address":"0xstarting","pid":4242,"initialTitle":crate::STARTING_TITLE,
              "title":crate::STARTING_TITLE,"at":[600,400],"size":[440,250],
              "floating":false,"pinned":false},
-            {"address":"0xcharacter","pid":4242,"initialTitle":"Agent Companion",
+            {"address":"0xcharacter","pid":4242,"initialTitle":"Agent Buddy",
              "title":"Copilot","at":[2200,1000],"size":[280,280],
              "floating":true,"pinned":true}
         ]).to_string();

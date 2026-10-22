@@ -17,6 +17,7 @@ mod launcher;
 mod packs;
 mod placement;
 mod pointer;
+mod rename;
 mod service;
 
 use std::path::PathBuf;
@@ -113,7 +114,7 @@ fn show_pack(app: &Arc<App>, window: &WebviewWindow, force: bool) {
     println!("[packs] showing {} from {}", next.0, next.1.display());
     let tray = app.tray.lock().unwrap().clone();
     if let Some(tray) = tray {
-        let _ = tray.set_tooltip(Some(format!("Agent Companion - {}", next.0)));
+        let _ = tray.set_tooltip(Some(format!("Agent Buddy - {}", next.0)));
     }
     let _ = window.emit("to-view-pack", serde_json::json!({ "url": packs::pack_url(&next.0, version) }));
 }
@@ -137,11 +138,11 @@ fn apply_daemon(app: &Arc<App>, window: &WebviewWindow) {
         let current = app.current.lock().unwrap().as_ref().map(|(id, _, _)| id.clone()).unwrap_or_default();
         let tooltip = match installing {
             Some(install) => format!(
-                "Agent Companion - installing {} on the device: {}%",
+                "Agent Buddy - installing {} on the device: {}%",
                 install["name"].as_str().unwrap_or("a character"),
                 install["percent"].as_u64().unwrap_or(0)
             ),
-            None => format!("Agent Companion - {current}"),
+            None => format!("Agent Buddy - {current}"),
         };
         let _ = tray.set_tooltip(Some(tooltip));
     }
@@ -170,7 +171,7 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
     app.pointer.refresh(window);
     let item = app.visibility.lock().unwrap().clone();
     if let Some(item) = item {
-        let _ = item.set_text(if user_hidden { "Show Agent Companion" } else { "Hide Agent Companion" });
+        let _ = item.set_text(if user_hidden { "Show Agent Buddy" } else { "Hide Agent Buddy" });
         // Settings has it off: showing it from here would be overruled.
         let _ = item.set_enabled(wanted);
     }
@@ -279,6 +280,8 @@ fn set_user_hidden(app: &Arc<App>, window: &WebviewWindow, hidden: bool) {
 
 /// The label of the window that shows the Settings page.
 const SETTINGS: &str = "settings";
+// Not the app name: hyprland.rs finds the character's window by that title.
+const SETTINGS_TITLE: &str = "Agent Buddy Settings";
 
 fn restore_settings(window: &WebviewWindow) {
     if let Err(error) = window.unminimize().and_then(|()| window.show()) {
@@ -390,7 +393,7 @@ fn show_settings(handle: &AppHandle, address: String) {
         }
     });
     let built = WebviewWindowBuilder::new(handle, SETTINGS, WebviewUrl::External(url))
-        .title("Agent Buddy")
+        .title(SETTINGS_TITLE)
         .inner_size(placement::SETTINGS_SIZE.0, placement::SETTINGS_SIZE.1)
         .min_inner_size(420.0, 480.0)
         .center()
@@ -426,9 +429,12 @@ fn show_settings(handle: &AppHandle, address: String) {
     }
 }
 
+/// The main window's title, as `tauri.conf.json` sets it.
+const APP_NAME: &str = "Agent Buddy";
+
 /// The label of the window that says the companion service is starting.
 const STARTING: &str = "starting";
-const STARTING_TITLE: &str = "Starting Agent Companion";
+const STARTING_TITLE: &str = "Starting Agent Buddy";
 
 /// While a release build waits for its companion service, say so in a small
 /// window in the middle of the screen: the character has nothing to show yet,
@@ -669,6 +675,11 @@ fn main() {
             }
             #[cfg(target_os = "macos")]
             handle.handle().set_activation_policy(tauri::ActivationPolicy::Regular)?;
+            #[cfg(target_os = "macos")]
+            {
+                let identifier = handle.config().identifier.clone();
+                std::thread::spawn(move || rename::remove_old_bundle(&identifier));
+            }
 
             let window: WebviewWindow = handle.get_webview_window("main").expect("the main window");
             #[cfg(target_os = "macos")]
@@ -949,7 +960,7 @@ fn ask_on_quit(handle: &tauri::AppHandle) -> Option<bool> {
              service runs in the background.\n\nTo stop the service too, choose Close App and Stop Service. \
              The tray menu also has Quit and Stop Companion Service. This message shows one time only.",
         )
-        .title("Close Agent Companion?")
+        .title("Close Agent Buddy?")
         .kind(MessageDialogKind::Info)
         .buttons(MessageDialogButtons::YesNoCancelCustom(CLOSE.into(), STOP.into(), CANCEL.into()))
         .blocking_show_with_result();
@@ -964,9 +975,9 @@ fn ask_on_quit(handle: &tauri::AppHandle) -> Option<bool> {
 
 /// The tray keeps character controls and an explicit service-stop action available.
 fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>) -> tauri::Result<()> {
-    let visibility = MenuItem::with_id(handle, "visibility", "Hide Agent Companion", true, None::<&str>)?;
+    let visibility = MenuItem::with_id(handle, "visibility", "Hide Agent Buddy", true, None::<&str>)?;
     let settings = MenuItem::with_id(handle, "settings", "Settings", true, None::<&str>)?;
-    let quit_app = MenuItem::with_id(handle, "quit", "Quit Agent Companion", true, None::<&str>)?;
+    let quit_app = MenuItem::with_id(handle, "quit", "Quit Agent Buddy", true, None::<&str>)?;
     let quit_all = MenuItem::with_id(handle, "quit-and-stop", "Quit and Stop Companion Service", true, None::<&str>)?;
     let separator = tauri::menu::PredefinedMenuItem::separator(handle)?;
     let menu = Menu::with_items(handle, &[&visibility, &settings, &separator, &quit_app, &quit_all])?;
@@ -975,7 +986,7 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
     let tray_app = app.clone();
     let tray = TrayIconBuilder::new()
         .icon(handle.default_window_icon().expect("a window icon").clone())
-        .tooltip("Agent Companion")
+        .tooltip("Agent Buddy")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |handle, event| match event.id.as_ref() {
@@ -1010,6 +1021,16 @@ fn build_tray(handle: &tauri::AppHandle, window: &WebviewWindow, app: &Arc<App>)
 #[cfg(test)]
 mod tests {
     use super::{quit_plan, Command, Quit, QuitPlan};
+
+    #[test]
+    fn the_window_title_is_the_app_name() {
+        // hyprland.rs finds the character's window by this title.
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(config["productName"], super::APP_NAME);
+        assert_eq!(config["app"]["windows"][0]["title"], super::APP_NAME);
+        assert_ne!(super::SETTINGS_TITLE, super::APP_NAME);
+        assert_ne!(super::STARTING_TITLE, super::APP_NAME);
+    }
 
     #[test]
     fn quit_stops_the_service_only_without_a_device_or_when_asked() {

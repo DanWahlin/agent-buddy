@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Agent Companion",
+  "productName": "Agent Buddy",
   "version": "0.1.0",
   "identifier": "dev.agentcompanion.desktop",
   "build": {
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Agent Companion",
+        "title": "Agent Buddy",
         "width": 280,
         "height": 280,
         "minWidth": 280,
@@ -48,7 +48,7 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "The ESP32 Agent Companion's character on your desktop",
+    "shortDescription": "Agent Buddy's character on your desktop",
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
@@ -61,6 +61,12 @@
           "gstreamer1.0-plugins-base",
           "gstreamer1.0-plugins-good",
           "gstreamer1.0-pulseaudio | gstreamer1.0-alsa"
+        ],
+        "conflicts": [
+          "agent-companion"
+        ],
+        "replaces": [
+          "agent-companion"
         ]
       }
     },

@@ -377,7 +377,7 @@ fn launch_path() -> Option<PathBuf> {
 }
 
 /// `/Applications/X.app/Contents/MacOS/x` -> `/Applications/X.app`.
-fn app_bundle(executable: &std::path::Path) -> Option<PathBuf> {
+pub fn app_bundle(executable: &std::path::Path) -> Option<PathBuf> {
     let macos = executable.parent()?;
     let contents = macos.parent()?;
     let bundle = contents.parent()?;
@@ -488,8 +488,8 @@ mod tests {
     #[test]
     fn the_app_names_its_bundle_and_obeys_a_quit() {
         assert_eq!(
-            app_bundle(std::path::Path::new("/Applications/Agent Companion.app/Contents/MacOS/agent-companion")),
-            Some(PathBuf::from("/Applications/Agent Companion.app"))
+            app_bundle(std::path::Path::new("/Applications/Agent Buddy.app/Contents/MacOS/agent-companion-desktop")),
+            Some(PathBuf::from("/Applications/Agent Buddy.app"))
         );
         assert_eq!(app_bundle(std::path::Path::new("/repo/target/release/agent-companion")), None);
         let body = status_request();

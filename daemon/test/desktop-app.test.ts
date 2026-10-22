@@ -122,6 +122,7 @@ test('a start that closes before it reaches the service shows why', async () => 
 
 test('the usual locations cover the downloads and a build in the repository', () => {
   assert.deepEqual(defaultDesktopAppLocations('darwin', '/Users/me', '/repo'), [
+    '/Applications/Agent Buddy.app', '/Users/me/Applications/Agent Buddy.app',
     '/Applications/Agent Companion.app', '/Users/me/Applications/Agent Companion.app',
     '/repo/desktop/apps/desktop/src-tauri/target/release/agent-companion-desktop',
     '/repo/desktop/apps/desktop/src-tauri/target/debug/agent-companion-desktop',
@@ -129,6 +130,8 @@ test('the usual locations cover the downloads and a build in the repository', ()
   assert.equal(defaultDesktopAppLocations('linux', '/home/me', '/repo')[0], '/usr/bin/agent-companion-desktop');
   assert.deepEqual(defaultDesktopAppLocations('win32', 'C:\\Users\\me', 'C:\\repo',
                                               {LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local'}), [
+    'C:\\Users\\me\\AppData\\Local\\Agent Buddy\\agent-companion-desktop.exe',
+    'C:\\Program Files\\Agent Buddy\\agent-companion-desktop.exe',
     'C:\\Users\\me\\AppData\\Local\\Agent Companion\\agent-companion-desktop.exe',
     'C:\\Program Files\\Agent Companion\\agent-companion-desktop.exe',
     'C:\\repo\\desktop\\apps\\desktop\\src-tauri\\target\\release\\agent-companion-desktop.exe',

@@ -287,6 +287,57 @@ jobs:
                      cp "$bundle"/deb/*.deb "$name-linux-amd64.deb" ;;
           esac
           ls -l dist-release
+      # The app was named Agent Companion before Agent Buddy, and the name sets the Windows install
+      # folder and the Debian package. An update from the last release must leave one app, with its data.
+      - name: Check an update from the last release on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $previous = gh release list --repo $env:GITHUB_REPOSITORY --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName'
+          $download = Join-Path $env:RUNNER_TEMP 'previous'
+          gh release download $previous --repo $env:GITHUB_REPOSITORY -p '*-windows-${{ matrix.arch }}-setup.exe' -D $download
+          if ($LASTEXITCODE) { throw "Couldn't download the $previous installer." }
+          $install = { param($setup) $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+                       if ($p.ExitCode) { throw "$setup exited with $($p.ExitCode)." } }
+          & $install (Get-Item "$download\*-setup.exe").FullName
+          $data = Join-Path $env:LOCALAPPDATA 'ESP32 Agent Companion'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          Set-Content (Join-Path $data 'update-marker') 'kept'
+          & $install (Get-Item 'dist-release\*-windows-${{ matrix.arch }}-setup.exe').FullName
+          $uninstall = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+          $failures = @()
+          if (-not (Test-Path "$env:LOCALAPPDATA\Agent Buddy\agent-companion-desktop.exe")) { $failures += 'Agent Buddy is not installed.' }
+          if (-not (Test-Path "$uninstall\Agent Buddy")) { $failures += 'Agent Buddy has no uninstall entry.' }
+          if (Test-Path "$env:LOCALAPPDATA\Agent Companion") { $failures += "The Agent Companion folder stayed: $(Get-ChildItem -Recurse -Name "$env:LOCALAPPDATA\Agent Companion")" }
+          if (Test-Path "$uninstall\Agent Companion") { $failures += 'The Agent Companion uninstall entry stayed.' }
+          $shortcuts = @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs", [Environment]::GetFolderPath('Desktop')) |
+            Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Recurse -Filter 'Agent Companion.lnk' }
+          if ($shortcuts) { $failures += "Old shortcuts stayed: $($shortcuts.FullName -join ', ')" }
+          if ((Get-Content (Join-Path $data 'update-marker')) -ne 'kept') { $failures += 'The app data was not kept.' }
+          if ($failures) { $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }; exit 1 }
+          Write-Output "An update from $previous leaves one app, Agent Buddy, and keeps the app data."
+      - name: Check an update from the last release on Linux
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')"
+          gh release download "$previous" --repo "$GITHUB_REPOSITORY" -p '*-linux-amd64.deb' -D "$RUNNER_TEMP/previous"
+          sudo apt-get install -y "$RUNNER_TEMP"/previous/*.deb
+          sudo apt-get install -y ./dist-release/*-linux-amd64.deb
+          dpkg-query -W -f='${Status}\n' agent-buddy | grep -qx 'install ok installed'
+          if dpkg-query -W -f='${Status}\n' agent-companion 2>/dev/null | grep -q ' installed$'; then
+            echo "::error::The agent-companion package stayed."; exit 1
+          fi
+          test -x /usr/bin/agent-companion-desktop
+          grep -lx 'Name=Agent Buddy' /usr/share/applications/*.desktop
+          if grep -lx 'Name=Agent Companion' /usr/share/applications/*.desktop; then
+            echo "::error::The Agent Companion menu entry stayed."; exit 1
+          fi
+          echo "An update from $previous leaves one app, Agent Buddy."
       - name: Upload the app
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -365,7 +416,7 @@ jobs:
 
             > [!TIP]
             > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:
-            > `copilot -p "Install the latest Agent Companion desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
+            > `copilot -p "Install the latest Agent Buddy desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
             > The Windows app is code-signed. The macOS and Linux apps aren't, so you may still need the step for your OS below.
 
             #### 🍎 macOS (Apple Silicon and Intel)
@@ -374,11 +425,11 @@ jobs:
             | --- | --- |
             | `agent-companion-desktop-*-macos-universal.dmg` | macOS app |
 
-            Open the `.dmg` and drag **Agent Companion** to **Applications**. The app isn't code-signed, so macOS
+            Open the `.dmg` and drag **Agent Buddy** to **Applications**. The app isn't code-signed, so macOS
             refuses to open it (it may say the app "is damaged"). Clear the download flag once, in Terminal:
 
             ```bash
-            sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"
+            sudo xattr -rd com.apple.quarantine "/Applications/Agent Buddy.app"
             ```
 
             Then open it from Applications. The running app appears in the Dock and the menu bar. Select its Dock entry to return to an open Settings window.
@@ -416,7 +467,7 @@ jobs:
             If it says it needs FUSE, install it (`sudo pacman -S --needed fuse2` on Arch and Omarchy,
             `sudo apt install libfuse2` on Ubuntu), or run it with `--appimage-extract-and-run`.
 
-            **Debian or Ubuntu:** `sudo apt install ./agent-companion-desktop-*-linux-amd64.deb`, then run **Agent Companion** from your apps.
+            **Debian or Ubuntu:** `sudo apt install ./agent-companion-desktop-*-linux-amd64.deb`, then run **Agent Buddy** from your apps.
 
             On Hyprland (including Omarchy) the app floats, pins and un-borders its own window, so there is nothing to configure.
             On other Wayland desktops it runs through XWayland, so it can see the pointer and remember where you put it.

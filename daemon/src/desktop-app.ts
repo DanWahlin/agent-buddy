@@ -198,7 +198,8 @@ export class DesktopApp {
   }
 }
 
-// The download's usual install locations come first, then a build in this repository.
+// The download's usual install locations come first, then a build in this repository. The app was
+// named Agent Companion before Agent Buddy, so the old locations follow until it is updated.
 export function defaultDesktopAppLocations(platform: NodeJS.Platform, home: string, repository: string,
                                            env: NodeJS.ProcessEnv = process.env): string[] {
   const program = platform === 'win32' ? 'agent-companion-desktop.exe' : 'agent-companion-desktop';
@@ -208,11 +209,14 @@ export function defaultDesktopAppLocations(platform: NodeJS.Platform, home: stri
   if (platform === 'win32') {
     const programFiles = env.ProgramFiles?.trim() || 'C:\\Program Files';
     // The installer is per user by default; a per-machine install goes to Program Files.
-    return [join(windowsLocalAppData(home, env), 'Agent Companion', program),
-            join(programFiles, 'Agent Companion', program), build('release'), build('debug')];
+    const local = windowsLocalAppData(home, env);
+    return [join(local, 'Agent Buddy', program), join(programFiles, 'Agent Buddy', program),
+            join(local, 'Agent Companion', program), join(programFiles, 'Agent Companion', program),
+            build('release'), build('debug')];
   }
   if (platform === 'darwin')
-    return ['/Applications/Agent Companion.app', join(home, 'Applications', 'Agent Companion.app'),
+    return ['/Applications/Agent Buddy.app', join(home, 'Applications', 'Agent Buddy.app'),
+            '/Applications/Agent Companion.app', join(home, 'Applications', 'Agent Companion.app'),
             build('release'), build('debug')];
   if (platform === 'linux') return ['/usr/bin/agent-companion-desktop', build('release'), build('debug')];
   return [];
