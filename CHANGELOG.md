@@ -2,6 +2,17 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.15.4]
+
+### Documentation
+
+- Say that the Windows app is code-signed in the release notes and README (#43)
+
+
+### Other changes
+
+- Rename the desktop app to Agent Buddy and remove the old Agent Companion install (#47)
+
 ## [v0.15.3]
 
 ### Other changes
