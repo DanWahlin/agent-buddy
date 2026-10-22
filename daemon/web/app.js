@@ -971,7 +971,7 @@ function showServiceStopped() {
 
 $('uninstall').addEventListener('click', async () => {
   const keepData = $('uninstall-keep-data').checked;
-  const message = 'Uninstall Agent Companion? This removes the desktop app, the companion service and the '
+  const message = 'Uninstall Agent Buddy? This removes the desktop app, the companion service and the '
     + (keepData ? 'agent hooks. Your settings stay.' : 'agent hooks, and deletes your settings, Wi-Fi pairing and added characters.');
   if (!await confirmAction(message, 'Uninstall')) return;
   const button = $('uninstall');

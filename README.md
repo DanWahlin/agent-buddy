@@ -1014,9 +1014,13 @@ On Windows, agents in [WSL 2](#windows-wsl-2) use the same service.
 
   | OS | File | First run |
   | --- | --- | --- |
-  | macOS | `agent-companion-desktop-<version>-macos-universal.dmg` | Drag **Agent Companion** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Companion.app"` once and open it from Applications. |
+  | macOS | `agent-companion-desktop-<version>-macos-universal.dmg` | Drag **Agent Buddy** to Applications, then run `sudo xattr -rd com.apple.quarantine "/Applications/Agent Buddy.app"` once and open it from Applications. |
   | Windows | `agent-companion-desktop-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for an Arm PC | Signed by Dan Wahlin. If Windows still warns, choose **Keep**, then **More info > Run anyway**. |
   | Linux | `agent-companion-desktop-<version>-linux-x86_64.AppImage` or `agent-companion-desktop-<version>-linux-amd64.deb` | AppImage: `chmod +x` it, then run it. If it asks for FUSE, install `fuse2` (Arch, Omarchy) or `libfuse2` (Ubuntu). `.deb`: `sudo apt install ./agent-companion-desktop-<version>-linux-amd64.deb`. |
+
+  Before version 0.15.4 the app was named Agent Companion. The new version
+  removes the Agent Companion app when it installs, or on macOS when it first
+  opens, and keeps your settings and characters.
 
   The running app appears in the macOS Dock or the taskbar on Windows and
   supported Linux desktops. Its menu bar or tray icon remains available.
@@ -1078,14 +1082,14 @@ The window has no frame and is always on top.
   your current tab and setup progress.
   On Windows, Settings is the only taskbar window while it is open. After
   Settings closes, the character's taskbar entry returns.
-- **To bring the character back after Hide**, use **Show Agent Companion**
+- **To bring the character back after Hide**, use **Show Agent Buddy**
   in the tray menu, or run the app with `--show`. On Windows and Linux
   desktops with a taskbar, Hide minimizes the character window so the app
   remains available. On Hyprland, including Omarchy, Hide removes the window
   and keeps the menu-bar tray entry.
   On macOS, the Dock entry remains while the app runs.
-- **The tray icon** has **Show Agent Companion** or **Hide Agent Companion**,
-  **Settings**, **Quit Agent Companion** and **Quit and Stop Companion Service**.
+- **The tray icon** has **Show Agent Buddy** or **Hide Agent Buddy**,
+  **Settings**, **Quit Agent Buddy** and **Quit and Stop Companion Service**.
   Choose the character in Settings.
 - **From a terminal or a keyboard shortcut**, run the app again with `--toggle`,
   `--show`, `--hide`, `--settings` or `--quit` to control the running one.

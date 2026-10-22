@@ -55,6 +55,13 @@ test('keepData keeps the data folder and the app folders, but not the service', 
   assert.ok(plan.remove.includes('/Applications/Agent Companion.app'));
 });
 
+test('the app is removed under its new name and its old name', () => {
+  assert.ok(createUninstallPlan({...mac, app: '/Applications/Agent Buddy.app'}).remove
+    .includes('/Applications/Agent Buddy.app'));
+  assert.ok(createUninstallPlan({...linux, app: '/home/dan/Apps/Agent Buddy_0.15.4_amd64.AppImage'}).remove
+    .includes('/home/dan/Apps/Agent Buddy_0.15.4_amd64.AppImage'));
+});
+
 test('the Linux plan disables the unit first and stops it last', () => {
   const plan = createUninstallPlan({...linux, configHome: '/home/dan/.cfg'});
   assert.deepEqual(plan.before, [['systemctl', '--user', 'disable', 'esp32-agent-companion.service']]);
@@ -69,7 +76,7 @@ test('the Linux plan disables the unit first and stops it last', () => {
 
 test('a packaged or unknown app is a manual step, and a repository build is left alone', () => {
   assert.deepEqual(createUninstallPlan({...linux, app: '/usr/bin/agent-companion-desktop'}).manual,
-                   ["Remove the desktop app's package: sudo apt remove agent-companion"]);
+                   ["Remove the desktop app's package: sudo apt remove agent-buddy"]);
   const other = createUninstallPlan({...mac, app: '/Applications/Something Else.app'});
   assert.ok(!other.remove.includes('/Applications/Something Else.app'));
   assert.deepEqual(other.manual, ['Delete the desktop app: /Applications/Something Else.app']);
@@ -137,7 +144,9 @@ test('the Windows plan removes the logon start, stops the launcher, and removes 
     assert.ok(plan.remove.includes(path), path);
   // Not the pipe, and not the app the Windows installer put in place.
   assert.ok(!plan.remove.some(path => path.includes('pipe') || path.endsWith('.exe')));
-  assert.match(plan.manual.join('\n'), /Installed apps/);
+  assert.match(plan.manual.join('\n'), /Installed apps, and uninstall "Agent Companion"/);
+  const renamed = createUninstallPlan({...windows, app: `${local}\\Agent Buddy\\agent-companion-desktop.exe`});
+  assert.match(renamed.manual.join('\n'), /Installed apps, and uninstall "Agent Buddy"/);
   const script = uninstallScript(plan);
   assert.ok(script.indexOf("'reg.exe' 'delete'") < script.indexOf('ServiceStop'));
   assert.ok(script.indexOf('ServiceStop') < script.indexOf('Remove-Item'));

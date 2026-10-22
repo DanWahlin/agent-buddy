@@ -5,7 +5,7 @@ import {launchAgentLabel, macLogName, systemdUnit, windowsRunKey, windowsRunValu
 // The desktop app's Tauri identifier and program name, which name its own data and cache folders.
 const appIdentifier = 'dev.agentcompanion.desktop';
 const appProgram = 'agent-companion-desktop';
-const debPackage = 'agent-companion';
+const debPackage = 'agent-buddy';
 
 export interface UninstallContext {
   platform: 'darwin' | 'linux' | 'win32';
@@ -85,9 +85,9 @@ export function createUninstallPlan(context: UninstallContext): UninstallPlan {
     if (isRemovableApp(app, platform)) remove.push(posix.normalize(app).replace(/\/+$/, ''));
     else if (platform === 'linux' && app.startsWith('/usr/'))
       manual.push(`Remove the desktop app's package: sudo apt remove ${debPackage}`);
-    else if (platform === 'win32' && /agent[- ]?companion/i.test(win32.basename(win32.dirname(app))))
+    else if (platform === 'win32' && /^agent[- ]?(companion|buddy)$/i.test(win32.basename(win32.dirname(app))))
       manual.push('Remove the desktop app: open Windows Settings, then Apps, then Installed apps, and uninstall '
-        + '"Agent Companion".');
+        + `"${/companion/i.test(win32.basename(win32.dirname(app))) ? 'Agent Companion' : 'Agent Buddy'}".`);
     else manual.push(`Delete the desktop app: ${app}`);
   }
   if (!inside(context.serviceRoot, dataDir, platform))
@@ -187,7 +187,7 @@ function powerShellQuote(value: string): string {
 function isRemovableApp(app: string, platform: UninstallContext['platform']): boolean {
   if (platform === 'win32') return false;
   const name = posix.basename(app.replace(/\/+$/, ''));
-  if (!/agent[- ]?companion/i.test(name)) return false;
+  if (!/agent[- ]?(companion|buddy)/i.test(name)) return false;
   return platform === 'darwin' ? name.endsWith('.app') : /\.appimage$/i.test(name);
 }
 
@@ -204,7 +204,7 @@ function isOwnPath(path: string, home: string, platform: UninstallContext['platf
   if (clean === '' || fold(clean) === fold(root)) return false;
   // The home folder's own name does not count.
   const own = fold(clean).startsWith(fold(`${root}${paths.sep}`)) ? clean.slice(root.length) : clean;
-  return /agent[- ]?companion|agentcompanion/i.test(own);
+  return /agent[- ]?(companion|buddy)|agentcompanion/i.test(own);
 }
 
 function inside(path: string, folder: string, platform: UninstallContext['platform']): boolean {

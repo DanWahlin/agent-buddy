@@ -373,7 +373,7 @@ test('serves the page with strict security headers', async () => {
   await withServer(async call => {
     const page = await call('/', {token: false});
     assert.equal(page.status, 200);
-    assert.match(page.body, /Agent Companion/);
+    assert.match(page.body, /Agent Buddy/);
     assert.match(String(page.headers['content-security-policy']), /default-src 'self'/);
     assert.equal(page.headers['x-frame-options'], 'DENY');
     assert.equal((await call('/app.js', {token: false})).status, 200);
