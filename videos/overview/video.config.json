@@ -1,0 +1,558 @@
+{
+  "meta": {
+    "title": "Agent",
+    "subtitle": "Buddy",
+    "url": "github.com/DanWahlin/agent-buddy",
+    "width": 1920,
+    "height": 1080,
+    "shotsDir": "assets/shots",
+    "framesDir": "assets/frames",
+    "shotBorder": 0
+  },
+  "sequence": [
+    "hook",
+    "meet",
+    "states",
+    "agents",
+    "touches",
+    "characters",
+    "chapters",
+    "values",
+    "end"
+  ],
+  "music": {
+    "src": "assets/music/power-up-stomp.mp3",
+    "volume": 0.9,
+    "fadeIn": 0.1,
+    "fadeOut": 0.8,
+    "crossfade": 0.3,
+    "segments": [
+      {
+        "at": 0,
+        "trackAt": 0.56
+      },
+      {
+        "at": 4.17,
+        "trackAt": 2.97
+      },
+      {
+        "at": 58,
+        "trackAt": 53.309
+      },
+      {
+        "at": 71.5,
+        "trackAt": 70.291
+      }
+    ]
+  },
+  "hook": {
+    "duration": 8,
+    "lines": [
+      "Your agent is done.",
+      "Another needs your attention.",
+      "Did you notice?"
+    ],
+    "tiles": [
+      {
+        "agent": "copilot",
+        "task": "Refactor auth module",
+        "x": 150,
+        "y": 560,
+        "outcome": "done",
+        "at": 1.6
+      },
+      {
+        "agent": "codex",
+        "task": "Write unit tests",
+        "x": 575,
+        "y": 548
+      },
+      {
+        "agent": "grok",
+        "task": "Fix flaky build",
+        "x": 1000,
+        "y": 566
+      },
+      {
+        "agent": "hermes",
+        "task": "Summarize issues",
+        "x": 1425,
+        "y": 552
+      },
+      {
+        "agent": "openclaw",
+        "task": "Update the docs",
+        "x": 362,
+        "y": 708
+      },
+      {
+        "agent": "claude",
+        "task": "Upgrade dependencies",
+        "x": 788,
+        "y": 718,
+        "outcome": "attention",
+        "at": 2.6
+      },
+      {
+        "agent": "copilot",
+        "task": "Add dark mode",
+        "x": 1212,
+        "y": 702
+      },
+      {
+        "agent": "claude",
+        "task": "Review pull request",
+        "x": 150,
+        "y": 858
+      },
+      {
+        "agent": "codex",
+        "task": "Plan the API",
+        "x": 575,
+        "y": 868
+      },
+      {
+        "agent": "hermes",
+        "task": "Triage bug reports",
+        "x": 1000,
+        "y": 852
+      },
+      {
+        "agent": "grok",
+        "task": "Speed up the query",
+        "x": 1425,
+        "y": 862
+      }
+    ]
+  },
+  "meet": {
+    "duration": 7,
+    "introducing": "Introducing",
+    "sub": "A desk buddy for your AI coding agents.",
+    "device": {
+      "cx": 600,
+      "cy": 560,
+      "size": 640
+    },
+    "footage": {
+      "src": "assets/footage/desk-wake.mp4",
+      "fallback": "rendered device",
+      "box": [
+        120,
+        150,
+        1060,
+        930
+      ]
+    }
+  },
+  "states": {
+    "label": "It reacts to your agents",
+    "device": {
+      "cx": 1380,
+      "cy": 560,
+      "size": 620
+    },
+    "steps": [
+      {
+        "duration": 5,
+        "state": "working",
+        "title": "Working",
+        "sub": "An agent is busy. Your buddy is busy too.",
+        "events": [
+          {
+            "agent": "copilot",
+            "text": "Running tests\u2026",
+            "kind": "working"
+          }
+        ]
+      },
+      {
+        "duration": 5,
+        "state": "attention",
+        "title": "Needs attention",
+        "sub": "An agent is waiting for you. Now you know.",
+        "events": [
+          {
+            "agent": "copilot",
+            "text": "Running tests\u2026",
+            "kind": "working"
+          },
+          {
+            "agent": "claude",
+            "text": "Needs your approval",
+            "kind": "attention"
+          }
+        ]
+      },
+      {
+        "duration": 5,
+        "state": "complete",
+        "title": "Complete",
+        "sub": "The work is done. Come take a look.",
+        "events": [
+          {
+            "agent": "copilot",
+            "text": "Done",
+            "kind": "complete"
+          },
+          {
+            "agent": "claude",
+            "text": "Done",
+            "kind": "complete"
+          }
+        ]
+      }
+    ],
+    "badgeNote": "The badge shows which agent."
+  },
+  "agents": {
+    "duration": 6.5,
+    "lines": [
+      "Six agents.",
+      "One buddy."
+    ],
+    "sub": "Badges show which agent is working, waiting, or done.",
+    "device": {
+      "cx": 960,
+      "cy": 600,
+      "size": 470
+    }
+  },
+  "touches": {
+    "duration": 8,
+    "title": [
+      "Little",
+      "touches."
+    ],
+    "items": [
+      {
+        "take": "tap",
+        "title": "Tap to say hi",
+        "sub": "It reacts to your touch.",
+        "tap": [
+          1.6,
+          4.6
+        ],
+        "footage": {
+          "src": "assets/footage/tap.mp4",
+          "fallback": "rendered device"
+        }
+      },
+      {
+        "take": "usage",
+        "title": "Usage at a glance",
+        "sub": "AI credits or tokens, on screen.",
+        "lens": {
+          "size": 260,
+          "cx": 0.97,
+          "cy": 0.6
+        }
+      },
+      {
+        "take": "sleep",
+        "title": "Naps when idle",
+        "sub": "After two quiet minutes."
+      }
+    ]
+  },
+  "characters": {
+    "duration": 7,
+    "title": [
+      "Pick your",
+      "character."
+    ],
+    "items": [
+      {
+        "take": "copilot",
+        "name": "Copilot"
+      },
+      {
+        "take": "claude",
+        "name": "Claude"
+      },
+      {
+        "take": "openclaw",
+        "name": "OpenClaw"
+      },
+      {
+        "name": "Your own",
+        "custom": "Make your own pack"
+      }
+    ],
+    "note": "More coming soon"
+  },
+  "chapters": [
+    {
+      "label": "Desktop app",
+      "headline": [
+        "No ESP32 device?",
+        "Use your desktop."
+      ],
+      "sub": "The Desktop Agent Buddy shows the same character in a window on your screen.",
+      "duration": 6.5,
+      "shots": [
+        {
+          "src": "desktop-app",
+          "video": "assets/clips/desktop-app.mp4",
+          "mediaStart": 1.0,
+          "fallback": "settings-desktop",
+          "ring": false
+        }
+      ]
+    },
+    {
+      "label": "Settings",
+      "headline": [
+        "Deploy different",
+        "characters and",
+        "change app",
+        "settings."
+      ],
+      "sub": "Choose a character, turn on your agents, and connect over USB or Wi-Fi.",
+      "duration": 7,
+      "shots": [
+        {
+          "src": "settings-characters",
+          "ring": false,
+          "crop": [
+            317,
+            0,
+            1603,
+            1080
+          ],
+          "duration": 3
+        },
+        {
+          "src": "settings-agents-full",
+          "ring": false,
+          "crop": [
+            317,
+            0,
+            1603,
+            1080
+          ],
+          "moves": [
+            {
+              "at": 0.6,
+              "dur": 2.2,
+              "focus": [
+                317,
+                701,
+                1603,
+                1781
+              ]
+            }
+          ]
+        }
+      ],
+      "gradFrom": 2,
+      "headSize": 74,
+      "stage": {
+        "left": 850,
+        "top": 130,
+        "width": 960,
+        "height": 820
+      }
+    }
+  ],
+  "values": {
+    "duration": 6.5,
+    "words": [
+      "Local.",
+      "Private.",
+      "Yours."
+    ],
+    "chips": [
+      {
+        "icon": "shield-check",
+        "text": "No cloud"
+      },
+      {
+        "icon": "person",
+        "text": "No account"
+      },
+      {
+        "icon": "heart",
+        "text": "No extra subscription"
+      },
+      {
+        "icon": "plug",
+        "text": "USB or Wi-Fi"
+      },
+      {
+        "icon": "mark-github",
+        "text": "Source on GitHub"
+      }
+    ]
+  },
+  "end": {
+    "duration": 8,
+    "device": {
+      "cx": 500,
+      "cy": 540,
+      "size": 600
+    },
+    "options": [
+      {
+        "icon": "cpu",
+        "label": "With a device",
+        "text": "Waveshare ESP32-S3-Touch-AMOLED-1.75 (B or C)"
+      },
+      {
+        "icon": "device-desktop",
+        "label": "No ESP32 device?",
+        "text": "Run the Desktop Agent Buddy app"
+      }
+    ],
+    "cta": "Get it on GitHub",
+    "footage": {
+      "src": "assets/footage/desk-hero.mp4",
+      "fallback": "rendered device",
+      "box": [
+        100,
+        170,
+        860,
+        910
+      ]
+    }
+  },
+  "takes": {
+    "hero": {
+      "character": "copilot",
+      "seed": 18,
+      "from": "meet",
+      "duration": 29,
+      "preroll": 2,
+      "events": [
+        {
+          "at": 3.0,
+          "touch": true
+        },
+        {
+          "scene": "states",
+          "at": 0.4,
+          "mode": "working",
+          "badges": "copilot=w"
+        },
+        {
+          "scene": "states",
+          "at": 5.4,
+          "mode": "attention",
+          "badges": "copilot=w,claude=a"
+        },
+        {
+          "scene": "states",
+          "at": 10.4,
+          "mode": "complete",
+          "badges": "copilot=c,claude=c"
+        },
+        {
+          "scene": "agents",
+          "at": 0.3,
+          "mode": "working",
+          "badges": "copilot=w,claude=w,codex=w,grok=w"
+        },
+        {
+          "scene": "agents",
+          "at": 3.3,
+          "badges": "hermes=w,openclaw=w,codex=c,grok=c"
+        }
+      ]
+    },
+    "tap": {
+      "character": "copilot",
+      "seed": 21,
+      "from": "touches",
+      "duration": 8.5,
+      "preroll": 2,
+      "events": [
+        {
+          "scene": "touches",
+          "at": 1.6,
+          "touch": true
+        },
+        {
+          "scene": "touches",
+          "at": 4.6,
+          "touch": true
+        }
+      ]
+    },
+    "usage": {
+      "character": "copilot",
+      "seed": 22,
+      "from": "touches",
+      "duration": 8.5,
+      "preroll": 3,
+      "events": [
+        {
+          "at": 0,
+          "mode": "working",
+          "badges": "copilot=w",
+          "usage": "AIC: 1,248"
+        }
+      ],
+      "lens": {
+        "x": 0.5,
+        "y": 0.915,
+        "span": 0.42
+      },
+      "then": {
+        "scene": "touches",
+        "at": 4.6,
+        "fade": 0.7,
+        "events": [
+          {
+            "badges": "claude=w",
+            "usage": "Tokens: 2.4M"
+          }
+        ]
+      }
+    },
+    "sleep": {
+      "character": "copilot",
+      "seed": 23,
+      "from": "touches",
+      "duration": 8.5,
+      "preroll": 128
+    },
+    "copilot": {
+      "character": "copilot",
+      "seed": 37,
+      "from": "characters",
+      "duration": 7.5,
+      "preroll": 2
+    },
+    "claude": {
+      "character": "claude",
+      "seed": 17,
+      "from": "characters",
+      "duration": 7.5,
+      "preroll": 2
+    },
+    "openclaw": {
+      "character": "openclaw",
+      "seed": 33,
+      "from": "characters",
+      "duration": 7.5,
+      "preroll": 2
+    },
+    "end": {
+      "character": "copilot",
+      "seed": 42,
+      "from": "end",
+      "duration": 8,
+      "preroll": 2,
+      "events": [
+        {
+          "at": 0.1,
+          "mode": "complete"
+        }
+      ]
+    }
+  },
+  "export": {
+    "out": "export/video.mp4",
+    "crf": 20
+  }
+}

@@ -1,0 +1,11 @@
+renders/
+snapshots/
+node_modules/
+.hyperframes/
+# Capture source PNGs are large. Commit the WebP copies and the export.
+assets/shots/*.png
+# Generated from the firmware engine, the desktop app, and the daemon: "npm run assets".
+assets/clips/device-*.mp4
+assets/device/
+assets/badges/
+index.html

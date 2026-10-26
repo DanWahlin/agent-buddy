@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="images/logo.png" alt="Agent Companion logo: a hexagon badge with a smiling screen face and an AI sparkle" width="300">
+  <img src="images/logo.png" alt="Agent Buddy logo: a hexagon badge with a smiling screen face and an AI sparkle" width="300">
 </p>
 
-<h1 align="center">ESP32 Agent Companion</h1>
+<h1 align="center">Agent Buddy</h1>
 
 <p align="center">
   An animated desk companion that shows what your AI coding agents are doing.
@@ -13,7 +13,7 @@
   <a href="https://github.com/DanWahlin/agent-buddy/actions/workflows/build.yml"><img src="https://github.com/DanWahlin/agent-buddy/actions/workflows/build.yml/badge.svg" alt="Build status"></a>
 </p>
 
-ESP32 Agent Companion works with the
+Agent Buddy works with the
 [Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C](https://www.amazon.com/dp/B0FBWDL117)
 and turns it into a character that reacts to your AI coding agents. When GitHub Copilot,
 Claude Code, Codex CLI, Grok Build, Hermes Agent, or OpenClaw starts working,
@@ -23,7 +23,7 @@ badge for the agent involved.
 Everything runs locally. There's no cloud service, account, or subscription, and
 the device works over USB or your local Wi-Fi.
 
-Want it on your screen as well? The [Desktop Agent Companion](#desktop-agent-companion)
+Want it on your screen as well? The [Desktop Agent Buddy](#desktop-agent-buddy)
 puts the same character, with the same animation, in a transparent window on your
 desktop, with or without the device.
 
@@ -50,7 +50,7 @@ desktop, with or without the device.
 - [Update](#update)
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
-- [Desktop Agent Companion](#desktop-agent-companion)
+- [Desktop Agent Buddy](#desktop-agent-buddy)
 - [Develop and customize](#develop-and-customize)
 
 ## Features
@@ -457,12 +457,12 @@ without a touch.
 
 **Press the BOOT button** on the board to open the companion's Settings on your
 computer. This needs the daemon, connected over USB or Wi-Fi (over Wi-Fi, it can
-take up to three seconds). If the [desktop app](#desktop-agent-companion) is
+take up to three seconds). If the [desktop app](#desktop-agent-buddy) is
 running, Settings opens in its window. If not, Settings opens in your browser.
 Don't use the PWR button for this: holding it turns the board off.
 
 Sound plays through the board's two-pin speaker connector. Connect a small speaker
-if your board or enclosure doesn't include one. The [desktop app](#desktop-agent-companion)
+if your board or enclosure doesn't include one. The [desktop app](#desktop-agent-buddy)
 can play the same sounds through your computer; the device's volume does not
 change them.
 
@@ -953,7 +953,7 @@ Settings does not delete these. It tells you what to do:
 
 </details>
 
-## Desktop Agent Companion
+## Desktop Agent Buddy
 
 The same character, on your desktop. It's a small transparent window you can
 put anywhere, beside your editor or terminal or on a second screen. Use it with
@@ -1223,5 +1223,5 @@ artwork and agent names belong to their owners. See [TRADEMARKS.md](TRADEMARKS.m
 This is an independent project, not an official GitHub or Waveshare product.
 GitHub Copilot and Claude artwork and product names belong to their respective owners.
 
-The Desktop Agent Companion in [desktop/](desktop/) is by Darren Robinson, a
+The Desktop Agent Buddy in [desktop/](desktop/) is by Darren Robinson, a
 derivative of this project made with Dan Wahlin's approval.

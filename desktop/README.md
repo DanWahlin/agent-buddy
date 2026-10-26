@@ -1,7 +1,7 @@
 # Desktop Agent Companion - developer notes
 
 The ESP32 Agent Companion's character in a transparent window on the desktop.
-The user-facing summary is in the [root README](../README.md#desktop-agent-companion).
+The user-facing summary is in the [root README](../README.md#desktop-agent-buddy).
 
 ## How the pieces fit
 

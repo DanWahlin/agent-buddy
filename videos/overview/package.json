@@ -1,0 +1,16 @@
+{
+  "name": "esp32-agent-companion-overview-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/render-case.mjs && node scripts/render-badges.mjs && node scripts/render-device.mjs",
+    "shots": "node scripts/prepare-shots.mjs",
+    "build": "node scripts/prepare-shots.mjs && node scripts/build.mjs",
+    "dev": "npm run build && npx --yes hyperframes@0.8.134 preview",
+    "check": "npm run build && npx --yes hyperframes@0.8.134 lint && npx --yes hyperframes@0.8.134 check",
+    "snapshot": "npx --yes hyperframes@0.8.134 snapshot --no-end --frames 12",
+    "render": "npm run build && npx --yes hyperframes@0.8.134 render --quality high --output renders/video.mp4",
+    "music": "node scripts/add-music.mjs",
+    "export": "node scripts/export.mjs"
+  }
+}
