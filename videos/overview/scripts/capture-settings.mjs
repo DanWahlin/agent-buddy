@@ -10,9 +10,9 @@
 // 1440x810 CSS pixels and saves 1920x1080 PNGs to assets/shots/.
 //
 // The page draws live status. Before it does, this script rewrites the data:
-// home folder paths become "~", the Wi-Fi network gets a demo name, and usage
-// shows demo numbers, so no personal data reaches a screenshot. Look at every
-// capture before you commit it.
+// home folder paths become "~", the Wi-Fi network gets a demo name, usage shows
+// demo numbers, and the agents get demo states and versions, so no personal data
+// reaches a screenshot. Look at every capture before you commit it.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,11 +36,28 @@ const dataDir = process.platform === "darwin"
     : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local/state"), "esp32-agent-companion");
 const { url } = JSON.parse(fs.readFileSync(path.join(dataDir, "settings.json"), "utf8"));
 
+const on = { detected: true, installed: true, enabled: true, hookStatus: "installed", activeSessions: 0, driving: false,
+  action: null, hint: null, warning: null };
 const DEMO = {
   home: os.homedir(),
   user: os.userInfo().username,
   ssid: "home-wifi",
   usage: { aic: "AIC: 1,248", tokens: "Tokens: 2.4M" },
+  // The Agents tab: Copilot (running), Claude, Codex, and Grok are on, Hermes waits for approval,
+  // and OpenClaw is not on this computer. The versions are examples.
+  agents: {
+    copilot: { ...on, version: "CLI 1.0.103 · app 1.1.32", activeSessions: 1, driving: true },
+    claude: { ...on, version: "CLI 2.1.296 · Claude app 2.31226.0" },
+    codex: { ...on, version: "CLI 0.162.1 · ChatGPT app 26.715.72359" },
+    grok: { ...on, version: "grok 1.0.41 (4220f3b224a6) [stable]",
+      hint: "Grok also runs Claude’s hooks, and reports the Agent Buddy Claude hook as failed. This does not change "
+        + "the display. To stop it, add [compat.claude] hooks = false to ~/.grok/config.toml. Grok then skips all of "
+        + "your Claude hooks." },
+    hermes: { ...on, hookStatus: "needs-approval", version: "Hermes Agent v0.21.6 (2026.9.24)",
+      action: { kind: "approve", title: "Approve the hooks in Hermes", steps: [] } },
+    openclaw: { ...on, detected: false, installed: false, enabled: false, hookStatus: "missing", version: null,
+      hint: "Install the native plugin. Gateway WebSocket approvals aren’t used yet." },
+  },
 };
 
 // Runs in the page before its own scripts: sanitizes every status and API reply.
@@ -60,6 +77,9 @@ function sanitizer(demo) {
         out.usage = { ...out.usage, summary: [demo.usage.aic, demo.usage.tokens], lines: [demo.usage.aic] };
         if ("aic" in out.usage) out.usage.aic = 1248;
         if ("tokens" in out.usage) out.usage.tokens = 2400000;
+      }
+      if (Array.isArray(out.agents)) {
+        out.agents = out.agents.map((agent) => (demo.agents[agent.id] ? { ...agent, ...demo.agents[agent.id] } : agent));
       }
       return out;
     }

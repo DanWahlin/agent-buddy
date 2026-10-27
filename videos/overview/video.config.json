@@ -261,6 +261,8 @@
       "Pick your",
       "character."
     ],
+    "size": 320,
+    "spacing": 360,
     "items": [
       {
         "take": "copilot",
@@ -269,6 +271,10 @@
       {
         "take": "claude",
         "name": "Claude"
+      },
+      {
+        "take": "grok",
+        "name": "Grok"
       },
       {
         "take": "openclaw",
@@ -337,9 +343,9 @@
               "dur": 2.2,
               "focus": [
                 317,
-                701,
+                733,
                 1603,
-                1781
+                1813
               ]
             }
           ]
@@ -542,8 +548,7 @@
       "seed": 41,
       "from": "characters",
       "duration": 7.5,
-      "preroll": 2,
-      "websiteOnly": true
+      "preroll": 2
     },
     "end": {
       "character": "copilot",

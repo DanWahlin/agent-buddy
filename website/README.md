@@ -75,11 +75,6 @@ The clips and images in `assets/` come from the overview video project
   cut from `device-hero.mp4` (0, 8, 13, 18, and 22.6 s).
 - The other clips are the video's `device-*.mp4` and `desktop-app.mp4`, made
   smaller for the web with H.264 (`-crf 19` to `22`) and a WebP poster for each.
-  `grok.mp4` comes from the website-only `grok` take
-  (`node scripts/render-device.mjs grok`). The video does not show Grok yet.
-- `assets/img/settings-characters.webp` is a newer capture than the video's
-  `assets/frames/settings-characters.webp`, so it shows Grok. Do not copy the
-  video's frame over it until the video shows Grok too.
 - `assets/badges/packets.json` holds the agent badge glyphs as the engine reads
   them, from the daemon's `loadAgentBadgeIcons` and `iconPacket`.
 
