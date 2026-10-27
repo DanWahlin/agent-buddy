@@ -55,12 +55,14 @@ export function clientVersions(cli: string | undefined, apps: readonly DesktopAp
 
 // The Codex CLI that the ChatGPT app (and the older macOS Codex app) includes. A user who has only
 // an app runs it in a terminal to approve hooks, because only the terminal Codex can approve them.
+// On macOS, a newer app keeps the CLI in a codex-cli folder with bin/codex as its entry point (as its
+// codex-package.json says), and an older app keeps it in Resources.
 export function bundledCodexCli(ctx: Pick<AgentContext, 'platform'>, app: DesktopApp): string | undefined {
   if (!app.path) return undefined;
-  const path = ctx.platform === 'darwin' ? join(app.path, 'Contents', 'Resources', 'codex')
-    : ctx.platform === 'win32' ? join(app.path, 'app', 'resources', 'codex.exe')
-    : join(app.path, 'resources', 'codex');
-  return existsSync(path) ? path : undefined;
+  const paths = ctx.platform === 'darwin'
+    ? [join(app.path, 'Contents', 'Resources', 'codex-cli', 'bin', 'codex'), join(app.path, 'Contents', 'Resources', 'codex')]
+    : [ctx.platform === 'win32' ? join(app.path, 'app', 'resources', 'codex.exe') : join(app.path, 'resources', 'codex')];
+  return paths.find(path => existsSync(path));
 }
 
 // Paths of another system reach the file system only in tests, so all paths use this system's join.

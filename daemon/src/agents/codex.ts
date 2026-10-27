@@ -22,6 +22,7 @@ export const codexAdapter: AgentAdapter = {
   hint: status => status === 'needs-approval'
     ? 'Approve the new hooks with /hooks in the Codex CLI, then reopen the ChatGPT app.'
     : status === 'missing' ? 'Install hooks, then approve them with /hooks in the Codex CLI.' : undefined,
+  note: ctx => codexUpdateSteps(ctx).join(' ') || undefined,
   detect(ctx) {
     const configPath = codexHooksPath(ctx.home, ctx.env);
     const apps = codexApps(ctx);
@@ -77,18 +78,18 @@ export interface CodexApproval {
 }
 
 // What the user runs in a terminal to approve hooks: `codex` when it is on PATH, otherwise the
-// newest CLI that a Codex desktop app includes, or undefined when there is neither. A CLI older
-// than hook approval can't approve hooks, so it is skipped. A version that is not known yet (it is
-// read in the background) doesn't exclude a CLI, but a known version comes first.
+// newest CLI that a Codex desktop app includes, or undefined when there is neither. A CLI that
+// can't run the Agent Buddy hooks doesn't list them in /hooks, so it is skipped. A version that is
+// not known yet (it is read in the background) doesn't exclude a CLI, but a known version comes first.
 export function codexApproval(ctx: AgentContext,
                               version: (path: string) => string | undefined = path => versionOfExecutable(path, ctx),
 ): CodexApproval | undefined {
   const onPath = findExecutable('codex', ctx.env, ctx.platform);
-  if (onPath && canApproveHooks(versionParts(version(onPath)))) return {command: 'codex'};
+  if (onPath && runsOurHooks(versionParts(version(onPath)))) return {command: 'codex'};
   const bundled = codexApps(ctx).flatMap(app => {
     const path = bundledCodexCli(ctx, app);
     const parts = path ? versionParts(version(path)) : undefined;
-    return path && canApproveHooks(parts) ? [{path, parts, app: app.label}] : [];
+    return path && runsOurHooks(parts) ? [{path, parts, app: app.label}] : [];
   }).sort((first, second) => !first.parts || !second.parts ? Number(!first.parts) - Number(!second.parts)
     : compareVersions(second.parts, first.parts))[0];
   if (!bundled) return undefined;
@@ -97,21 +98,45 @@ export function codexApproval(ctx: AgentContext,
   return {command, app: bundled.app};
 }
 
-// Codex 0.129.0 added hook approval (openai/codex#20321). Its prereleases came before that change.
-const firstCodexWithHookApproval = [0, 129, 0, 1];
-
-function canApproveHooks(parts: number[] | undefined): boolean {
-  return !parts || compareVersions(parts, firstCodexWithHookApproval) >= 0;
+// What the user updates before Codex runs the Agent Buddy hooks: the codex on PATH and each Codex
+// desktop app whose Codex can't run them. Reopening such a client doesn't help. A version that is
+// not known yet doesn't count.
+export function codexUpdateSteps(ctx: AgentContext,
+                                 version: (path: string) => string | undefined = path => versionOfExecutable(path, ctx),
+): string[] {
+  const tooOld = (path: string | undefined) => {
+    const found = path ? version(path)?.replace(/^codex-cli\s*/i, '') : undefined;
+    return found && !runsOurHooks(versionParts(found)) ? found : undefined;
+  };
+  const cli = tooOld(findExecutable('codex', ctx.env, ctx.platform));
+  return [
+    ...(cli ? [`Your Codex CLI ${cli} can’t run the Agent Buddy hooks. Update the Codex CLI.`] : []),
+    ...codexApps(ctx).flatMap(app => {
+      const found = tooOld(bundledCodexCli(ctx, app));
+      return found ? [`Your ${app.label} includes Codex ${found}, which can’t run the Agent Buddy hooks. `
+        + `Update the ${app.label}, then reopen it.`] : [];
+    }),
+  ];
 }
 
-// Major, minor, patch, then 0 for a prerelease (such as 0.129.0-alpha.1) or 1 for a release.
+// Codex 0.148.0-alpha.6 added async hooks (openai/codex#37533). An older Codex skips async hooks
+// and doesn't list them in /hooks. All the Agent Buddy hooks but SessionEnd are async, and
+// SessionEnd alone can't show a session. Hook approval came before, in 0.129.0 (openai/codex#20321).
+const firstCodexWithAsyncHooks = [0, 148, 0, 0, 6];
+
+function runsOurHooks(parts: number[] | undefined): boolean {
+  return !parts || compareVersions(parts, firstCodexWithAsyncHooks) >= 0;
+}
+
+// Major, minor, patch, then 0 for a prerelease (such as 0.148.0-alpha.6) or 1 for a release, then
+// the prerelease number.
 function versionParts(version: string | undefined): number[] | undefined {
-  const match = /(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z])?/.exec(version ?? '');
-  return match ? [...match.slice(1, 4).map(Number), match[4] ? 0 : 1] : undefined;
+  const match = /(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z-]*(?:\.(\d+))?)?/.exec(version ?? '');
+  return match ? [...match.slice(1, 4).map(Number), match[4] ? 0 : 1, Number(match[5] ?? 0)] : undefined;
 }
 
 function compareVersions(first: number[], second: number[]): number {
-  for (let index = 0; index < 4; index++) {
+  for (let index = 0; index < first.length; index++) {
     if (first[index] !== second[index]) return first[index]! - second[index]!;
   }
   return 0;

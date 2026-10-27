@@ -14,7 +14,7 @@ import {hermesAdapter} from './hermes.js';
 import {openclawAdapter} from './openclaw.js';
 import {configuredAgentEnabled, isAgentEnabledSync, loadAgentsConfigSync, updateAgentsConfig} from './config.js';
 import {namespacePayload} from './normalize.js';
-import {codexApproval, codexRunStep, untrustedCodexHooks} from './codex.js';
+import {codexApproval, codexRunStep, codexUpdateSteps, untrustedCodexHooks} from './codex.js';
 import {claudeHome, codexHome, copilotHome, grokHome, hermesHome} from './homes.js';
 import {runWsl, wslExecutable, WslLocations} from './wsl.js';
 import {defaultDataDirectory, socketPath} from '../paths.js';
@@ -93,7 +93,7 @@ function agentAction(adapter: AgentAdapter, contexts: AgentContext[], locations:
       ...distributions.map(distribution => `In ${distribution.name}, open a terminal and run codex.`),
       `Type /hooks and approve the Agent Buddy hooks${waiting ? ` (${waiting} waiting)` : ''}. Codex skips hooks `
         + 'until you do. The ChatGPT app and the Codex app can’t approve hooks.',
-      ...codexAppSteps,
+      ...codexClientSteps(host),
     ], ...(approval?.app ? {command: approval.command} : {})};
   }
   if (hookStatus === 'needs-approval' && adapter.id === 'hermes') {
@@ -110,15 +110,19 @@ function agentAction(adapter: AgentAdapter, contexts: AgentContext[], locations:
                'If you use the Claude app, quit and reopen it, then start a new session in the Code tab. '
                  + 'Cowork and cloud sessions don’t run the hooks.');
   }
-  if (adapter.id === 'codex') steps.push(...codexAppSteps);
+  if (adapter.id === 'codex') steps.push(...codexClientSteps(contexts[0]!));
   if (adapter.id === 'openclaw') steps.push('Restart the OpenClaw Gateway so it loads the plugin.');
   return {kind: 'restart', title: `Waiting for ${adapter.name}`, steps};
 }
 
 // A Codex desktop app or the VS Code extension reads hooks and their approvals only when it starts.
-const codexAppSteps = [
-  'If you use Codex in the ChatGPT app, the Codex app, or VS Code, quit and reopen it so it loads the hooks.',
-];
+// A Codex CLI or app that can't run the hooks needs an update first.
+function codexClientSteps(ctx: AgentContext): string[] {
+  return [
+    'If you use Codex in the ChatGPT app, the Codex app, or VS Code, quit and reopen it so it loads the hooks.',
+    ...codexUpdateSteps(ctx),
+  ];
+}
 
 export function agentStatuses(
     ctx: AgentContext,

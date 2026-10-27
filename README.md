@@ -493,14 +493,18 @@ use the same hooks:
 
 - **ChatGPT app and Codex in VS Code** use `~/.codex`. The ChatGPT app replaced
   the Codex app. Only the Codex CLI in a terminal can approve hooks. In the
-  ChatGPT app, `/hooks` is sent as a usual chat message. Hook approval needs
-  Codex 0.129.0 or later. If you don't have such a Codex CLI, the setup guide
-  shows the command for the CLI that the ChatGPT app includes (on Windows, a
-  PowerShell command). If that CLI is also older, the guide tells you to install
-  the Codex CLI (`npm install -g @openai/codex`). Each place approves only its
-  own hooks: for hooks in a WSL distribution, the guide tells you to run `codex`
-  in that distribution. After you approve the hooks, quit and reopen the app.
-  The app reads hook approvals only when it starts.
+  ChatGPT app, `/hooks` is sent as a usual chat message. The Agent Buddy hooks
+  run in the background (async hooks), so they need Codex 0.148.0 or later. An
+  older Codex skips them and doesn't show them in `/hooks`. If you don't have
+  such a Codex CLI, the setup guide shows the command for the CLI that the
+  ChatGPT app includes (on Windows, a PowerShell command). If that CLI is also
+  older, the guide tells you to install the Codex CLI
+  (`npm install -g @openai/codex`). Each place approves only its own hooks: for
+  hooks in a WSL distribution, the guide tells you to run `codex` in that
+  distribution. After you approve the hooks, quit and reopen the app. The app
+  reads hook approvals only when it starts. If your Codex CLI, or the Codex that
+  the app includes, is older than 0.148.0, Settings tells you to update it,
+  because it doesn't run the hooks until you do.
 - **Claude app** (the Code tab) uses `~/.claude`. After setup, quit and reopen
   the app, then start a new session in the Code tab. Cowork, cloud, and SSH
   sessions don't run the hooks on your computer. If the character doesn't react
@@ -514,7 +518,7 @@ it finds.
 
 | System | Where setup looks | The CLI that the ChatGPT app includes |
 | --- | --- | --- |
-| macOS | `/Applications` and `~/Applications` | `/Applications/ChatGPT.app/Contents/Resources/codex` |
+| macOS | `/Applications` and `~/Applications` | `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex` (in an older app, `/Applications/ChatGPT.app/Contents/Resources/codex`) |
 | Windows | Microsoft Store and MSIX apps, `%LOCALAPPDATA%\Programs`, `%LOCALAPPDATA%\AnthropicClaude`, and `%ProgramFiles%\GitHub Copilot` | `& 'C:\Program Files\WindowsApps\OpenAI.Codex_<version>_<arch>__2p2nqsd0c76g0\app\resources\codex.exe'` (PowerShell) |
 | Linux | `/usr/lib` and `/opt` (`.deb`, `.rpm`, and Arch packages) | `/usr/lib/chatgpt/resources/codex` |
 

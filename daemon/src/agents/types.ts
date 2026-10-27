@@ -104,7 +104,7 @@ export interface AgentAdapter {
   name: string;
   clients?: string;
   hint(status: HookStatus): string | undefined;
-  // Advice that depends on the user's other settings, shown when no other hint applies.
+  // Advice that depends on the user's other settings or apps, shown when no other hint applies.
   note?(ctx: AgentContext): string | undefined;
   detect(ctx: AgentContext): AgentDetection;
   hookStatus(ctx: AgentContext): HookStatus;
