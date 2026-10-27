@@ -7,8 +7,8 @@ on:
       - 'website/**'
       - 'desktop/engine/prebuilt/**'
       - '.github/workflows/pages.yml'
-  release:
-    types: [published]
+  # Build and Release starts this after it publishes a release, so that the live demo gets the new
+  # character packs. A release that a workflow publishes starts no `release` event workflow.
   workflow_dispatch:
 
 permissions:

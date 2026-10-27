@@ -22,7 +22,9 @@ never stages unrelated files or force-pushes.
 **A run without the dry run publishes a tag, then starts Build and Release on it.**
 A tag that a workflow's token pushes starts no workflow by itself, so the Release
 workflow starts Build and Release, which publishes the release when every job passes.
-A manual Build and Release run on a `v*` tag publishes that release again.
+A manual Build and Release run on a `v*` tag publishes that release again. After it
+publishes, Build and Release starts **Deploy website**, so the site's live demo gets the
+release's character packs.
 
 ### From a computer
 

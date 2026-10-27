@@ -354,6 +354,8 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+      # Starts the website deploy after the release is published.
+      actions: write
     steps:
       - name: Checkout full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -479,3 +481,9 @@ jobs:
             ${{ steps.changelog.outputs.content }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy the website with the new character packs
+        # The live demo downloads the character packs from the latest release. A release that this
+        # job's token publishes starts no workflow by itself, so this starts the website deploy.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main

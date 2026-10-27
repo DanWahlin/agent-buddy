@@ -32,8 +32,9 @@ If the packs are missing, the live demo shows a recording.
 ## Deploy
 
 [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) builds and
-deploys the site when `website/` changes on `main`, when a release is published
-(so the demo gets the new packs), and on demand. In the repository's
+deploys the site when `website/` changes on `main`, after **Build and Release**
+publishes a release (it starts the deploy, so the demo gets the new packs), and
+on demand. In the repository's
 **Settings > Pages**, set **Source** to **GitHub Actions**.
 
 The site uses the custom domain `getagentbuddy.com`, set in **Settings > Pages**

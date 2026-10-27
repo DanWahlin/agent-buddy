@@ -424,6 +424,8 @@ button { font: inherit; color: inherit; }
   transition: background 0.25s, border-color 0.25s, color 0.25s, transform 0.2s;
 }
 .chip:hover { background: rgba(255, 255, 255, 0.09); }
+/* The live demo hides a character whose pack the site doesn't have. */
+.chip[hidden] { display: none; }
 .chip:active { transform: scale(0.97); }
 .chip.is-on { background: var(--ink); color: #000; border-color: var(--ink); }
 .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
