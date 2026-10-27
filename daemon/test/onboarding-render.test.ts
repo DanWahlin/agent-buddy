@@ -175,6 +175,43 @@ test('navigation opens only visited visible steps and does not reinstall agents 
   assert.equal(runInContext("canVisitStep(controller.state, 'firmware')", context), false);
 });
 
+test('agent cards name the clients, and the guide lets the user copy the approval command', () => {
+  const elements = new Map<string, Element>();
+  const element = (id: string) => {
+    if (!elements.has(id)) elements.set(id, new Element());
+    return elements.get(id)!;
+  };
+  const context = createContext({
+    document: {getElementById: element, activeElement: null, createElement: () => new Element()},
+  });
+  const source = readFileSync(new URL('../../web/onboarding.js', import.meta.url), 'utf8');
+  runInContext(source.replace(/^import .*;\s*$/gm, '').replace(/^export /gm, ''), context);
+  const command = "'/Applications/ChatGPT.app/Contents/Resources/codex'";
+  runInContext(`
+    const controller = Object.create(Onboarding.prototype);
+    controller.state = {agentStage: 'select', agents: ['codex'], deferredAgents: []};
+    controller.status = {agents: [
+      {id: 'copilot', name: 'GitHub Copilot', clients: 'CLI or Copilot app', detected: true},
+      {id: 'codex', name: 'Codex', clients: 'CLI, ChatGPT app, Codex app, or VS Code', detected: true,
+       enabled: true, installed: true, hookStatus: 'needs-approval', action: {kind: 'approve', title: 'Approve',
+       steps: ['Open a terminal and run ' + ${JSON.stringify(command)}, 'Type /hooks and approve.', 'Reopen the app.'],
+       command: ${JSON.stringify(command)}}},
+      {id: 'grok', name: 'Grok Build', detected: false}
+    ], badges: {icons: []}};
+    controller.agentKey = '';
+    controller.hookErrors = new Map();
+    controller.drawAgentIcon = () => {};
+    controller.renderAgents(false);
+  `, context);
+  const notes = element('ob-agents').children.map(card => card.children[2]!.children[1]?.textContent);
+  assert.deepEqual(notes, ['CLI or Copilot app', 'CLI, ChatGPT app, Codex app, or VS Code', 'Not detected']);
+
+  runInContext("controller.guideId = 'codex'; controller.renderGuide();", context);
+  const steps = element('ob-guide-steps').children;
+  assert.deepEqual(steps.map(step => step.children[0]?.dataset.copy), [command, '/hooks', undefined]);
+  assert.deepEqual(steps.map(step => step.children[0]?.textContent), ['Copy command', 'Copy /hooks', undefined]);
+});
+
 function hookController() {
   const context = createContext({});
   const source = readFileSync(new URL('../../web/onboarding.js', import.meta.url), 'utf8');

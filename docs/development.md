@@ -399,8 +399,8 @@ duplicate commands and uninstalling doesn't remove another tool's hook.
 | Agent | Install target | Event notes | Approval notes |
 | --- | --- | --- | --- |
 | GitHub Copilot | `~/.copilot/hooks/agent-companion.json` | Existing v1 event names map directly. The old `hook <event>` command still works and is treated as Copilot. Copilot fires no notification for `ask_user` or `exit_plan_mode`, so a `preToolUse` for either one becomes Needs attention. | Restart GitHub Copilot after setup. Copilot denies every tool call when a `preToolUse` hook fails, and a running session keeps the hooks it started with, so each hook runs through the system shell (`cmd.exe /d /c if exist <node> if exist <cli> (<node> <cli> hook ... & more >nul) ...` on Windows, `/bin/sh` elsewhere). The shell runs Node.js only while Node.js and the CLI are on disk, reads the rest of the event (with `cat` on macOS and Linux, because the shell's own read loop is too slow for a large event within Copilot's 2-second hook limit), and exits with 0 whatever Node.js did: after an uninstall, while it removes files, or when a module can't load. The `hook` command loads neither the daemon nor the serial port's native module. Hook files that earlier versions wrote still show as installed; an app update or Reinstall rewrites them. Other agents don't block a tool call when a hook fails (Claude Code, Grok, and Hermes block only on exit code 2; Codex runs its tool hooks asynchronously). |
-| Claude Code | `~/.claude/settings.json` | `PermissionRequest`, `Elicitation`, and selected notifications become Needs attention. `AskUserQuestion` and `ExitPlanMode` are treated as waiting for the user. | Claude may ask for folder trust. The hook runs Node.js directly (exec form), unlike Copilot's: Grok runs Claude's hooks with `command` but without `args`, so a `cmd.exe` or `/bin/sh` command there would run the hook's input. A failed Claude hook doesn't block, so after an uninstall a Claude session that was open only shows a hook error until it restarts. |
-| Codex CLI | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. On Windows, Codex runs hooks in its session shell (PowerShell), so `commandWindows` uses `& '<node>' '<cli>' hook codex <event>`; the old cmd.exe form shows as `outdated`. |
+| Claude Code | `~/.claude/settings.json` | `PermissionRequest`, `Elicitation`, and selected notifications become Needs attention. `AskUserQuestion` and `ExitPlanMode` are treated as waiting for the user. | Claude may ask for folder trust. The hook runs Node.js directly (exec form), unlike Copilot's: Grok runs Claude's hooks with `command` but without `args`, so a `cmd.exe` or `/bin/sh` command there would run the hook's input. A failed Claude hook doesn't block, so after an uninstall a Claude session that was open only shows a hook error until it restarts. The Code tab of the Claude app reads the same settings, and an installed Claude app counts as Claude Code being detected. Cowork and cloud sessions don't run local hooks. |
+| Codex | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. The ChatGPT app (which replaced the Codex app) and the VS Code extension load the same hooks and approvals, but only the terminal UI can write an approval, and a running app reads approvals only when it starts. So the guide gives a terminal command (`codex` when it is 0.129.0 or later, the first version with hook approval; else the newest CLI that a ChatGPT or Codex app includes and that is 0.129.0 or later; a prerelease of 0.129.0 is older) and a step to reopen the app. Each place approves only its own hooks, so the guide gives this command only when this computer's hooks wait, and tells the user to run `codex` in each WSL distribution whose hooks wait. An installed ChatGPT app counts as Codex being detected (see Desktop apps below). On Windows, Codex runs hooks in its session shell (PowerShell), so `commandWindows` uses `& '<node>' '<cli>' hook codex <event>`; the old cmd.exe form shows as `outdated`. |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | Permission and elicitation notifications become Needs attention. `Stop` only completes when its reason is `end_turn`; channel shutdown clears. | Grok's hook directory is trusted. Claude hooks invoked by Grok are ignored when Grok's own hook is installed and enabled. Grok passes only `command` (not `args`) for Claude hooks, so it reports the companion Claude hook as failed; the agent card's note gives the `[compat.claude] hooks = false` fix. On Windows, Grok runs hooks in PowerShell, so the command uses `& '<node>' '<cli>' hook grok <event>`; the old double-quoted form shows as `outdated`. |
 | Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | `pre_llm_call` starts work, `pre_tool_call`/`post_tool_call` track tools, `pre_approval_request` surfaces attention, and turn `on_session_end` completes. | Hermes asks you to approve the shell hook the first time it runs. Don't pre-seed its allowlist. |
 | OpenClaw | `<daemon data>/integrations/openclaw-plugin/` | Native plugin forwards lifecycle events directly to the daemon socket. Gateway WebSocket approvals aren't implemented yet. | Installer links/enables the plugin through `openclaw` only when the command is on `PATH`. |
@@ -443,6 +443,30 @@ badge endpoints for older firmware. Badge visibility lives in `display.json`
 beside `state.json` and defaults to on. The settings page exposes the toggle and
 shows badge previews from the same 24 x 24 masks the daemon sends to the device.
 
+### Desktop apps
+
+`daemon/src/agents/apps.ts` finds the desktop apps that share an agent's settings folder
+(`findApp` with an `AppSpec` for each system). Status requests arrive every second, so each check
+reads files only. Programs run only in the background: on Windows, `reg.exe` for the MSIX package
+list and for the GitHub Copilot app's version, and the CLI that an app includes, with `--version`.
+
+| App | macOS | Windows | Linux | Version |
+| --- | --- | --- | --- | --- |
+| ChatGPT (Codex) | `ChatGPT.app` with `Contents/Resources/codex`, and the older `Codex.app` | MSIX `OpenAI.Codex_2p2nqsd0c76g0`; CLI at `<root>\app\resources\codex.exe` | `/usr/lib/chatgpt`; CLI at `resources/codex` | `Info.plist`; MSIX full name; `resources/linux-package-metadata.json` |
+| Claude | `Claude.app` | MSIX `AnthropicPBC.Claude_fnn82j28hfe8t` or `Claude_pzs8sxrjxfjjc`, or Squirrel `%LOCALAPPDATA%\AnthropicClaude` | `/usr/lib/claude-desktop` | `Info.plist`; MSIX full name or `app-<version>`; `package.json` in `resources/app.asar` |
+| GitHub Copilot | `GitHub Copilot.app` | `%LOCALAPPDATA%\Programs\GitHub Copilot\github.exe` or `%ProgramFiles%\GitHub Copilot` | `/usr/lib/GitHub Copilot` (no AppImage) | `Info.plist`; `DisplayVersion` of `HKCU\...\Uninstall\GitHub Copilot`; none |
+
+On Windows, an MSIX app is installed when `%LOCALAPPDATA%\Packages\<family name>` exists. One
+`reg query` of `HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages /s /v PackageRootFolder`
+gives the full name (with the version) and the install folder of every package. A resource package
+(`_split.scale-200_` or `_~_` in the full name) is skipped, and of two versions of a package the newer
+one counts. Each `reg.exe` read runs in the background at most every five minutes, also after a
+failure. Windows can write a package's registry key after its folder, so when the last read started
+less than 15 seconds after a package folder was made, the list is read again 15 seconds after that
+read. Until a read finishes, Settings shows the app without a version. A normal user can run the CLI
+in `WindowsApps` by its full path.
+Tests that use `platform: 'darwin'` set `appFolders: []` so that they don't read the real `/Applications`.
+
 ### Usage lines
 
 Protocol 8 adds usage text at the bottom of the screen. The daemon's
@@ -453,7 +477,7 @@ checkpoint is written at the end of each turn and includes sub-agents). Copilot
 tokens are not counted: `session.shutdown` `modelMetrics` are lost when a session
 does not stop cleanly, and sub-agent tokens are only in `agentMetrics`, which can
 repeat the main agent. It takes Claude Code's input, cache-creation and
-output tokens (de-duplicated by message id), and Codex CLI's last `token_count`
+output tokens (de-duplicated by message id), and Codex's last `token_count`
 total (input minus cached, plus output). The window is Today, This month, or
 Active sessions, set in `display.json` (`showUsage`, `usageWindow`).
 

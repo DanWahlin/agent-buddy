@@ -16,7 +16,7 @@
 Agent Buddy works with the
 [Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C](https://www.amazon.com/dp/B0FBWDL117)
 and turns it into a character that reacts to your AI coding agents. When GitHub Copilot,
-Claude Code, Codex CLI, Grok Build, Hermes Agent, or OpenClaw starts working,
+Claude Code, Codex, Grok Build, Hermes Agent, or OpenClaw starts working,
 needs your approval, or finishes, the character shows it, along with a small
 badge for the agent involved.
 
@@ -61,7 +61,7 @@ desktop, with or without the device.
   just finished.
 - **Usage:** GitHub Copilot AI credits (`AIC`) and agent tokens, at the bottom
   of the screen.
-- **Six supported agents:** GitHub Copilot, Claude Code, Codex CLI, Grok Build,
+- **Six supported agents:** GitHub Copilot, Claude Code, Codex, Grok Build,
   Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
   ships with Copilot, and you can install OpenClaw, Claude, Grok, or your own pack over USB or Wi-Fi.
@@ -399,7 +399,7 @@ The page runs only on your computer and needs the private link that
 survives restarts, so you can bookmark it.
 
 Some agents need a one-time step before their hooks run, such as approval with
-`/hooks` in Codex, folder trust in Claude Code, or a Gateway restart in OpenClaw.
+`/hooks` in the Codex CLI, folder trust in Claude Code, or a Gateway restart in OpenClaw.
 Desktop setup shows one guide per selected agent. Hermes can request approval
 when each event type first runs; one received event does not approve every hook.
 
@@ -480,11 +480,46 @@ outdated hooks. The confirmation lists only configuration files that need change
 | Agent | Hook location | One-time step |
 | --- | --- | --- |
 | GitHub Copilot (CLI and app) | `~/.copilot/hooks/agent-companion.json` | None |
-| Claude Code | `~/.claude/settings.json` | Accept Claude's folder-trust prompt if it asks |
-| Codex CLI | `~/.codex/hooks.json` | Approve the hooks in Codex with `/hooks` |
+| Claude Code (CLI, Claude app, and IDEs) | `~/.claude/settings.json` | Accept Claude's folder-trust prompt if it asks |
+| Codex (CLI, ChatGPT app, and VS Code) | `~/.codex/hooks.json` | Approve the hooks with `/hooks` in the Codex CLI |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | None |
 | Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | Approve each hook the first time Hermes runs it |
 | OpenClaw | A plugin registered with the `openclaw` CLI | Restart the OpenClaw Gateway |
+
+### Desktop apps
+
+Some desktop apps run an agent with the same settings folder as its CLI, so they
+use the same hooks:
+
+- **ChatGPT app and Codex in VS Code** use `~/.codex`. The ChatGPT app replaced
+  the Codex app. Only the Codex CLI in a terminal can approve hooks. In the
+  ChatGPT app, `/hooks` is sent as a usual chat message. Hook approval needs
+  Codex 0.129.0 or later. If you don't have such a Codex CLI, the setup guide
+  shows the command for the CLI that the ChatGPT app includes (on Windows, a
+  PowerShell command). If that CLI is also older, the guide tells you to install
+  the Codex CLI (`npm install -g @openai/codex`). Each place approves only its
+  own hooks: for hooks in a WSL distribution, the guide tells you to run `codex`
+  in that distribution. After you approve the hooks, quit and reopen the app.
+  The app reads hook approvals only when it starts.
+- **Claude app** (the Code tab) uses `~/.claude`. After setup, quit and reopen
+  the app, then start a new session in the Code tab. Cowork, cloud, and SSH
+  sessions don't run the hooks on your computer. If the character doesn't react
+  to a Code tab session, quit and reopen the app: sometimes it starts a session
+  without its hooks
+  ([anthropics/claude-code#87657](https://github.com/anthropics/claude-code/issues/87657)).
+
+Setup also finds these apps and the GitHub Copilot app, so an agent that you use
+only in its app is detected. Settings shows the version of each CLI and app that
+it finds.
+
+| System | Where setup looks | The CLI that the ChatGPT app includes |
+| --- | --- | --- |
+| macOS | `/Applications` and `~/Applications` | `/Applications/ChatGPT.app/Contents/Resources/codex` |
+| Windows | Microsoft Store and MSIX apps, `%LOCALAPPDATA%\Programs`, `%LOCALAPPDATA%\AnthropicClaude`, and `%ProgramFiles%\GitHub Copilot` | `& 'C:\Program Files\WindowsApps\OpenAI.Codex_<version>_<arch>__2p2nqsd0c76g0\app\resources\codex.exe'` (PowerShell) |
+| Linux | `/usr/lib` and `/opt` (`.deb`, `.rpm`, and Arch packages) | `/usr/lib/chatgpt/resources/codex` |
+
+On Linux, setup doesn't find a GitHub Copilot AppImage, and Settings shows the
+Copilot app without a version.
 
 Setup edits only the hook entries it owns. Before it changes a file, it keeps a
 copy beside it: `<file>.bak` holds the file as it was before the first change, and
@@ -494,7 +529,7 @@ changes if a file's `hooks` section is in a format it doesn't understand.
 
 Grok also runs the hooks in Claude's settings. If you use both, Grok can show a
 line such as `PreToolUse hook (global/settings) failed, ignored` for the Agent
-Companion Claude hook. This doesn't change the display, because Grok's own hook
+Buddy Claude hook. This doesn't change the display, because Grok's own hook
 sends the events. To stop the message, add this to `~/.grok/config.toml`. Grok
 then skips all of your Claude hooks, not only this one:
 
@@ -553,8 +588,8 @@ npm run agents uninstall codex     # Remove one hook
 
 Codex links each hook approval to the hook's position in `~/.codex/hooks.json`.
 If removing or reinstalling the companion's hook moves one of your own approved
-Codex hooks, Settings and `npm run agents` show a warning that names it. Open
-Codex, type `/hooks`, and approve it again.
+Codex hooks, Settings and `npm run agents` show a warning that names it. Run
+`codex` in a terminal, type `/hooks`, and approve it again.
 
 Removing a Hermes hook doesn't revoke its approval. To clean that up too, run
 `hermes hooks revoke "<command>"` with the command shown in its config.
@@ -618,7 +653,7 @@ screen:
   include VS Code, the cloud agent, or other computers, so it is not your
   account's bill.
 - **Tokens:** input plus output tokens for Claude Code (`~/.claude/projects/`)
-  and Codex CLI (`~/.codex/sessions/`). Cache reads are not counted. GitHub
+  and Codex (`~/.codex/sessions/`). Cache reads are not counted. GitHub
   Copilot tokens are not counted, because Copilot records them only when a
   session stops cleanly, so the local count is not complete. Copilot has AIC.
 

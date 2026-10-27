@@ -24,7 +24,7 @@ export const grokAdapter: AgentAdapter = {
     if (status === 'missing' || !runsClaudeHooks(ctx)) return undefined;
     const claude = claudeAdapter.hookStatus(ctx);
     if (claude === 'missing' || claude === 'unsupported') return undefined;
-    return 'Grok also runs Claude’s hooks, and reports the Agent Companion Claude hook as failed. This does not '
+    return 'Grok also runs Claude’s hooks, and reports the Agent Buddy Claude hook as failed. This does not '
       + `change the display. To stop it, add [compat.claude] hooks = false to ${grokConfigPath(ctx)}. `
       + 'Grok then skips all of your Claude hooks.';
   },

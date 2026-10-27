@@ -6,9 +6,10 @@ import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 import {parseDocument} from 'yaml';
 import {claudeAdapter, claudeConfigPath} from '../src/agents/claude.js';
-import {codexAdapter} from '../src/agents/codex.js';
+import {codexAdapter, codexApproval, codexApps, codexRunStep} from '../src/agents/codex.js';
+import {asarPackageVersion, clientVersions, findApp, parseWindowsPackages} from '../src/agents/apps.js';
 import {codexQuote, versionOf} from '../src/agents/commands.js';
-import {copilotAdapter, copilotAppVersion, copilotVersions} from '../src/agents/copilot.js';
+import {copilotAdapter, copilotAppSpec, copilotVersions} from '../src/agents/copilot.js';
 import {grokAdapter, runsClaudeHooks} from '../src/agents/grok.js';
 import {hermesAdapter} from '../src/agents/hermes.js';
 import {openclawAdapter} from '../src/agents/openclaw.js';
@@ -45,6 +46,7 @@ async function fixture(): Promise<{root: string; home: string; ctx: AgentContext
     dataDir: join(root, 'data'),
     socketPath: join(root, 'daemon.sock'),
     runCommand: async () => ({stdout: '', status: 0}),
+    appFolders: [],
   });
   return {root, home, ctx, cleanup: async () => rm(root, {recursive: true, force: true})};
 }
@@ -455,18 +457,23 @@ test('agents report the one-time step they still need', async () => {
     await mkdir(join(home, '.codex'), {recursive: true});
     const ctx = {home, node: join(home, 'node'), cli: join(home, 'daemon', 'dist', 'src', 'cli.js'),
                  platform: 'darwin' as const, env: {PATH: ''},
-                 dataDir: home, socketPath: join(home, 'daemon.sock')};
+                 dataDir: home, socketPath: join(home, 'daemon.sock'), appFolders: []};
     await touch(ctx.node, ctx.cli);
     await codexAdapter.install(ctx);
     const codex = () => agentStatuses(ctx, new Map(), new Map()).find(agent => agent.id === 'codex');
     assert.equal(codex()?.action?.kind, 'approve');
     assert.match(codex()?.action?.steps.join(' ') ?? '', /\/hooks/);
+    assert.match(codex()?.action?.steps[0] ?? '', /npm install -g @openai\/codex/);
+    assert.match(codex()?.action?.steps.join(' ') ?? '', /Agent Buddy hooks \(10 waiting\)/);
+    assert.match(codex()?.action?.steps.at(-1) ?? '', /ChatGPT app, the Codex app, or VS Code, quit and reopen/);
+    assert.equal(codex()?.action?.command, undefined);
     const approved = JSON.parse(await readFile(join(home, '.codex', 'hooks.json'), 'utf8')).hooks as
       Record<string, Array<{hooks: unknown[]}>>;
     const keys = Object.entries(approved).flatMap(([event, groups]) => groups.map((_, index) =>
       `[hooks.state."${join(home, '.codex', 'hooks.json')}:${event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()}:${index}:0"]\ntrusted_hash = "a"\n`));
     await writeFile(join(home, '.codex', 'config.toml'), keys.join(''));
     assert.equal(codex()?.action?.kind, 'restart');
+    assert.match(codex()?.action?.steps.join(' ') ?? '', /Restart any Codex sessions[\s\S]*quit and reopen/);
     assert.equal(agentStatuses(ctx, new Map(), new Map([['codex', Date.now()]])).find(agent => agent.id === 'codex')?.action,
                  undefined);
     await writeFile(config, JSON.stringify({enabled: {codex: false}}));
@@ -793,6 +800,7 @@ test('removing the Codex hook names the user\'s approved hooks that moved', asyn
     const warnings = await codexAdapter.uninstall(ctx);
     assert.equal(warnings?.length, 1);
     assert.match(warnings?.[0] ?? '', /\/hooks/);
+    assert.match(warnings?.[0] ?? '', /Open the Codex CLI in a terminal\. Type \/hooks and approve: Stop: approved-stop/);
     assert.match(warnings?.[0] ?? '', /Stop: approved-stop/);
     assert.doesNotMatch(warnings?.[0] ?? '', /not-approved/);
     assert.deepEqual(await codexAdapter.uninstall(ctx), []);
@@ -897,14 +905,132 @@ test('Copilot shows the versions of the CLI and the GitHub Copilot app', async (
     await mkdir(contents, {recursive: true});
     await writeFile(join(contents, 'Info.plist'),
       '<plist><dict><key>CFBundleShortVersionString</key>\n\t<string>1.1.26</string></dict></plist>');
-    assert.equal(copilotAppVersion(ctx, [join(root, 'none'), apps]), '1.1.26');
-    assert.equal(copilotAppVersion({...ctx, platform: 'linux'}, [apps]), undefined);
-    assert.equal(copilotAppVersion(ctx, [join(root, 'none')]), undefined);
-    assert.equal(copilotVersions('GitHub Copilot CLI 1.0.91', '1.1.26'), 'CLI 1.0.91 · app 1.1.26');
-    assert.equal(copilotVersions(undefined, '1.1.26'), 'app 1.1.26');
+    const app = findApp({...ctx, appFolders: [join(root, 'none'), apps]}, copilotAppSpec);
+    assert.equal(app?.version, '1.1.26');
+    assert.equal(findApp({...ctx, appFolders: [join(root, 'none')]}, copilotAppSpec), undefined);
+    assert.equal(copilotVersions('GitHub Copilot CLI 1.0.91', app), 'CLI 1.0.91 · app 1.1.26');
+    assert.equal(copilotVersions(undefined, app), 'app 1.1.26');
+    assert.equal(copilotVersions(undefined, {label: 'app'}), 'app');
     assert.equal(copilotVersions('GitHub Copilot CLI 1.0.91', undefined), 'CLI 1.0.91');
     assert.equal(copilotVersions(undefined, undefined), undefined);
   } finally {
+    await cleanup();
+  }
+});
+
+async function fakeMacApp(folder: string, bundle: string, version: string, codexCli?: string): Promise<string> {
+  const contents = join(folder, bundle, 'Contents');
+  await mkdir(join(contents, 'Resources'), {recursive: true});
+  await writeFile(join(contents, 'Info.plist'),
+    `<plist><dict><key>CFBundleShortVersionString</key>\n\t<string>${version}</string></dict></plist>`);
+  const cli = join(contents, 'Resources', 'codex');
+  if (codexCli !== undefined) {
+    await writeFile(cli, codexCli && `#!/bin/sh\necho '${codexCli}'\n`);
+    await chmod(cli, 0o755);
+  }
+  return cli;
+}
+
+test('Codex and Claude are detected from their desktop apps alone, with the version of each client', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const apps = join(root, 'Applications');
+    const withApps = {...ctx, appFolders: [join(root, 'none'), apps]};
+    assert.equal(codexAdapter.detect(withApps).installed, false);
+    assert.equal(claudeAdapter.detect(withApps).installed, false);
+
+    // A ChatGPT app without the Codex CLI does not run Codex.
+    await fakeMacApp(apps, 'ChatGPT.app', '26.715');
+    assert.equal(codexAdapter.detect(withApps).installed, false);
+    const chatgptCodex = await fakeMacApp(apps, 'ChatGPT.app', '26.715', '');
+    const appCodex = await fakeMacApp(apps, 'Codex.app', '26.415', '');
+    assert.deepEqual(codexApps(withApps).map(app => app.label), ['ChatGPT app', 'Codex app']);
+    assert.deepEqual(codexAdapter.detect(withApps), {installed: true, version: 'ChatGPT app 26.715 · Codex app 26.415',
+                                                     configPath: join(ctx.home, '.codex', 'hooks.json')});
+    assert.equal(codexApps({...withApps, platform: 'linux'}).length, 0);
+
+    // Only a CLI from Codex 0.129.0 or later can approve hooks, and the newest one is offered.
+    const versions: Record<string, string> = {[chatgptCodex]: 'codex-cli 0.145.0-alpha.30', [appCodex]: 'codex-cli 0.121.0'};
+    const command = (env = withApps.env) => codexApproval({...withApps, env}, path => versions[path])?.command;
+    assert.equal(command(), `'${chatgptCodex}'`);
+    versions[appCodex] = 'codex-cli 0.163.0';
+    assert.equal(command(), `'${appCodex}'`);
+    const approval = codexApproval(withApps, path => versions[path]);
+    assert.deepEqual(approval, {command: `'${appCodex}'`, app: 'Codex app'});
+    assert.equal(codexRunStep(approval, 'darwin'),
+                 `Open a terminal in any folder and run the Codex CLI that your Codex app includes: '${appCodex}'`);
+    // A version that is not known yet doesn't exclude a CLI, but a known good version comes first.
+    versions[appCodex] = 'codex-cli 0.128.9';
+    delete versions[chatgptCodex];
+    assert.equal(command(), `'${chatgptCodex}'`);
+    versions[appCodex] = 'codex-cli 0.150.0';
+    assert.equal(command(), `'${appCodex}'`);
+    // The prereleases of 0.129.0 came before hook approval.
+    versions[appCodex] = 'codex-cli 0.129.0-alpha.7';
+    versions[chatgptCodex] = 'codex-cli 0.121.0';
+    assert.equal(command(), undefined);
+    versions[appCodex] = 'codex-cli 0.129.0';
+    assert.equal(command(), `'${appCodex}'`);
+    if (posix) {
+      // A codex on PATH comes first, unless its version is known to be too old.
+      const bin = join(root, 'bin');
+      await touch(join(bin, 'codex'));
+      assert.equal(command({PATH: bin}), 'codex');
+      versions[join(bin, 'codex')] = 'codex-cli 0.128.0';
+      assert.equal(command({PATH: bin}), `'${appCodex}'`);
+      versions[appCodex] = 'codex-cli 0.121.0';
+      assert.equal(command({PATH: bin}), undefined);
+    }
+    assert.equal(codexApproval(ctx, () => 'codex-cli 0.200.0'), undefined);
+
+    await fakeMacApp(apps, 'Claude.app', '2.31226.0');
+    assert.deepEqual(claudeAdapter.detect(withApps), {installed: true, version: 'Claude app 2.31226.0',
+                                                      configPath: join(ctx.home, '.claude', 'settings.json')});
+    assert.equal(clientVersions('0.162.1', [{label: 'Codex app', path: ''}]), 'CLI 0.162.1 · Codex app');
+    assert.equal(findApp(withApps, {label: 'Missing app', mac: 'Missing.app'}), undefined);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('the setup steps name the desktop apps and the command that approves Codex hooks', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  const config = join(root, 'agents.json');
+  const previous = process.env.AGENT_COMPANION_AGENTS_CONFIG;
+  process.env.AGENT_COMPANION_AGENTS_CONFIG = config;
+  try {
+    const apps = join(root, 'Applications');
+    const bundled = await fakeMacApp(apps, 'ChatGPT.app', '26.715', '');
+    const withApps = {...ctx, appFolders: [apps]};
+    await mkdir(join(home, '.codex'), {recursive: true});
+    await codexAdapter.install(withApps);
+    const status = (id: AgentId, seen = new Map<AgentId, number>()) =>
+      agentStatuses(withApps, new Map(), seen).find(agent => agent.id === id)!;
+    const codex = status('codex');
+    assert.equal(codex.name, 'Codex');
+    assert.equal(codex.clients, 'CLI, ChatGPT app, or VS Code');
+    assert.equal(codex.action?.title, 'Approve the hooks in the Codex CLI');
+    // The app's CLI gives no version, so it is offered.
+    assert.equal(codex.action?.command, `'${bundled}'`);
+    assert.ok(codex.action?.steps[0]?.endsWith(`includes: '${bundled}'`));
+    assert.match(codex.action?.steps[1] ?? '', /can’t approve hooks/);
+    if (posix) {
+      // When its version is known to be too old, the user must install the Codex CLI.
+      await fakeMacApp(apps, 'ChatGPT.app', '26.715', 'codex-cli 0.121.0');
+      for (let tries = 0; tries < 100 && status('codex').action?.command; tries++) await new Promise(r => setTimeout(r, 20));
+      assert.equal(status('codex').action?.command, undefined);
+      assert.match(status('codex').action?.steps[0] ?? '', /^Install the Codex CLI/);
+    }
+
+    await claudeAdapter.install(withApps);
+    const claude = status('claude');
+    assert.equal(claude.clients, 'CLI, Claude app, or IDE');
+    assert.match(claude.action?.steps.join(' ') ?? '', /Claude app, quit and reopen it[\s\S]*Cowork and cloud sessions/);
+    assert.equal(status('claude', new Map([['claude', Date.now()]])).action, undefined);
+    assert.equal(status('grok').clients, undefined);
+  } finally {
+    if (previous === undefined) delete process.env.AGENT_COMPANION_AGENTS_CONFIG;
+    else process.env.AGENT_COMPANION_AGENTS_CONFIG = previous;
     await cleanup();
   }
 });
@@ -933,6 +1059,169 @@ test('each agent\'s own folder variable moves the files the hooks go in', async 
     assert.equal(claudeConfigPath(home, {CLAUDE_CONFIG_DIR: '~/claude-work'}), join(home, 'claude-work', 'settings.json'));
     assert.equal(claudeConfigPath(home, {CLAUDE_CONFIG_DIR: '  '}), join(home, '.claude', 'settings.json'));
     assert.equal(claudeConfigPath(home, {CLAUDE_CONFIG_DIR: 'relative'}), join(home, '.claude', 'settings.json'));
+  } finally {
+    await cleanup();
+  }
+});
+
+const packagesKey = 'HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion'
+  + '\\AppModel\\Repository\\Packages';
+
+test('Windows apps are found by their package folder, with the version and folder from the registry', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const local = join(root, 'Local');
+    const windowsApps = join(root, 'WindowsApps');
+    const chatgpt = join(windowsApps, 'OpenAI.Codex_26.1021.3705.0_arm64__2p2nqsd0c76g0');
+    const registry = [
+      `${packagesKey}\\Microsoft.Copilot_156.0.4314.42_neutral__8wekyb3d8bbwe`,
+      '    PackageRootFolder    REG_SZ    C:\\Program Files\\WindowsApps\\Microsoft.Copilot_156.0.4314.42_neutral__8wekyb3d8bbwe',
+      '',
+      `${packagesKey}\\OpenAI.Codex_26.1021.3705.0_arm64__2p2nqsd0c76g0`,
+      `    PackageRootFolder    REG_SZ    ${chatgpt}`,
+      '',
+      `${packagesKey}\\AnthropicPBC.Claude_3.6556.2.0_arm64__fnn82j28hfe8t`,
+      '    PackageRootFolder    REG_SZ    C:\\Program Files\\WindowsApps\\AnthropicPBC.Claude_3.6556.2.0_arm64__fnn82j28hfe8t',
+      '',
+    ].join('\r\n');
+    const runs: string[][] = [];
+    const windows: AgentContext = {
+      ...ctx, platform: 'win32', env: {PATH: '', LOCALAPPDATA: local, ProgramFiles: join(root, 'Program Files')},
+      runCommand: async (command, args) => {
+        runs.push([command, ...args]);
+        if (args.includes('PackageRootFolder')) return {stdout: registry, status: 0};
+        if (args[1]?.endsWith('\\GitHub Copilot')) return {stdout: '    DisplayVersion    REG_SZ    1.1.32\r\n', status: 0};
+        throw new Error('not found');
+      },
+    };
+    assert.deepEqual([...parseWindowsPackages(registry).keys()],
+                     ['Microsoft.Copilot_8wekyb3d8bbwe', 'OpenAI.Codex_2p2nqsd0c76g0', 'AnthropicPBC.Claude_fnn82j28hfe8t']);
+    // A resource package has the same family name, and of two versions the newer one counts. reg.exe
+    // lists keys in alphabetical order, so 26.999 comes after 26.1021.
+    const split = [
+      `${packagesKey}\\OpenAI.Codex_26.1021.0.0_neutral_split.scale-200_2p2nqsd0c76g0`,
+      '    PackageRootFolder    REG_SZ    C:\\resources', '',
+      `${packagesKey}\\OpenAI.Codex_26.1021.0.0_x64__2p2nqsd0c76g0`, '    PackageRootFolder    REG_SZ    C:\\new', '',
+      `${packagesKey}\\OpenAI.Codex_26.999.0.0_x64__2p2nqsd0c76g0`, '    PackageRootFolder    REG_SZ    C:\\old', '',
+    ].join('\r\n');
+    assert.deepEqual([...parseWindowsPackages(split)],
+                     [['OpenAI.Codex_2p2nqsd0c76g0', {version: '26.1021.0.0', root: 'C:\\new'}]]);
+    assert.equal(codexApps(windows).length, 0);
+    assert.equal(runs.length, 0);
+
+    await mkdir(join(local, 'Packages', 'OpenAI.Codex_2p2nqsd0c76g0'), {recursive: true});
+    await mkdir(join(local, 'Packages', 'AnthropicPBC.Claude_fnn82j28hfe8t'), {recursive: true});
+    await touch(join(local, 'Programs', 'GitHub Copilot', 'github.exe'));
+    // The first status starts one registry read in the background and shows the apps without versions.
+    assert.deepEqual(codexApps(windows), [{label: 'ChatGPT app'}]);
+    assert.equal(claudeAdapter.detect(windows).installed, true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runs.filter(run => run.includes('PackageRootFolder')).length, 1);
+    assert.ok(runs[0]![0]!.endsWith('reg.exe'));
+    assert.deepEqual(codexApps(windows), [{label: 'ChatGPT app', path: chatgpt, version: '26.1021.3705.0'}]);
+    assert.equal(claudeAdapter.detect(windows).version, 'Claude app 3.6556.2.0');
+    assert.equal(findApp(windows, copilotAppSpec)?.version, undefined);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(findApp(windows, copilotAppSpec), {label: 'app', path: join(local, 'Programs', 'GitHub Copilot'),
+                                                        version: '1.1.32'});
+    assert.equal(runs.filter(run => run.includes('PackageRootFolder')).length, 1);
+
+    // Only a CLI that can approve hooks is offered, as a PowerShell command.
+    const cli = join(chatgpt, 'app', 'resources', 'codex.exe');
+    await touch(cli);
+    const approval = codexApproval(windows, () => 'codex-cli 0.164.0-alpha.11.1');
+    assert.deepEqual(approval, {command: `& '${cli}'`, app: 'ChatGPT app'});
+    assert.equal(codexRunStep(approval, 'win32'),
+                 `Open PowerShell in any folder and run the Codex CLI that your ChatGPT app includes: & '${cli}'`);
+    assert.equal(codexApproval(windows, () => 'codex-cli 0.121.0'), undefined);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a registry read waits five minutes after a failure, and a new package is read again once', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  const realNow = Date.now;
+  try {
+    const local = join(root, 'Local');
+    const created = async (family: string) => {
+      const folder = join(local, 'Packages', family);
+      await mkdir(folder, {recursive: true});
+      const details = await stat(folder);
+      return details.birthtimeMs || details.ctimeMs;
+    };
+    await created('AnthropicPBC.Claude_fnn82j28hfe8t');
+    const installedAt = await created('OpenAI.Codex_2p2nqsd0c76g0');
+    let clock = 0;
+    Date.now = () => clock;
+    // reg.exe fails, as when a policy blocks it, so no read lists the packages.
+    const reader = () => {
+      let reads = 0;
+      const windows: AgentContext = {...ctx, platform: 'win32', env: {PATH: '', LOCALAPPDATA: local},
+                                     runCommand: async () => { reads++; throw new Error('blocked'); }};
+      return async (seconds: number) => {
+        clock += seconds * 1000;
+        codexApps(windows);
+        claudeAdapter.detect(windows);
+        await new Promise(resolve => setImmediate(resolve));
+        return reads;
+      };
+    };
+    // Windows can write a package's registry key after its folder, so a read in the first 15
+    // seconds after an install can miss it. One more read follows 15 seconds later.
+    clock = installedAt + 1000;
+    let status = reader();
+    assert.equal(await status(0), 1);
+    assert.equal(await status(10), 1);
+    assert.equal(await status(10), 2);
+    // After that, a failed read waits five minutes, also for a package that no read lists.
+    assert.equal(await status(60), 2);
+    assert.equal(await status(300), 3);
+    // A folder time in the future, from a wrong clock, doesn't make reads run every 15 seconds.
+    clock = installedAt - 3_600_000;
+    status = reader();
+    assert.equal(await status(0), 1);
+    assert.equal(await status(20), 1);
+  } finally {
+    Date.now = realNow;
+    await cleanup();
+  }
+});
+
+test('Linux apps are found in their package folder, with the version from the package', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const lib = join(root, 'usr', 'lib');
+    const linux: AgentContext = {...ctx, platform: 'linux', appFolders: [lib, join(root, 'opt')]};
+    const chatgpt = join(lib, 'chatgpt');
+    await mkdir(join(chatgpt, 'resources'), {recursive: true});
+    await writeFile(join(chatgpt, 'resources', 'linux-package-metadata.json'), '{"version": "26.1021.22027"}');
+    // Without the CLI, the folder is not a ChatGPT app with Codex.
+    assert.equal(codexApps(linux).length, 0);
+    await touch(join(chatgpt, 'resources', 'codex'));
+    assert.deepEqual(codexApps(linux), [{label: 'ChatGPT app', path: chatgpt, version: '26.1021.22027'}]);
+    assert.equal(codexApproval(linux, () => 'codex-cli 0.164.0')?.command, `'${join(chatgpt, 'resources', 'codex')}'`);
+
+    // The Claude app has its version only in the package.json inside app.asar.
+    const packageJson = Buffer.from(JSON.stringify({name: '@ant/desktop', version: '3.6556.2'}));
+    const index = Buffer.from(JSON.stringify({files: {'other.js': {size: 3, offset: '0'},
+                                                      'package.json': {size: packageJson.length, offset: '3'}}}));
+    const header = Buffer.alloc(16);
+    header.writeUInt32LE(4, 0);
+    header.writeUInt32LE(index.length + 8, 4);
+    header.writeUInt32LE(index.length + 4, 8);
+    header.writeUInt32LE(index.length, 12);
+    const asar = join(lib, 'claude-desktop', 'resources', 'app.asar');
+    await mkdir(dirname(asar), {recursive: true});
+    await writeFile(asar, Buffer.concat([header, index, Buffer.from('abc'), packageJson]));
+    assert.equal(asarPackageVersion(asar), '3.6556.2');
+    assert.equal(claudeAdapter.detect(linux).version, 'Claude app 3.6556.2');
+    assert.equal(asarPackageVersion(join(root, 'missing.asar')), undefined);
+
+    await mkdir(join(root, 'opt', 'GitHub Copilot'), {recursive: true});
+    assert.deepEqual(findApp(linux, copilotAppSpec), {label: 'app', path: join(root, 'opt', 'GitHub Copilot')});
+    // Desktop apps run on the computer's own system, not in a WSL distribution.
+    assert.equal(findApp({...linux, hostPath: path => path}, copilotAppSpec), undefined);
   } finally {
     await cleanup();
   }

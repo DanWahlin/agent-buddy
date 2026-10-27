@@ -13,7 +13,7 @@ import {
   removeAllAgentHooks,
   uninstallAgent,
 } from '../src/agents/index.js';
-import {untrustedCodexHooks} from '../src/agents/codex.js';
+import {codexAdapter, untrustedCodexHooks} from '../src/agents/codex.js';
 import {hookHealth} from '../src/agents/hook-config.js';
 import type {AgentContext, AgentLocation, AgentLocations} from '../src/agents/types.js';
 import {
@@ -244,6 +244,7 @@ async function locationFixture() {
   const host = defaultAgentContext({
     home: hostHome, node: join(root, 'node'), cli: join(root, 'cli.js'), platform: 'darwin', env: {PATH: ''},
     dataDir: join(root, 'data'), socketPath: join(root, 'daemon.sock'), runCommand: async () => ({stdout: '', status: 0}),
+    appFolders: [],
   });
   const ubuntuCtx: AgentContext = {
     home: linuxHome, node: '/mnt/c/node.exe', cli: host.cli, platform: 'linux', env: {PATH: '', HOME: '/home/dan'},
@@ -387,6 +388,28 @@ test('reads Codex approvals by the path that Codex in the distribution sees', as
     assert.equal(untrustedCodexHooks(ubuntu.ctx!).length, waiting);
     await writeFile(config, keys('/home/dan/.codex/hooks.json'));
     assert.deepEqual(untrustedCodexHooks(ubuntu.ctx!), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('the Codex approval steps name each place whose hooks wait, with a CLI that runs there', async () => {
+  const {hostHome, linuxHome, host, ubuntu, cleanup} = await locationFixture();
+  try {
+    const action = () => agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'codex')?.action;
+    await mkdir(join(linuxHome, '.codex'), {recursive: true});
+    await installAgent('codex', host);
+    ubuntu.commands = ['codex'];
+    // Only the distribution's hooks wait, so the user runs codex there.
+    assert.equal(action()?.steps[0], 'In WSL: Ubuntu, open a terminal and run codex.');
+    assert.equal(action()?.command, undefined);
+    // Hooks on this computer wait too. Codex in the distribution can't approve them, and this
+    // computer has no Codex CLI.
+    await mkdir(join(hostHome, '.codex'), {recursive: true});
+    await codexAdapter.install(host);
+    const steps = action()?.steps ?? [];
+    assert.match(steps[0] ?? '', /^Install the Codex CLI/);
+    assert.equal(steps[1], 'In WSL: Ubuntu, open a terminal and run codex.');
   } finally {
     await cleanup();
   }

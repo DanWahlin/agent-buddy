@@ -23,7 +23,7 @@ async function fixture() {
   await writeFile(claude, '{"theme":"dark"}');
   const ctx = defaultAgentContext({home, node, cli, dataDir: data, platform: 'darwin',
     env: {PATH: '', AGENT_COMPANION_AGENTS_CONFIG: config},
-    runCommand: async () => ({stdout: '', status: 0})});
+    runCommand: async () => ({stdout: '', status: 0}), appFolders: []});
   return {root, ctx, config, claude, cleanup: () => rm(root, {recursive: true, force: true})};
 }
 

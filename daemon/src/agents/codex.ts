@@ -1,7 +1,9 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isRecord, recordOf, updateJsonFile} from './file-utils.js';
-import {codexQuote, isCompanionHookCommand, hasCommand, powershellHookCommand, versionOf} from './commands.js';
+import {codexQuote, findExecutable, isCompanionHookCommand, hasCommand, powershellHookCommand, shellQuote, versionOf,
+        versionOfExecutable} from './commands.js';
+import {bundledCodexCli, clientVersions, findApp, type AppSpec, type DesktopApp} from './apps.js';
 import {codexHome} from './homes.js';
 import {attentionPayload, canonicalEvent, namespacePayload, normalized} from './normalize.js';
 import {hookHealth, parseHookCommand, removeOurHooks, withOurHooks, type FoundHook} from './hook-config.js';
@@ -15,14 +17,16 @@ const events = [
 
 export const codexAdapter: AgentAdapter = {
   id: 'codex',
-  name: 'Codex CLI',
+  name: 'Codex',
+  clients: 'CLI, ChatGPT app, or VS Code',
   hint: status => status === 'needs-approval'
-    ? 'Approve the new hooks in Codex with /hooks.'
-    : status === 'missing' ? 'Install hooks, then approve them in Codex with /hooks.' : undefined,
+    ? 'Approve the new hooks with /hooks in the Codex CLI, then reopen the ChatGPT app.'
+    : status === 'missing' ? 'Install hooks, then approve them with /hooks in the Codex CLI.' : undefined,
   detect(ctx) {
     const configPath = codexHooksPath(ctx.home, ctx.env);
-    const version = versionOf('codex', ctx);
-    return {installed: hasCommand('codex', ctx) || existsSync(configPath), version, configPath};
+    const apps = codexApps(ctx);
+    const version = clientVersions(versionOf('codex', ctx)?.replace(/^codex-cli\s*/i, ''), apps);
+    return {installed: hasCommand('codex', ctx) || existsSync(configPath) || apps.length > 0, version, configPath};
   },
   hookStatus(ctx) {
     const status = codexHookHealth(ctx);
@@ -48,6 +52,88 @@ export const codexAdapter: AgentAdapter = {
 
 export function codexHooksPath(home: string, env: NodeJS.ProcessEnv = {}): string {
   return join(codexHome(home, env), 'hooks.json');
+}
+
+// The ChatGPT app includes a Codex CLI and uses the same ~/.codex folder. It replaced the Codex app,
+// which an older macOS install can still have. Its Windows package keeps the name OpenAI.Codex.
+const codexAppSpecs: readonly AppSpec[] = [
+  {label: 'ChatGPT app', mac: 'ChatGPT.app', windows: {packages: ['OpenAI.Codex_2p2nqsd0c76g0']}, linux: 'chatgpt'},
+  {label: 'Codex app', mac: 'Codex.app'},
+];
+
+// An older macOS ChatGPT app has no Codex, so there the bundled CLI must be present. On Windows,
+// the package always includes it, but its folder is known only after the first registry read.
+export function codexApps(ctx: AgentContext): DesktopApp[] {
+  return codexAppSpecs.flatMap(spec => findApp(ctx, spec) ?? [])
+    .filter(app => ctx.platform === 'win32' || bundledCodexCli(ctx, app));
+}
+
+// The Codex CLI that the user runs to approve hooks.
+export interface CodexApproval {
+  // `codex`, or the quoted path of a CLI that a desktop app includes.
+  command: string;
+  // The app that includes the CLI, for example "ChatGPT app".
+  app?: string;
+}
+
+// What the user runs in a terminal to approve hooks: `codex` when it is on PATH, otherwise the
+// newest CLI that a Codex desktop app includes, or undefined when there is neither. A CLI older
+// than hook approval can't approve hooks, so it is skipped. A version that is not known yet (it is
+// read in the background) doesn't exclude a CLI, but a known version comes first.
+export function codexApproval(ctx: AgentContext,
+                              version: (path: string) => string | undefined = path => versionOfExecutable(path, ctx),
+): CodexApproval | undefined {
+  const onPath = findExecutable('codex', ctx.env, ctx.platform);
+  if (onPath && canApproveHooks(versionParts(version(onPath)))) return {command: 'codex'};
+  const bundled = codexApps(ctx).flatMap(app => {
+    const path = bundledCodexCli(ctx, app);
+    const parts = path ? versionParts(version(path)) : undefined;
+    return path && canApproveHooks(parts) ? [{path, parts, app: app.label}] : [];
+  }).sort((first, second) => !first.parts || !second.parts ? Number(!first.parts) - Number(!second.parts)
+    : compareVersions(second.parts, first.parts))[0];
+  if (!bundled) return undefined;
+  // On Windows, the terminal is PowerShell, which runs a quoted path with `&`.
+  const command = ctx.platform === 'win32' ? `& '${bundled.path.replaceAll("'", "''")}'` : shellQuote(bundled.path);
+  return {command, app: bundled.app};
+}
+
+// Codex 0.129.0 added hook approval (openai/codex#20321). Its prereleases came before that change.
+const firstCodexWithHookApproval = [0, 129, 0, 1];
+
+function canApproveHooks(parts: number[] | undefined): boolean {
+  return !parts || compareVersions(parts, firstCodexWithHookApproval) >= 0;
+}
+
+// Major, minor, patch, then 0 for a prerelease (such as 0.129.0-alpha.1) or 1 for a release.
+function versionParts(version: string | undefined): number[] | undefined {
+  const match = /(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z])?/.exec(version ?? '');
+  return match ? [...match.slice(1, 4).map(Number), match[4] ? 0 : 1] : undefined;
+}
+
+function compareVersions(first: number[], second: number[]): number {
+  for (let index = 0; index < 4; index++) {
+    if (first[index] !== second[index]) return first[index]! - second[index]!;
+  }
+  return 0;
+}
+
+// The first setup step, which opens the Codex CLI that can approve hooks.
+export function codexRunStep(approval: CodexApproval | undefined, platform: NodeJS.Platform): string {
+  if (!approval) {
+    return 'Install the Codex CLI with npm install -g @openai/codex. Then open a terminal in any folder and run codex.';
+  }
+  if (!approval.app) return 'Open a terminal in any folder and run codex.';
+  // The Windows command is a PowerShell call, which Command Prompt can't run.
+  const terminal = platform === 'win32' ? 'PowerShell' : 'a terminal';
+  return `Open ${terminal} in any folder and run the Codex CLI that your ${approval.app} includes: ${approval.command}`;
+}
+
+// An install runs once, possibly before the background reads find the app's CLI, and an agent in WSL
+// has no PATH here. So when no command is known, the warning doesn't tell the user to install one.
+function codexWarningStep(ctx: AgentContext): string {
+  if (ctx.hostPath) return codexRunStep({command: 'codex'}, ctx.platform);
+  const approval = codexApproval(ctx);
+  return approval ? codexRunStep(approval, ctx.platform) : 'Open the Codex CLI in a terminal.';
 }
 
 function codexConfigPath(home: string, env: NodeJS.ProcessEnv = {}): string {
@@ -123,7 +209,7 @@ async function editCodexHooks(ctx: AgentContext, update: (root: Record<string, u
   if (!moved.length) return [];
   const names = moved.map(([handler, {event}]) => `${event}: ${String((handler as {command?: unknown}).command ?? '?')}`);
   return [`Codex: some of your own hooks moved, so Codex skips them until you approve them again. `
-    + `Open Codex, type /hooks, and approve: ${names.join('; ')}`];
+    + `${codexWarningStep(ctx)} Type /hooks and approve: ${names.join('; ')}`];
 }
 
 // The position of each of the user's hook handlers, by object, as Codex writes it in an approval key.

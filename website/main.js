@@ -6,7 +6,7 @@ const REPO = 'DanWahlin/agent-buddy';
 const AGENTS = [
   { id: 'copilot', name: 'GitHub Copilot', color: '#8F9BFF' },
   { id: 'claude', name: 'Claude Code', color: '#E5896A' },
-  { id: 'codex', name: 'Codex CLI', color: '#5EE0A0' },
+  { id: 'codex', name: 'Codex', color: '#5EE0A0' },
   { id: 'grok', name: 'Grok Build', color: '#E8EAED' },
   { id: 'hermes', name: 'Hermes Agent', color: '#F0C050' },
   { id: 'openclaw', name: 'OpenClaw', color: '#FF6B6B' },

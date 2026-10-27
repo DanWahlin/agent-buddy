@@ -4,6 +4,7 @@ import {isRecord, updateJsonFile} from './file-utils.js';
 import {attentionPayload, canonicalEvent, isTool, namespacePayload, normalized} from './normalize.js';
 import {isCompanionCli, hasCommand, versionOf} from './commands.js';
 import {claudeHome} from './homes.js';
+import {clientVersions, findApp, type AppSpec} from './apps.js';
 import {hookHealth, removeOurHooks, withOurHooks, type FoundHook} from './hook-config.js';
 import type {AgentAdapter, AgentContext, HookStatus, NormalizedHook} from './types.js';
 import type {HookPayload} from '../protocol.js';
@@ -17,13 +18,15 @@ const events = [
 export const claudeAdapter: AgentAdapter = {
   id: 'claude',
   name: 'Claude Code',
+  clients: 'CLI, Claude app, or IDE',
   hint: status => status === 'missing'
     ? 'Install hooks, then accept Claude’s folder-trust prompt if it asks.'
     : undefined,
   detect(ctx) {
     const configPath = claudeConfigPath(ctx.home, ctx.env);
-    const version = versionOf('claude', ctx);
-    return {installed: hasCommand('claude', ctx) || existsSync(configPath), version, configPath};
+    const apps = [findApp(ctx, claudeAppSpec)].flatMap(app => app ?? []);
+    const version = clientVersions(versionOf('claude', ctx)?.replace(/\s*\(Claude Code\)$/i, ''), apps);
+    return {installed: hasCommand('claude', ctx) || existsSync(configPath) || apps.length > 0, version, configPath};
   },
   hookStatus(ctx) {
     return claudeHookStatus(ctx);
@@ -51,6 +54,17 @@ export const claudeAdapter: AgentAdapter = {
     }
     return normalized('claude', canonicalEvent(nativeEvent, payload), payload, receiptTime);
   },
+};
+
+// The Code tab of the Claude app runs its own Claude Code with the same ~/.claude folder. On Windows,
+// the app is an MSIX package (its publisher ID differs between the Microsoft Store and winget), or a
+// per-user Squirrel install from the .exe installer (winget product code AnthropicClaude).
+const claudeAppSpec: AppSpec = {
+  label: 'Claude app',
+  mac: 'Claude.app',
+  windows: {packages: ['AnthropicPBC.Claude_fnn82j28hfe8t', 'Claude_pzs8sxrjxfjjc'],
+            squirrel: {folder: 'AnthropicClaude', program: 'claude.exe'}},
+  linux: 'claude-desktop',
 };
 
 export function claudeConfigPath(home: string, env: NodeJS.ProcessEnv = {}): string {

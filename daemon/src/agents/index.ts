@@ -14,7 +14,7 @@ import {hermesAdapter} from './hermes.js';
 import {openclawAdapter} from './openclaw.js';
 import {configuredAgentEnabled, isAgentEnabledSync, loadAgentsConfigSync, updateAgentsConfig} from './config.js';
 import {namespacePayload} from './normalize.js';
-import {untrustedCodexHooks} from './codex.js';
+import {codexApproval, codexRunStep, untrustedCodexHooks} from './codex.js';
 import {claudeHome, codexHome, copilotHome, grokHome, hermesHome} from './homes.js';
 import {runWsl, wslExecutable, WslLocations} from './wsl.js';
 import {defaultDataDirectory, socketPath} from '../paths.js';
@@ -60,6 +60,7 @@ export function defaultAgentContext(overrides: Partial<AgentContext> = {}): Agen
       });
       return {stdout: String(stdout), status: 0};
     }),
+    ...(overrides.appFolders ? {appFolders: overrides.appFolders} : {}),
   };
 }
 
@@ -72,30 +73,52 @@ export function namespaceAgentPayload(agent: AgentId, payload: HookPayload): Hoo
   return namespacePayload(agent, payload);
 }
 
-function agentAction(adapter: AgentAdapter, contexts: AgentContext[], hookStatus: string,
+function agentAction(adapter: AgentAdapter, contexts: AgentContext[], locations: AgentLocation[], hookStatus: string,
                      enabled: boolean, seen: boolean): AgentAction | undefined {
   if (!enabled || (hookStatus !== 'installed' && hookStatus !== 'needs-approval')) return undefined;
   if (hookStatus === 'needs-approval' && adapter.id === 'codex') {
-    const waiting = contexts.reduce((count, ctx) => count + untrustedCodexHooks(ctx).length, 0);
-    return {kind: 'approve', title: 'Approve the hooks in Codex', steps: [
-      'Open Codex in any folder and type /hooks.',
-      `Approve the Agent Companion hooks${waiting ? ` (${waiting} waiting)` : ''}. Codex skips hooks until you do.`,
-    ]};
+    // Each place approves only its own hooks: this computer with a Codex CLI that runs here, and
+    // a WSL distribution with codex in that distribution.
+    const host = contexts[0]!;
+    const hostWaiting = untrustedCodexHooks(host).length;
+    const distributions = locations.flatMap(location => {
+      const count = location.running && location.ctx ? untrustedCodexHooks(location.ctx).length : 0;
+      return count ? [{name: location.name, count}] : [];
+    });
+    const waiting = distributions.reduce((count, distribution) => count + distribution.count, hostWaiting);
+    const hostSteps = hostWaiting > 0 || !distributions.length;
+    const approval = hostSteps ? codexApproval(host) : undefined;
+    return {kind: 'approve', title: 'Approve the hooks in the Codex CLI', steps: [
+      ...(hostSteps ? [codexRunStep(approval, host.platform)] : []),
+      ...distributions.map(distribution => `In ${distribution.name}, open a terminal and run codex.`),
+      `Type /hooks and approve the Agent Buddy hooks${waiting ? ` (${waiting} waiting)` : ''}. Codex skips hooks `
+        + 'until you do. The ChatGPT app and the Codex app can’t approve hooks.',
+      ...codexAppSteps,
+    ], ...(approval?.app ? {command: approval.command} : {})};
   }
   if (hookStatus === 'needs-approval' && adapter.id === 'hermes') {
     return {kind: 'approve', title: 'Approve the hooks in Hermes', steps: [
       'Run hermes in a terminal and send it a prompt.',
-      'When Hermes asks whether to allow each Agent Companion hook, approve it. Hermes asks once per event.',
+      'When Hermes asks whether to allow each Agent Buddy hook, approve it. Hermes asks once per event.',
       'Until you do, gateway and cron runs skip the hooks.',
     ]};
   }
   if (seen) return undefined;
   const steps = [`Restart any ${adapter.name} sessions that were already open so they load the hooks.`];
-  if (adapter.id === 'claude')
-    steps.push('If Claude asks whether you trust the folder, choose Yes. Its hooks wait until you do.');
+  if (adapter.id === 'claude') {
+    steps.push('If Claude asks whether you trust the folder, choose Yes. Its hooks wait until you do.',
+               'If you use the Claude app, quit and reopen it, then start a new session in the Code tab. '
+                 + 'Cowork and cloud sessions don’t run the hooks.');
+  }
+  if (adapter.id === 'codex') steps.push(...codexAppSteps);
   if (adapter.id === 'openclaw') steps.push('Restart the OpenClaw Gateway so it loads the plugin.');
   return {kind: 'restart', title: `Waiting for ${adapter.name}`, steps};
 }
+
+// A Codex desktop app or the VS Code extension reads hooks and their approvals only when it starts.
+const codexAppSteps = [
+  'If you use Codex in the ChatGPT app, the Codex app, or VS Code, quit and reopen it so it loads the hooks.',
+];
 
 export function agentStatuses(
     ctx: AgentContext,
@@ -121,6 +144,7 @@ export function agentStatuses(
     return {
       id: adapter.id,
       name: adapter.name,
+      ...(adapter.clients ? {clients: adapter.clients} : {}),
       detected,
       // 'outdated' hooks are still in the agent's config, so the user can remove them.
       installed: [hostStatus, ...running.map(other => other.hookStatus)].some(hasHooks),
@@ -133,9 +157,9 @@ export function agentStatuses(
       driving: active?.driving ?? false,
       hint: hookStatus === 'outdated'
         ? `${others.length ? 'Some places are missing hooks, or their hooks' : 'Some hooks are missing or'} run another `
-          + 'copy of Agent Companion or Node.js. Choose Reinstall to fix them.'
+          + 'copy of Agent Buddy or Node.js. Choose Reinstall to fix them.'
         : adapter.hint(hookStatus) ?? adapter.note?.(ctx),
-      action: agentAction(adapter, contexts, hookStatus, enabled, seen),
+      action: agentAction(adapter, contexts, locations, hookStatus, enabled, seen),
       ...(config.problem ? {warning: config.problem} : {}),
       ...(others.length ? {locations: [{
         id: 'host', name: hostName(ctx.platform), running: true, detected: detection.installed, hookStatus: hostStatus,

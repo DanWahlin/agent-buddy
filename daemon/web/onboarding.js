@@ -519,7 +519,7 @@ export class Onboarding {
       $('ob-agent-result').hidden = true;
     }
     const key = JSON.stringify([
-      this.status.agents.map(agent => [agent.id, agent.name, agent.detected]), this.status.badges?.icons]);
+      this.status.agents.map(agent => [agent.id, agent.name, agent.clients, agent.detected]), this.status.badges?.icons]);
     const list = $('ob-agents');
     if (key !== this.agentKey) {
       this.agentKey = key;
@@ -538,10 +538,10 @@ export class Onboarding {
         const name = document.createElement('strong');
         name.textContent = agent.name;
         body.append(name);
-        if (!agent.detected) {
+        if (!agent.detected || agent.clients) {
           const note = document.createElement('span');
           note.className = 'availability';
-          note.textContent = agent.id === 'copilot' ? 'CLI or Copilot app' : 'Not detected';
+          note.textContent = agent.detected || agent.id === 'copilot' ? agent.clients ?? '' : 'Not detected';
           body.append(note);
         }
         const mark = document.createElement('span');
@@ -595,7 +595,8 @@ export class Onboarding {
     state.className = `guide-state ${ready ? 'ready' : 'waiting'}`;
     const instructions = ready || !agent ? [] : agent.action?.steps
       ?? ['Install the hooks, then start a new agent session.'];
-    const key = JSON.stringify([agent?.id, instructions]);
+    const command = ready || !agent ? undefined : agent.action?.command;
+    const key = JSON.stringify([agent?.id, instructions, command]);
     if (key !== this.guideKey) {
       this.guideKey = key;
       const list = $('ob-guide-steps');
@@ -603,12 +604,14 @@ export class Onboarding {
       for (const text of instructions) {
         const item = document.createElement('li');
         item.textContent = text;
-        if (text.includes('/hooks')) {
+        const copied = text.includes('/hooks') ? ['/hooks', 'Copy /hooks']
+          : command && text.includes(command) ? [command, 'Copy command'] : undefined;
+        if (copied) {
           const copy = document.createElement('button');
           copy.type = 'button';
           copy.className = 'secondary';
-          copy.dataset.copy = '/hooks';
-          copy.textContent = 'Copy /hooks';
+          copy.dataset.copy = copied[0];
+          copy.textContent = copied[1];
           item.append(copy);
         }
         list.append(item);

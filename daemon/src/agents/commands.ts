@@ -66,7 +66,12 @@ const failedProbes = new Map<string, {count: number; retryAt: number}>();
 export function versionOf(command: string, ctx: AgentContext,
                           retryDelaysMs: readonly number[] = versionRetryDelaysMs): string | undefined {
   const executable = findExecutable(command, ctx.env, ctx.platform);
-  if (!executable) return undefined;
+  return executable ? versionOfExecutable(executable, ctx, retryDelaysMs) : undefined;
+}
+
+// The same as versionOf, for an executable given by its path.
+export function versionOfExecutable(executable: string, ctx: AgentContext,
+                                    retryDelaysMs: readonly number[] = versionRetryDelaysMs): string | undefined {
   let key: string;
   try {
     const details = statSync(executable);

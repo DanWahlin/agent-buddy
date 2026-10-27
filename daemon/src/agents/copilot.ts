@@ -1,6 +1,7 @@
 import {existsSync, readFileSync} from 'node:fs';
 import {join, win32} from 'node:path';
 import {isRecord, writeTextAtomically, removeFile} from './file-utils.js';
+import {clientVersions, findApp, type AppSpec, type DesktopApp} from './apps.js';
 import {attentionPayload, canonicalEvent, namespacePayload, normalized} from './normalize.js';
 import {versionOf} from './commands.js';
 import {copilotHome} from './homes.js';
@@ -11,10 +12,11 @@ import type {HookPayload} from '../protocol.js';
 export const copilotAdapter: AgentAdapter = {
   id: 'copilot',
   name: 'GitHub Copilot',
+  clients: 'CLI or Copilot app',
   hint: status => status === 'missing' ? 'Run setup to install the Copilot hook file.' : undefined,
   detect(ctx) {
     const configPath = copilotHookPath(ctx.home, ctx.env);
-    return {installed: true, version: copilotVersions(versionOf('copilot', ctx), copilotAppVersion(ctx)), configPath};
+    return {installed: true, version: copilotVersions(versionOf('copilot', ctx), findApp(ctx, copilotAppSpec)), configPath};
   },
   hookStatus(ctx) {
     return copilotHookStatus(ctx);
@@ -58,28 +60,22 @@ export function copilotHookPath(home: string, env: NodeJS.ProcessEnv = {}): stri
 
 // The GitHub Copilot app runs its own Copilot CLI with the same ~/.copilot folder, so
 // the CLI and the app share one hook file. Settings shows the version of each one found.
-export function copilotVersions(cli: string | undefined, app: string | undefined): string | undefined {
-  const parts = [
-    cli && `CLI ${cli.replace(/^GitHub Copilot CLI\s*/i, '')}`,
-    app && `app ${app}`,
-  ].filter(Boolean);
-  return parts.length ? parts.join(' · ') : undefined;
+export function copilotVersions(cli: string | undefined, app: DesktopApp | undefined): string | undefined {
+  return clientVersions(cli?.replace(/^GitHub Copilot CLI\s*/i, ''), app ? [app] : []);
 }
 
-export function copilotAppVersion(ctx: AgentContext,
-  folders = ['/Applications', join(ctx.home, 'Applications')]): string | undefined {
-  if (ctx.platform !== 'darwin') return undefined;
-  for (const folder of folders) {
-    try {
-      const plist = readFileSync(join(folder, 'GitHub Copilot.app', 'Contents', 'Info.plist'), 'utf8');
-      const version = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1]?.trim();
-      if (version) return version;
-    } catch {
-      // Not in this folder.
-    }
-  }
-  return undefined;
-}
+// The Windows installer is per-user by default, with an MSI for all users. The Linux .deb and .rpm
+// have no version file, and an AppImage can be anywhere, so Linux shows the app without a version.
+export const copilotAppSpec: AppSpec = {
+  label: 'app',
+  mac: 'GitHub Copilot.app',
+  windows: {
+    folders: [{base: 'LOCALAPPDATA', folder: 'Programs\\GitHub Copilot', program: 'github.exe'},
+              {base: 'ProgramFiles', folder: 'GitHub Copilot', program: 'github.exe'}],
+    uninstallKey: 'GitHub Copilot',
+  },
+  linux: 'GitHub Copilot',
+};
 
 // Copilot denies every tool call when a preToolUse hook fails, and a running session keeps the
 // hooks it loaded at its start. So after an uninstall removes Node.js and the CLI, or while it

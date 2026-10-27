@@ -36,6 +36,9 @@ export interface AgentContext {
   agentPath?: (hostPath: string) => string;
   // The other places where agents run, such as WSL distributions on Windows.
   locations?: AgentLocations;
+  // The folders where apps are found, in place of /Applications and ~/Applications on macOS, and
+  // /usr/lib and /opt on Linux.
+  appFolders?: readonly string[];
 }
 
 export interface AgentLocation {
@@ -68,6 +71,8 @@ export interface AgentLocationStatus {
 export interface AgentStatus {
   id: AgentId;
   name: string;
+  // The kinds of client that run the agent with these hooks, for example "CLI or Copilot app".
+  clients?: string;
   detected: boolean;
   installed: boolean;
   version?: string;
@@ -90,11 +95,14 @@ export interface AgentAction {
   kind: 'approve' | 'restart';
   title: string;
   steps: string[];
+  // A command in one of the steps, which the setup guide lets the user copy.
+  command?: string;
 }
 
 export interface AgentAdapter {
   id: AgentId;
   name: string;
+  clients?: string;
   hint(status: HookStatus): string | undefined;
   // Advice that depends on the user's other settings, shown when no other hint applies.
   note?(ctx: AgentContext): string | undefined;
