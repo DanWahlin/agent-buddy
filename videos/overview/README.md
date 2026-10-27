@@ -72,6 +72,10 @@ One engine take (`hero`) runs from Meet through Agents, so the character never
 cuts while the device moves between those scenes. Its events use the scene
 times, so they stay in sync when a scene changes length.
 
+A take with `"websiteOnly": true`, such as `grok`, makes a clip for the website
+and not for the video. `npm run assets` and the build skip it. To render it, give
+its name: `node scripts/render-device.mjs grok`.
+
 ## Device footage
 
 Three spots use real phone footage when the file exists, and the rendered device

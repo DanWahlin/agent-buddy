@@ -17,7 +17,7 @@ const enginePath = join(here, '..', 'prebuilt', 'engine.js');
 const packs = join(here, '..', '..', '..', 'build', 'characters');
 const ready = existsSync(enginePath) && existsSync(join(packs, 'copilot.acpk'));
 
-for (const character of ['copilot', 'claude', 'openclaw']) {
+for (const character of ['copilot', 'claude', 'grok', 'openclaw']) {
   const skip = !ready || !existsSync(join(packs, `${character}.acpk`)) ? 'needs the built engine and packs' : false;
   test(`the tray cut-out of ${character} matches the engine's keyed frame`, { skip }, async () => {
     const require = createRequire(import.meta.url);

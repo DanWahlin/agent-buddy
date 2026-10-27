@@ -64,7 +64,7 @@ desktop, with or without the device.
 - **Six supported agents:** GitHub Copilot, Claude Code, Codex CLI, Grok Build,
   Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character pack at a time. It
-  ships with Copilot, and you can install OpenClaw, Claude, or your own pack over USB or Wi-Fi.
+  ships with Copilot, and you can install OpenClaw, Claude, Grok, or your own pack over USB or Wi-Fi.
 - **Settings page:** a local web page for agents, badges, characters, Wi-Fi, the
   connection mode, and the desktop app, with light and dark themes.
 - **Natural motion:** eight looking directions, blinks, touch reactions, and a
@@ -644,7 +644,7 @@ usage, but everything else works.
 The device holds one character at a time. The settings page's **Characters** tab
 shows each character you can install, with the current one marked **Installed**.
 
-The app and release archives ship only **Copilot**, **OpenClaw**, and **Claude**.
+The app and release archives ship only **Copilot**, **OpenClaw**, **Claude**, and **Grok**.
 Add-on packs are distributed separately and appear after you add them in Settings.
 
 <p align="center">
@@ -663,6 +663,7 @@ Or switch from the command line:
 npm run character              # List the characters you can install
 npm run character openclaw     # Install OpenClaw
 npm run character claude       # Install Claude
+npm run character grok         # Install Grok
 npm run character copilot      # Switch back to Copilot
 ```
 

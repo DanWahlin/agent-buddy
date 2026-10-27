@@ -1,7 +1,7 @@
 # Characters
 
-This repository ships only **Copilot**, **OpenClaw**, and **Claude**. Their ids
-are declared in [`built-in.json`](built-in.json). Built-in builds and desktop
+This repository ships only **Copilot**, **OpenClaw**, **Claude**, and **Grok**. Their
+ids are declared in [`built-in.json`](built-in.json). Built-in builds and desktop
 bundles reject additional source folders, and release archives exclude cached
 add-on packs from `build/characters`.
 

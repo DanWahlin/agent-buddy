@@ -537,6 +537,14 @@
       "duration": 7.5,
       "preroll": 2
     },
+    "grok": {
+      "character": "grok",
+      "seed": 41,
+      "from": "characters",
+      "duration": 7.5,
+      "preroll": 2,
+      "websiteOnly": true
+    },
     "end": {
       "character": "copilot",
       "seed": 42,

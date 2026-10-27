@@ -37,8 +37,9 @@ To ask for permission, open an issue on
 These are not part of the MIT License. They belong to their owners:
 
 - **Character artwork.** The `copilot` character is GitHub's, `claude` is
-  Anthropic's, and `openclaw` is the OpenClaw project's. This includes their
-  source art in `characters/`, the character packs made from it, and the
+  Anthropic's, and `openclaw` is the OpenClaw project's. The `grok` character
+  is a rendition of xAI's Grok bot, whose design belongs to xAI. This includes
+  their source art in `characters/`, the character packs made from it, and the
   renders, previews, videos, and images that show them. See
   [Artwork](docs/development.md#artwork) for the Copilot source and GitHub's
   brand guidance.

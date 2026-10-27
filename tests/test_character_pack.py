@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -19,6 +20,7 @@ class CharacterPackTests(unittest.TestCase):
         cls.paths = packs.build()
         cls.copilot = (ROOT / "build/characters/copilot.acpk").read_bytes()
         cls.openclaw = (ROOT / "build/characters/openclaw.acpk").read_bytes()
+        cls.grok = (ROOT / "build/characters/grok.acpk").read_bytes()
 
     def test_built_in_packs_wrap_the_validated_exports_unchanged(self):
         copilot = packs.decode(self.copilot, 0xDE0000)
@@ -40,11 +42,12 @@ class CharacterPackTests(unittest.TestCase):
             packs.build()
         self.assertEqual({path: path.stat().st_mtime_ns for path in self.paths.values()}, before)
         assembly = (ROOT / packs.HOST_ASSEMBLY).read_text()
-        for symbol in ("kCopilotPack", "kCopilotPackEnd", "kOpenClawPack", "kOpenClawPackEnd"):
+        for symbol in ("kCopilotPack", "kCopilotPackEnd", "kOpenClawPack", "kOpenClawPackEnd",
+                       "kGrokPack", "kGrokPackEnd"):
             self.assertIn(f"{symbol}:", assembly)
 
-    def test_only_the_three_original_characters_are_built_in(self):
-        expected = ["claude", "copilot", "openclaw"]
+    def test_only_the_four_shipped_characters_are_built_in(self):
+        expected = ["claude", "copilot", "grok", "openclaw"]
         self.assertEqual(json.loads((ROOT / "characters/built-in.json").read_text()), expected)
         self.assertEqual([path.name for path in packs.discover_characters()], expected)
         self.assertEqual(sorted(path.stem for path in self.paths.values()), expected)
@@ -126,6 +129,20 @@ class CharacterPackTests(unittest.TestCase):
         changed[160:192] = packs.digest(bytes(changed))
         with self.assertRaisesRegex(packs.PackError, "thumbnail"):
             packs.decode(bytes(changed))
+
+    def test_grok_is_a_white_ball_on_black(self):
+        grok = packs.decode(self.grok)
+        self.assertEqual((grok["id"], grok["name"], grok["layout"]),
+                         ("grok", "Grok", packs.LAYOUT_BASE_PATCH))
+        offset, size = struct.unpack_from("<II", self.grok, 148)
+        image = self.grok[offset:offset + size]
+        self.assertEqual(struct.unpack(">II", image[16:24]), (206, 176))
+        # Rows are filter byte 0 then RGB: the corners are black, the lower middle is the white ball.
+        rows = zlib.decompress(image[image.index(b"IDAT") + 4:image.index(b"IEND") - 8])
+        pixel = lambda x, y: rows[y * (206 * 3 + 1) + 1 + x * 3:y * (206 * 3 + 1) + 4 + x * 3]
+        self.assertEqual(pixel(0, 0), b"\0\0\0")
+        self.assertEqual(pixel(205, 175), b"\0\0\0")
+        self.assertEqual(pixel(103, 140), b"\xff\xff\xff")
 
     def test_thumbnails_center_the_visible_character(self):
         width, height = packs.WIDTH, packs.HEIGHT

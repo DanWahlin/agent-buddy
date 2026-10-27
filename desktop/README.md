@@ -99,7 +99,7 @@ npm run bundle -- --target universal-apple-darwin --config src-tauri/tauri.daemo
   window title. The startup dialog uses a separate title, so Hyprland does not
   float or pin Settings or the startup dialog. Equal size bounds retain
   the configured 280 by 280 character size through initial tiling and Hide/Show.
-  The bundled runtime includes only the three characters in
+  The bundled runtime includes only the four characters in
   [`built-in.json`](../characters/built-in.json). Add-on packs are imported
   separately and are not bundled from cached build output.
 - [`onboarding.ts`](../daemon/src/onboarding.ts) saves setup progress in
@@ -236,7 +236,7 @@ repository's native character preview (`tools/character_preview.cpp`: the same
 firmware sources, compiled for the host). It runs that beside the WebAssembly
 engine with the same seed, and steps both through idle, working, attention,
 complete, surprise and idle again. It checks that every pixel of every frame
-matches, for Copilot, Claude and OpenClaw. Any change to the firmware's
+matches, for Copilot, Claude, Grok and OpenClaw. Any change to the firmware's
 animation code reaches the desktop at the next build, and CI fails if the two
 ever disagree.
 The host preview uses binary output on Windows. Windows validation uses an
@@ -316,5 +316,6 @@ Agent Companion firmware.
 
 The code is under the repository's [MIT License](../LICENSE). The MIT License
 does not cover the characters: `copilot` renders a character of GitHub's,
-`claude` one of Anthropic's and `openclaw` one of the OpenClaw project's. See
+`claude` one of Anthropic's, `openclaw` one of the OpenClaw project's and `grok`
+one of xAI's. See
 [TRADEMARKS.md](../TRADEMARKS.md).

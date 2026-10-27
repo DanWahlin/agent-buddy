@@ -6,6 +6,7 @@ const runtime = path.resolve(`tests/.character-browser-runtime-${process.pid}`);
 fs.mkdirSync(runtime, {recursive: true});
 process.env.TMPDIR = runtime;
 const base = process.env.CHARACTER_PREVIEW_URL || 'http://127.0.0.1:8765';
+const builtIn = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'characters', 'built-in.json'), 'utf8'));
 
 (async () => {
   const browser = await chromium.launch({headless: true});
@@ -18,7 +19,7 @@ const base = process.env.CHARACTER_PREVIEW_URL || 'http://127.0.0.1:8765';
     assert.equal(await page.locator('#play').textContent(), 'Play');
     assert.equal(await page.locator('#connection').textContent(), 'Paused');
     assert.equal(await page.locator('[data-mode]').count(), 6);
-    assert.equal(await page.locator('input[name="character"]').count(), 2);
+    assert.equal(await page.locator('input[name="character"]').count(), builtIn.length);
     assert.equal(await page.locator('#error').isVisible(), false);
     const fullArt = (await page.locator('#assets').textContent()).startsWith('All 13');
     const initial = await page.locator('#screen').evaluate(canvas => canvas.toDataURL());
@@ -56,6 +57,16 @@ const base = process.env.CHARACTER_PREVIEW_URL || 'http://127.0.0.1:8765';
       'All 13 OpenClaw tracks are pre-rendered 3D sprites, including both attention tilts.');
     assert.equal(await page.locator('#character').getAttribute('aria-label'), 'Surprise OpenClaw');
     await page.screenshot({path: 'build/character-openclaw.png', fullPage: true});
+    const grokResponse = page.waitForResponse(res => res.url().endsWith('/api/character/frame')
+      && res.request().postDataJSON().character === 'grok');
+    await page.locator('.character-picker label', {hasText: 'Grok'}).click();
+    await grokResponse;
+    const grok = await page.locator('#screen').evaluate(canvas => canvas.toDataURL());
+    assert.notEqual(grok, initial, 'Grok selection changes the native sprite pixels');
+    assert.notEqual(grok, openClaw, 'Grok and OpenClaw show different pixels');
+    assert.equal(await page.locator('#assets').textContent(),
+      'All 13 Grok tracks are rendered offline from a sphere with pill-eye decals.');
+    assert.equal(await page.locator('#character').getAttribute('aria-label'), 'Surprise Grok');
     const copilotResponse = page.waitForResponse(res => res.url().endsWith('/api/character/frame')
       && res.request().postDataJSON().character === 'copilot');
     await page.locator('.character-picker label', {hasText: 'Copilot'}).click();

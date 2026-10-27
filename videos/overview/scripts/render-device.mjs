@@ -66,7 +66,8 @@ const createEngine = createRequire(import.meta.url)(enginePath);
 const outDir = path.join(root, "assets/clips");
 fs.mkdirSync(outDir, { recursive: true });
 
-const names = Object.keys(takes).filter((n) => !only.length || only.includes(n));
+// A "websiteOnly" take renders only when you name it.
+const names = Object.keys(takes).filter((n) => (only.length ? only.includes(n) : !takes[n].websiteOnly));
 if (!names.length) {
   console.error(only.length ? `error: No take named ${only.join(", ")}.` : 'error: video.config.json has no "takes".');
   process.exit(1);

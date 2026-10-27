@@ -165,6 +165,7 @@
             <div class="chips" id="live-chars">
               <button class="chip is-on" aria-pressed="true" data-char="copilot">Copilot</button>
               <button class="chip" aria-pressed="false" data-char="claude">Claude</button>
+              <button class="chip" aria-pressed="false" data-char="grok">Grok</button>
               <button class="chip" aria-pressed="false" data-char="openclaw">OpenClaw</button>
             </div>
           </fieldset>
@@ -263,6 +264,7 @@
           <div class="device-screen">
             <video class="layer is-on" data-char="copilot" src="assets/media/copilot.mp4" poster="assets/media/copilot.webp" muted loop playsinline preload="metadata" aria-label="The Copilot character"></video>
             <video class="layer" data-char="claude" src="assets/media/claude.mp4" poster="assets/media/claude.webp" muted loop playsinline preload="metadata" aria-label="The Claude character"></video>
+            <video class="layer" data-char="grok" src="assets/media/grok.mp4" poster="assets/media/grok.webp" muted loop playsinline preload="metadata" aria-label="The Grok character"></video>
             <video class="layer" data-char="openclaw" src="assets/media/openclaw.mp4" poster="assets/media/openclaw.webp" muted loop playsinline preload="metadata" aria-label="The OpenClaw character"></video>
             <div class="layer custom-pack" data-char="custom">
               <span class="plus" aria-hidden="true">+</span>
@@ -275,6 +277,7 @@
         <div class="segmented" role="group" aria-label="Characters" id="char-picker">
           <button aria-pressed="true" data-char="copilot">Copilot</button>
           <button aria-pressed="false" data-char="claude">Claude</button>
+          <button aria-pressed="false" data-char="grok">Grok</button>
           <button aria-pressed="false" data-char="openclaw">OpenClaw</button>
           <button aria-pressed="false" data-char="custom">Your own</button>
         </div>
@@ -324,7 +327,7 @@
         </div>
       </div>
       <div class="shots" id="shots">
-        <img class="shot is-on" data-shot="characters" src="assets/img/settings-characters.webp" alt="The Characters tab: Claude, Copilot, and OpenClaw, with Copilot installed" width="1920" height="1080" loading="lazy">
+        <img class="shot is-on" data-shot="characters" src="assets/img/settings-characters.webp" alt="The Characters tab: Claude, Copilot, Grok, and OpenClaw, with Grok installed" width="1920" height="1080" loading="lazy">
         <img class="shot" data-shot="agents" src="assets/img/settings-agents.webp" alt="The Agents tab: turn each agent on or off" width="1920" height="1080" loading="lazy">
         <img class="shot" data-shot="device" src="assets/img/settings-device.webp" alt="The Device tab: firmware, Wi-Fi, and connection" width="1920" height="1080" loading="lazy">
         <img class="shot" data-shot="desktop" src="assets/img/settings-desktop.webp" alt="The Desktop tab: the desktop app, sounds, and look" width="1920" height="1080" loading="lazy">

@@ -16,6 +16,8 @@ a character is data, as long as it fits the animation model described in
 - **Procedural 3D model** (OpenClaw): a hand-built Three.js model is posed and
   rendered offline. Best when you want perfectly consistent geometry across every
   pose with no AI drift, and are willing to do real 3D-modeling work instead.
+  Claude (a box model) and Grok (eye decals on a sphere) use small Python
+  renderers in the same spirit; see their `README.md` files.
 
 This guide covers the first path. If your character comes from a 2D mockup or
 reference image, this is almost certainly the right pipeline.

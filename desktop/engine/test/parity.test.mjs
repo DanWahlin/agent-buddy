@@ -11,11 +11,12 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { engineSources } from '../fingerprint.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repository = join(here, '..', '..', '..');
@@ -26,7 +27,10 @@ const SEED = 20260911;
 
 function nativePreview() {
   const out = join(here, '..', 'dist', process.platform === 'win32' ? 'character-preview.exe' : 'character-preview');
-  if (existsSync(out)) return out;
+  // A preview built before a firmware change would compare against old code, so rebuild it then.
+  const preview = join(repository, 'tools', 'character_preview.cpp');
+  const built = existsSync(out) ? statSync(out).mtimeMs : 0;
+  if ([preview, ...engineSources()].every(file => statSync(file).mtimeMs <= built)) return out;
   mkdirSync(dirname(out), { recursive: true });
   execFileSync(process.env.CXX ?? 'clang++', [
     '-std=c++17', '-O2',
@@ -77,7 +81,7 @@ function nativeSession(binary) {
 
 const ready = existsSync(enginePath) && existsSync(join(packs, 'copilot.acpk'));
 
-for (const character of ['copilot', 'claude', 'openclaw']) {
+for (const character of ['copilot', 'claude', 'grok', 'openclaw']) {
   test(`${character}: the desktop engine matches the device frame for frame`,
     { skip: ready ? false : 'needs the built engine and packs' }, async () => {
       const require = createRequire(import.meta.url);

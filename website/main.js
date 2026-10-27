@@ -211,6 +211,7 @@ function autoRotate(group, key, show, watched, { interval, threshold }) {
 const CHARACTERS = {
   copilot: { glow: '#4f7dff', caption: 'Built in. The device holds one character at a time, and you can switch over USB or Wi-Fi.' },
   claude: { glow: '#e5896a', caption: 'Built in. A pixel-art character that needs current firmware.' },
+  grok: { glow: '#d8dce4', caption: 'Built in. A white ball with slanted pill eyes that slide around it as it looks.' },
   openclaw: { glow: '#ff5a5a', caption: 'Built in. It even walks around the screen.' },
   custom: { glow: '#8f86ff', caption: 'Make your own .acpk pack and add it in Settings. <a href="https://github.com/DanWahlin/agent-buddy/blob/main/characters/README.md">How to make a character</a>' },
 };

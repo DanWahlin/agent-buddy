@@ -26,7 +26,7 @@ const args = process.argv.slice(2);
 const outIndex = args.indexOf("--out");
 const out = outIndex >= 0 ? path.resolve(args[outIndex + 1]) : path.join(site, "dist");
 const download = args.includes("--download");
-const CHARACTERS = ["copilot", "claude", "openclaw"];
+const CHARACTERS = ["copilot", "claude", "grok", "openclaw"];
 const SKIP = new Set(["dist", "scripts", "README.md"]);
 
 fs.rmSync(out, { recursive: true, force: true });

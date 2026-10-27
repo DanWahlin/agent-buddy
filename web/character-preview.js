@@ -3,7 +3,7 @@
   const names = ['Idle', 'Surprise', 'Working', 'Complete', 'Needs attention', 'Sleeping'];
   const characterStorageKey = 'agent-companion.character-lab.character';
   const characterCookie = 'agent_companion_character';
-  const characterLabels = {copilot: 'Copilot', openclaw: 'OpenClaw', claude: 'Claude'};
+  const characterLabels = {copilot: 'Copilot', openclaw: 'OpenClaw', claude: 'Claude', grok: 'Grok'};
   const knownCharacter = value => Object.hasOwn(characterLabels, value);
   const session = crypto.randomUUID();
   const canvas = document.getElementById('screen');
@@ -144,6 +144,8 @@
         ? 'All 13 OpenClaw tracks are pre-rendered 3D sprites, including both attention tilts.'
         : character === 'claude'
         ? 'All 13 Claude tracks are rendered offline from a box model of the pixel art.'
+        : character === 'grok'
+        ? 'All 13 Grok tracks are rendered offline from a sphere with pill-eye decals.'
         : Number(value('availableDirections')) >= 13
         ? 'All 13 native Copilot tracks are available, including both attention tilts. Original artwork is retained.'
         : 'Expression artwork is incomplete. Re-export all 13 tracks before requesting expression modes.';

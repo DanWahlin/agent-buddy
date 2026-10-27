@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {builtInPackFiles} from '../../apps/desktop/scripts/character-packs.mjs';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
-const ids = ['claude', 'copilot', 'openclaw'];
+const ids = ['claude', 'copilot', 'grok', 'openclaw'];
 const files = ids.map(id => `${id}.acpk`);
 
 async function fixture(t) {
@@ -23,7 +23,7 @@ async function fixture(t) {
   return root;
 }
 
-test('the shipped built-in roster contains only Claude, Copilot and OpenClaw', async () => {
+test('the shipped built-in roster contains only Claude, Copilot, Grok and OpenClaw', async () => {
   assert.deepEqual(JSON.parse(await readFile(join(repository, 'characters', 'built-in.json'), 'utf8')), ids);
   assert.deepEqual(builtInPackFiles(repository), files);
 });

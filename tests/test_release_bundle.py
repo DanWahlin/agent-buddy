@@ -13,6 +13,8 @@ import zipfile
 from tools import character_pack, firmware_artifacts, flash_release, package_release
 
 ROOT = Path(__file__).resolve().parents[1]
+BUILT_IN = json.loads((ROOT / "characters/built-in.json").read_text())
+PACK_FILES = [f"{pack_id}.acpk" for pack_id in sorted(BUILT_IN)]
 
 
 def tiny_pack(pack_id):
@@ -40,7 +42,7 @@ class ReleaseBundleTests(unittest.TestCase):
                  "assets,data,0x40,0x410000,0xBE0000,\n")
         self.put("firmware/AgentCompanion/AgentCompanion.ino", "void setup() {}")
         self.put("characters/built-in.json", (ROOT / "characters/built-in.json").read_bytes())
-        for pack_id in ("claude", "copilot", "openclaw"):
+        for pack_id in BUILT_IN:
             self.put(f"characters/{pack_id}/character.json", (ROOT / f"characters/{pack_id}/character.json").read_bytes())
             self.put(f"build/characters/{pack_id}.acpk", tiny_pack(pack_id))
         for path in firmware_artifacts.BINARIES:
@@ -88,7 +90,7 @@ class ReleaseBundleTests(unittest.TestCase):
             self.assertEqual(set(archive.namelist()), {*flash_release.PAYLOAD_NAMES, "SHA256SUMS"})
             self.assertTrue(all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()))
         with zipfile.ZipFile(characters) as archive:
-            self.assertEqual(archive.namelist(), ["claude.acpk", "copilot.acpk", "openclaw.acpk"])
+            self.assertEqual(archive.namelist(), PACK_FILES)
             self.assertEqual(archive.read("openclaw.acpk"), tiny_pack("openclaw"))
         with zipfile.ZipFile(firmware) as archive:
             self.assertEqual(archive.read("bin/character-copilot.acpk"), tiny_pack("copilot"))
@@ -275,7 +277,7 @@ class ReleaseBundleTests(unittest.TestCase):
         self.put("build/characters/custom.acpk", tiny_pack("custom"))
         _, _, characters = self.bundle()
         with zipfile.ZipFile(characters) as archive:
-            self.assertEqual(archive.namelist(), ["claude.acpk", "copilot.acpk", "openclaw.acpk"])
+            self.assertEqual(archive.namelist(), PACK_FILES)
 
     def test_release_uses_real_builtin_packs_and_excludes_addons(self):
         files = {

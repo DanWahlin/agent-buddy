@@ -324,8 +324,9 @@ when a character's top-level files or a built pack change, before it lists or
 installs characters (`daemon/src/character-build.ts`). A failed build is logged,
 and the daemon keeps using the packs that are already built. Two layouts are supported:
 
-- **Base/patch** (Copilot, 9,540,870 bytes; Claude, 1,818,488 bytes): one base
-  image per reachable pose plus four blink patches around the eyes.
+- **Base/patch** (Copilot, 9,540,870 bytes; Claude, 1,818,488 bytes; Grok,
+  1,500,186 bytes): one base image per reachable pose plus four blink patches
+  around the eyes.
 - **Full frame** (OpenClaw, 10,000,700 bytes): one complete image per pose and
   blink level, with a 12 FPS walk cycle on the Working track.
 

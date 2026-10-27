@@ -1,0 +1,450 @@
+{
+  "title": "Grok up track",
+  "provider": "procedural sphere model (characters/grok/tools/render_grok.py)",
+  "width": 412,
+  "height": 352,
+  "count": 12,
+  "registration": "exact by construction; drawn at device size about a fixed centre",
+  "blinkLevels": [
+    1,
+    0.75,
+    0.5,
+    0.25,
+    0
+  ],
+  "blinkProcessing": "Eyes re-rendered at each openness: pill, shorter pill, round, flat, closed dash.",
+  "frames": [
+    {
+      "file": "up-00.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": 0.0,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-00-blink-1.png",
+        "up-00-blink-2.png",
+        "up-00-blink-3.png",
+        "up-00-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-01.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 2.1818,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -0.5455,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-01-blink-1.png",
+        "up-01-blink-2.png",
+        "up-01-blink-3.png",
+        "up-01-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-02.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 4.3636,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -1.0909,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-02-blink-1.png",
+        "up-02-blink-2.png",
+        "up-02-blink-3.png",
+        "up-02-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-03.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 6.5455,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -1.6364,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-03-blink-1.png",
+        "up-03-blink-2.png",
+        "up-03-blink-3.png",
+        "up-03-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-04.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 8.7273,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -2.1818,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-04-blink-1.png",
+        "up-04-blink-2.png",
+        "up-04-blink-3.png",
+        "up-04-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-05.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 10.9091,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -2.7273,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-05-blink-1.png",
+        "up-05-blink-2.png",
+        "up-05-blink-3.png",
+        "up-05-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-06.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 13.0909,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -3.2727,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-06-blink-1.png",
+        "up-06-blink-2.png",
+        "up-06-blink-3.png",
+        "up-06-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-07.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 15.2727,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -3.8182,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-07-blink-1.png",
+        "up-07-blink-2.png",
+        "up-07-blink-3.png",
+        "up-07-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-08.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 17.4545,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -4.3636,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-08-blink-1.png",
+        "up-08-blink-2.png",
+        "up-08-blink-3.png",
+        "up-08-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-09.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 19.6364,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -4.9091,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-09-blink-1.png",
+        "up-09-blink-2.png",
+        "up-09-blink-3.png",
+        "up-09-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-10.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 21.8182,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -5.4545,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-10-blink-1.png",
+        "up-10-blink-2.png",
+        "up-10-blink-3.png",
+        "up-10-blink-4.png"
+      ]
+    },
+    {
+      "file": "up-11.png",
+      "pose": {
+        "yaw": 0.0,
+        "pitch": 24.0,
+        "roll": 0.0,
+        "sx": 1.0,
+        "sy": 1.0,
+        "dx": 0.0,
+        "dy": -6.0,
+        "eyes": [
+          {
+            "kind": "pill",
+            "lon": -13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          },
+          {
+            "kind": "pill",
+            "lon": 13.5,
+            "lat": 7.0,
+            "w": 0.088,
+            "h": 0.205,
+            "slant": 16.0
+          }
+        ]
+      },
+      "blinks": [
+        "up-11-blink-1.png",
+        "up-11-blink-2.png",
+        "up-11-blink-3.png",
+        "up-11-blink-4.png"
+      ]
+    }
+  ]
+}

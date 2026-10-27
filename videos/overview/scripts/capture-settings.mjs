@@ -118,6 +118,13 @@ await page.waitForFunction(() => !/Waiting|Connecting/.test(document.getElementB
 for (const shot of shots) {
   await page.click(`#${shot.tab}`);
   await page.mouse.move(0, 0);
+  // The character list loads after the page, so wait for its cards and thumbnails before framing the shot.
+  if (shot.tab === "tab-characters") {
+    await page.waitForFunction(() => {
+      const images = [...document.querySelectorAll("#characters .character img")];
+      return images.length > 0 && images.every((image) => image.complete && image.naturalWidth > 0);
+    }, null, { timeout: 15000 });
+  }
   await page.evaluate((scroll) => {
     const tabs = document.querySelector(".tabs");
     window.scrollTo(0, scroll && tabs ? tabs.getBoundingClientRect().top + window.scrollY - 28 : 0);
