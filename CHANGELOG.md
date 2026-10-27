@@ -2,6 +2,16 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.16.0]
+
+### Features and improvements
+
+- Rename the README to Agent Buddy and add the overview video project
+
+- Add Grok as a fourth built-in character
+
+- Support the ChatGPT, Claude, and GitHub Copilot desktop apps
+
 ## [v0.15.4]
 
 ### Documentation
