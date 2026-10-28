@@ -2,7 +2,10 @@
 
 The product page at <https://getagentbuddy.com/>. It is static
 HTML, CSS, and JavaScript with no build tools. [GSAP](https://gsap.com/) loads
-from a CDN and adds motion. The page works without it.
+from a CDN and adds motion. The page works without it. Until `main.js` starts
+the motion, the `intro` class keeps the parts that GSAP animates hidden (for at
+most 2.5 s), so they don't show and then jump back. When you animate a new part
+with GSAP, add it to the `.intro` rule in `styles.css`.
 
 ## Preview it
 

@@ -16,6 +16,14 @@
   <link rel="icon" type="image/png" href="assets/img/favicon.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preload" href="assets/img/case.webp" as="image">
+  <script>
+    // main.js animates the page with GSAP from a CDN. Until it starts, the intro class hides the animated parts
+    // (styles.css). If it doesn't start within 2.5 s, the page shows them without the animation.
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.documentElement.classList.add('intro');
+      setTimeout(() => document.documentElement.classList.remove('intro'), 2500);
+    }
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>

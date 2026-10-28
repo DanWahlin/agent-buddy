@@ -491,8 +491,11 @@ function outcomes(on) {
   }
 }
 
-// The GSAP scripts are deferred and run before this one, so they have loaded or failed by now.
-if (!flourish()) {
+// The GSAP scripts are deferred and run before this one, so they have loaded or failed by now. The intro class
+// (index.html) hides what flourish() animates until here. If it timed out, those parts are already on screen, and
+// animating them now would make them jump back.
+if (!document.documentElement.classList.contains('intro') || !flourish()) {
   // Without GSAP, still show the outcome once the tiles are on screen.
   new IntersectionObserver(([entry]) => outcomes(entry.isIntersecting), { threshold: 0.6 }).observe($('#tiles'));
 }
+document.documentElement.classList.remove('intro');

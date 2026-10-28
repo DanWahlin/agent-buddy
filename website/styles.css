@@ -115,9 +115,10 @@ button { font: inherit; color: inherit; }
   border-radius: 999px;
   border: 0;
   cursor: pointer;
-  transition: background 0.3s, transform 0.3s var(--ease);
+  transition: background 0.3s, translate 0.3s var(--ease);
 }
-.btn:hover { background: #0077ed; text-decoration: none; transform: translateY(-1px); }
+/* translate, not transform: GSAP animates the transform of a button as it scrolls into view. */
+.btn:hover { background: #0077ed; text-decoration: none; translate: 0 -1px; }
 .btn img { width: 20px; height: 20px; filter: invert(1); }
 .btn-small { font-size: 15px; padding: 8px 18px; }
 .btn-ghost { background: transparent; border: 1px solid var(--line-2); color: var(--ink); }
@@ -538,6 +539,12 @@ button { font: inherit; color: inherit; }
 
 /* Looping animations stop while their section is off screen (main.js sets the class). */
 .is-offscreen *, .is-offscreen *::before, .is-offscreen *::after { animation-play-state: paused !important; }
+
+/* What flourish() in main.js animates stays hidden until it starts (index.html sets the class). Otherwise these
+   parts show first, then jump back to where their animation starts. */
+.intro :is(.hero-bg, .hero-title .mask > span, .hero-copy .reveal-up, .hero-rise, .lines .line > span, .fade-up, .rise,
+  .state-stage .device, .agents .device, .picker-stage .device, .finale .device, .try-stage, .orbit, .shots, .video-frame,
+  .finale-title, .finale .btn) { visibility: hidden; }
 
 /* ---------- Phones in landscape ---------- */
 @media (orientation: landscape) and (max-height: 520px) {
