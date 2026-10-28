@@ -107,14 +107,18 @@ flowchart LR
 
 ## Quick start
 
-**With the desktop app (recommended).** You need only the
-app. You do not need Python, Node.js, or a clone of the repository.
+**With the desktop app (recommended).** You need only the app. You don't need
+Python, Node.js, or a clone of the repository.
 
 <a id="install-with-a-coding-agent"></a>
 **Let a coding agent install it (optional).** Any coding agent that can run
 commands on your computer can download, install, and open the app for you.
-Paste this prompt into an interactive session, so that you can approve each
-command:
+Paste the prompt below into an interactive session, so that you can approve
+each command. When the welcome screen opens, select **Get Started**, then
+continue at step 3.
+
+<details>
+<summary><strong>Prompt to install the desktop app</strong></summary>
 
 ```text
 Install the latest Agent Buddy desktop app on this computer from
@@ -151,75 +155,64 @@ I approve it. If you can't download or install the file, tell me the commands
 to run.
 ```
 
-On a new installation, the app opens the welcome screen. Select
-**Get Started**, then continue at step 3.
+</details>
 
-1. Download the desktop app for your OS from
-   [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest):
-   `agent-companion-desktop-<version>-macos-universal.dmg`,
-   `agent-companion-desktop-<version>-windows-x64-setup.exe`,
-   `agent-companion-desktop-<version>-windows-arm64-setup.exe`,
-   `agent-companion-desktop-<version>-linux-x86_64.AppImage`, or
-   `agent-companion-desktop-<version>-linux-amd64.deb`.
-2. Open the app. The Windows app is code-signed; the macOS and Linux apps
-   aren't, so see [Run the desktop app](#run-the-desktop-app) for the first-run
-   step on your OS. On a new installation, the app starts its local companion service and
-   opens the welcome screen. Select **Get Started**.
-3. Select your agents. If hooks need installation or an update, approve the
-   changes. Follow the short guide for each selected agent. The guide waits for real agent activity. You can
-   select **Set up later** without marking an agent as connected.
+1. Download the app for your OS from
+   [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest): the
+   `.dmg` for macOS, a `-setup.exe` for Windows (x64 or ARM64), or the
+   `.AppImage` or `.deb` for Linux.
+2. Open the app. The macOS and Linux apps aren't code-signed, so they need one
+   first-run step ([Run the desktop app](#run-the-desktop-app)). A new
+   installation starts the companion service and opens the welcome screen:
+   select **Get Started**.
+3. Select your agents, and approve the hook changes that they need. Follow each
+   agent's short guide, which waits for real agent activity, or select
+   **Set up later**. On Windows, the app also finds agents in running WSL
+   distributions ([details](#windows-wsl-2)).
 4. Select a character.
-5. Select **Desktop only**, **Device only**, or **Both**. For a new device, connect a
-   USB data cable and select **Detect Device**. Confirm the supported Waveshare
-   model before firmware installation. The app downloads and checks the matching
-   release, installs it, and then installs your selected character. You can keep
-   compatible existing firmware or select **Use desktop for now**.
-6. Select **Finish** to open Settings. Configure Wi-Fi on the **Device** tab if
-   you want to untether the device.
+5. Select **Desktop only**, **Device only**, or **Both**. For a new device,
+   connect a USB data cable, select **Detect Device**, and confirm the Waveshare
+   model. The app downloads, checks, and installs the matching firmware, then
+   your character. You can keep compatible firmware, or select
+   **Use desktop for now**.
+6. Select **Finish** to open Settings. To untether the device, set up Wi-Fi on
+   the **Device** tab.
 
-Setup resumes after an interruption. Existing installations do not receive a
-forced setup flow after an update. Use **Run setup wizard** in Settings to change
-your choices or continue deferred setup.
-After you finish setup once, **Exit setup** returns to Settings at any step.
-Choices that a step already applied stay; nothing else changes.
-Select a previously reached step in the top navigation to return to it.
-Saved choices stay intact. New steps unlock as you reach them, and navigation
-is disabled during an installation.
-Setup also blocks conflicting changes from other Settings windows or the CLI.
-If saved progress is damaged, the app opens a new setup flow and shows a recovery
-message. The damaged file is kept when new progress is saved. Existing hooks,
-characters, and device settings are not reset.
-If a selected character is no longer available, return to **Character**, select
-**Refresh characters**, and choose an available pack.
-Previously selected agents remain checked. If an agent already has hooks,
-unchecking it asks for approval before removing Agent Buddy hooks. Cancel keeps
-the agent selected. The coding agent itself is not uninstalled.
+<details>
+<summary><strong>More about setup</strong></summary>
 
-If you run desktop setup again with a device connected over Wi-Fi, the wizard
-recognizes that connection. You can keep its firmware and install your selected
-character over Wi-Fi. First-time firmware installation still needs USB.
-The same USB device can reconnect on a new port after a character or firmware
-install. Setup keeps track of that device and saves its new port.
-The character button names the character it installs. It does not replace
-firmware. Firmware replacement is a separate option. Its confirmation dialog
-checks the supported board model and explains both installation stages.
+- Setup resumes after an interruption. An update doesn't start setup again. To
+  change your choices or continue deferred setup, use **Run setup wizard** in
+  Settings.
+- After you finish setup once, **Exit setup** returns to Settings at any step.
+  Choices that a step already applied stay, and nothing else changes.
+- Select a step that you reached before in the top navigation to return to it.
+  Saved choices stay. New steps unlock as you reach them, and navigation is off
+  during an installation.
+- Setup blocks conflicting changes from other Settings windows or the CLI.
+- If saved progress is damaged, the app starts a new setup and shows a recovery
+  message. It keeps the damaged file when it saves new progress, and it doesn't
+  reset your hooks, characters, or device settings.
+- **Set up later** doesn't mark an agent as connected. Agents that you selected
+  before stay selected. If an agent already has hooks, clearing its check box
+  asks for approval before Agent Buddy removes its hooks. **Cancel** keeps the
+  agent selected. Agent Buddy never uninstalls the coding agent itself.
+- If a selected character is no longer available, return to **Character**,
+  select **Refresh characters**, and choose an available pack.
+- The character button names the character that it installs, and it doesn't
+  replace firmware. Firmware replacement is a separate option. Its confirmation
+  checks the board model and explains both installation stages.
+- If you run setup again with a device on Wi-Fi, the wizard recognizes that
+  connection. You can keep its firmware and install your character over Wi-Fi.
+  First-time firmware installation still needs USB.
+- After a character or firmware install, the same USB device can reconnect on a
+  new port. Setup follows the device and saves its new port.
+- To repair or replace firmware later, turn on **Use a physical device** on the
+  **Device** tab. Open **USB release install or recovery**, detect and select
+  the device, then approve **Install v<version>**. The desktop character follows
+  the device ([details](#run-the-desktop-app)).
 
-On Windows, detection includes Windows agents and running WSL distributions.
-WSL adds the Windows PATH to each distribution, so a Windows program that WSL
-finds under a drive such as `/mnt/c` doesn't count as an agent of the
-distribution. An agent counts there when its program is a Linux one, or when its
-settings folder there, such as `~/.codex`, holds files that the agent wrote. A
-folder that holds only hooks that Agent Buddy put there doesn't count, and
-**Remove** deletes those hooks.
-Open a stopped distribution before selecting **Rescan agents**. Rescan checks
-running distributions again instead of waiting for the cached scan to expire.
-Approved hook removal includes WSL installations and may start stopped
-distributions to remove their hooks.
-
-To repair or replace firmware later, enable **Use a physical device** on the
-**Device** tab. Open **USB release install or recovery**, detect and select the
-device, then approve **Install v<version>**. The desktop character follows the
-device ([details](#run-the-desktop-app)).
+</details>
 
 **Without the desktop app** (to change the code, or on Windows in WSL 2):
 
@@ -254,11 +247,9 @@ device ([details](#run-the-desktop-app)).
 Restart any agent sessions that were already open, then start one and watch the
 character react ([Step 4](#step-4-try-it)).
 
-To open Settings in the app's own window, click the upper button on the
-desktop character's case, press the BOOT button on the real device, or
-right-click the character and select **Settings**. The lower button
-turns the app's sounds on or off. Turn the character off, hide the device around
-it, or turn on sounds on the **Desktop** tab in Settings.
+To open Settings in the app's window, click the upper button on the desktop
+character's case, press the BOOT button on the device, or right-click the
+character and select **Settings** ([all controls](#desktop-agent-buddy)).
 
 ## Step 1: Flash the firmware
 
@@ -403,6 +394,17 @@ service runs on Windows. After approval, it installs selected agents' hooks on
 Windows and in running WSL 2 distributions. The setup dialog lists the affected
 configuration locations. The OpenClaw plugin does not yet connect from WSL.
 The Windows app uses the device's USB port with no extra steps.
+
+WSL adds the Windows PATH to each distribution, so a Windows program that WSL
+finds under a drive such as `/mnt/c` doesn't count as an agent of the
+distribution. An agent counts there when its program is a Linux one, or when its
+settings folder there, such as `~/.codex`, holds files that the agent wrote. A
+folder that holds only hooks that Agent Buddy put there doesn't count, and
+**Remove** deletes those hooks. Detection looks only at running distributions:
+open a stopped distribution before you select **Rescan agents**. Rescan checks
+running distributions again at once, instead of waiting for the cached scan to
+expire. Approved hook removal includes WSL installations, and it can start
+stopped distributions to remove their hooks.
 
 To run the daemon from a clone inside WSL instead, run your agent CLIs and the daemon
 **inside the same WSL 2 distribution**. Hooks installed in WSL can't see agents running
@@ -620,7 +622,7 @@ so one hook file covers the CLI and the app; on macOS, the card shows the versio
 of each one that's installed.
 
 <p align="center">
-  <img src="images/settings-agents.png" alt="Agents card with the badge switch and six agents, each with Disable, Reinstall, and Remove hook buttons" width="720">
+  <img src="images/settings-agents.png" alt="Agents section of the Agents tab with the badge switch and six agents, each with its version, hook status, and buttons. Copilot drives the display and is highlighted. OpenClaw is not detected." width="720">
 </p>
 
 | Control | What it does |
@@ -741,7 +743,7 @@ The app and release archives ship only **Copilot**, **OpenClaw**, **Claude**, an
 Add-on packs are distributed separately and appear after you add them in Settings.
 
 <p align="center">
-  <img src="images/settings-characters.png" alt="Characters card showing the installed Copilot character and the OpenClaw character with an Install button" width="720">
+  <img src="images/settings-characters.png" alt="Characters tab with the four built-in characters, Claude, Copilot, Grok, and OpenClaw. Copilot is installed, and the others have an Install button." width="720">
 </p>
 
 - Select **Install** to switch characters. A progress bar tracks the transfer,
@@ -780,7 +782,7 @@ needs a 2.4 GHz network.
 **From the settings page (recommended).** Use the **Device** tab:
 
 <p align="center">
-  <img src="images/settings-wifi.png" alt="Wi-Fi card with network name and password fields, a Connect device button, and the Auto, Wi-Fi only, and USB only connection modes" width="720">
+  <img src="images/settings-wifi.png" alt="Device tab with the Use a physical device switch, a USB connection, the Auto, Wi-Fi, and USB connection modes, and the Nearby network, network name, and password fields with a Connect device button" width="720">
 </p>
 
 1. Plug the device in over USB and set **Connection mode** to **Auto**.
@@ -821,8 +823,8 @@ mode** on the settings page's **Device** tab, or with `npm run connection auto|w
 | Mode | Behavior |
 | --- | --- |
 | **Auto** (default) | Uses USB when the cable is connected, otherwise Wi-Fi |
-| **Wi-Fi only** | Always uses Wi-Fi; a connected USB cable only provides power |
-| **USB only** | Only uses USB |
+| **Wi-Fi** | Always uses Wi-Fi; a connected USB cable only provides power |
+| **USB** | Only uses USB |
 
 <details>
 <summary><strong>Network requirements and security</strong></summary>
@@ -911,7 +913,7 @@ ignoring USB. Then:
 
 1. Make sure the cable carries data and is plugged in. Close any serial monitor or
    `flash.py` run that's still using the port.
-2. If the connection mode is **Wi-Fi only**, USB is ignored. Run
+2. If the connection mode is **Wi-Fi**, USB is ignored. Run
    `npm run connection auto`.
 3. On Linux, add your user to the `dialout` group
    ([see Step 2](#step-2-install-the-companion-daemon)). In WSL, attach the device
@@ -1242,7 +1244,7 @@ characters, pause, change playback speed, and trigger each state and touch
 reaction.
 
 <p align="center">
-  <img src="images/character-lab.webp" alt="Character Lab showing the native Copilot character preview and state controls" width="900">
+  <img src="images/character-lab.webp" alt="Character Lab showing the native Copilot preview, the character picker, and the state controls" width="900">
 </p>
 
 <details>
