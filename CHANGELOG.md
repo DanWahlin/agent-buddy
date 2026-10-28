@@ -2,6 +2,26 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.16.1]
+
+### Build and maintenance
+
+- Stop a hung Windows daemon test job after 20 minutes
+
+
+### Fixes
+
+- Fix the Grok live demo on the website, and deploy the site after each release
+
+- Fix Codex detection in the new ChatGPT app, and flag a Codex too old to run the hooks
+
+- Fix WSL agent detection, and warn about an old Codex in VS Code or WSL
+
+
+### Other changes
+
+- Show Grok and the Codex name in the overview video
+
 ## [v0.16.0]
 
 ### Features and improvements
