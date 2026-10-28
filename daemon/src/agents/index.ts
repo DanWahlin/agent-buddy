@@ -1,7 +1,7 @@
 import {execFile} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {existsSync, readdirSync, statSync, type Dirent} from 'node:fs';
 import {homedir} from 'node:os';
-import {dirname, join} from 'node:path';
+import {dirname, isAbsolute, join, relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {claudeAdapter} from './claude.js';
@@ -78,22 +78,24 @@ function agentAction(adapter: AgentAdapter, contexts: AgentContext[], locations:
   if (!enabled || (hookStatus !== 'installed' && hookStatus !== 'needs-approval')) return undefined;
   if (hookStatus === 'needs-approval' && adapter.id === 'codex') {
     // Each place approves only its own hooks: this computer with a Codex CLI that runs here, and
-    // a WSL distribution with codex in that distribution.
+    // a WSL distribution with codex in that distribution. A codex there that can't run the hooks
+    // doesn't list them in /hooks, so its update step comes first.
     const host = contexts[0]!;
     const hostWaiting = untrustedCodexHooks(host).length;
     const distributions = locations.flatMap(location => {
       const count = location.running && location.ctx ? untrustedCodexHooks(location.ctx).length : 0;
-      return count ? [{name: location.name, count}] : [];
+      return count ? [{location, count}] : [];
     });
     const waiting = distributions.reduce((count, distribution) => count + distribution.count, hostWaiting);
     const hostSteps = hostWaiting > 0 || !distributions.length;
     const approval = hostSteps ? codexApproval(host) : undefined;
     return {kind: 'approve', title: 'Approve the hooks in the Codex CLI', steps: [
       ...(hostSteps ? [codexRunStep(approval, host.platform)] : []),
-      ...distributions.map(distribution => `In ${distribution.name}, open a terminal and run codex.`),
+      ...distributions.flatMap(({location}) => [...codexUpdateSteps(location.ctx!, undefined, location.name),
+                                                `In ${location.name}, open a terminal and run codex.`]),
       `Type /hooks and approve the Agent Buddy hooks${waiting ? ` (${waiting} waiting)` : ''}. Codex skips hooks `
         + 'until you do. The ChatGPT app and the Codex app can’t approve hooks.',
-      ...codexClientSteps(host),
+      ...codexClientSteps(host, locations.filter(location => !distributions.some(distribution => distribution.location === location))),
     ], ...(approval?.app ? {command: approval.command} : {})};
   }
   if (hookStatus === 'needs-approval' && adapter.id === 'hermes') {
@@ -110,17 +112,19 @@ function agentAction(adapter: AgentAdapter, contexts: AgentContext[], locations:
                'If you use the Claude app, quit and reopen it, then start a new session in the Code tab. '
                  + 'Cowork and cloud sessions don’t run the hooks.');
   }
-  if (adapter.id === 'codex') steps.push(...codexClientSteps(contexts[0]!));
+  if (adapter.id === 'codex') steps.push(...codexClientSteps(contexts[0]!, locations));
   if (adapter.id === 'openclaw') steps.push('Restart the OpenClaw Gateway so it loads the plugin.');
   return {kind: 'restart', title: `Waiting for ${adapter.name}`, steps};
 }
 
 // A Codex desktop app or the VS Code extension reads hooks and their approvals only when it starts.
-// A Codex CLI or app that can't run the hooks needs an update first.
-function codexClientSteps(ctx: AgentContext): string[] {
+// A Codex that can't run the hooks needs an update first, on this computer or in a WSL distribution.
+function codexClientSteps(host: AgentContext, locations: AgentLocation[]): string[] {
   return [
     'If you use Codex in the ChatGPT app, the Codex app, or VS Code, quit and reopen it so it loads the hooks.',
-    ...codexUpdateSteps(ctx),
+    ...codexUpdateSteps(host),
+    ...locations.flatMap(location => location.running && location.ctx
+      ? codexUpdateSteps(location.ctx, undefined, location.name) : []),
   ];
 }
 
@@ -135,10 +139,13 @@ export function agentStatuses(
     const hostStatus = adapter.hookStatus(ctx);
     const others = locations.flatMap(location => locationStatus(adapter, location) ?? []);
     const running = others.filter(other => other.running);
+    // Hooks in a place without the agent never run, so they don't change the status or the setup
+    // steps, but they still count as installed, so that Remove deletes them.
+    const counted = running.filter(other => other.detected);
     // The places that count: this computer when the agent or its hooks are here, and each running
-    // location. A stopped WSL distribution keeps the status it had when it last ran.
-    const hostCounts = !running.length || detection.installed || hasHooks(hostStatus);
-    const statuses = [...(hostCounts ? [hostStatus] : []), ...running.map(other => other.hookStatus)];
+    // location with the agent. A stopped WSL distribution keeps the status it had when it last ran.
+    const hostCounts = !counted.length || detection.installed || hasHooks(hostStatus);
+    const statuses = [...(hostCounts ? [hostStatus] : []), ...counted.map(other => other.hookStatus)];
     const hookStatus = others.length ? combinedStatus(statuses) : hostStatus;
     const detected = detection.installed || others.some(other => other.detected);
     const active = activity.get(adapter.id);
@@ -163,7 +170,8 @@ export function agentStatuses(
         ? `${others.length ? 'Some places are missing hooks, or their hooks' : 'Some hooks are missing or'} run another `
           + 'copy of Agent Buddy or Node.js. Choose Reinstall to fix them.'
         : adapter.hint(hookStatus) ?? adapter.note?.(ctx),
-      action: agentAction(adapter, contexts, locations, hookStatus, enabled, seen),
+      action: agentAction(adapter, contexts, locations.filter(location => counted.some(other => other.id === location.id)),
+                          hookStatus, enabled, seen),
       ...(config.problem ? {warning: config.problem} : {}),
       ...(others.length ? {locations: [{
         id: 'host', name: hostName(ctx.platform), running: true, detected: detection.installed, hookStatus: hostStatus,
@@ -208,7 +216,9 @@ export function locationStatus(adapter: AgentAdapter, location: AgentLocation): 
     return last && {...last, running: location.running};
   }
   const home = agentHomes[adapter.id];
-  const detected = location.commands.includes(adapter.id) || Boolean(home && existsSync(home(ctx.home, ctx.env, ctx.platform)));
+  const configPath = adapter.id === 'openclaw' ? undefined : adapter.detect(ctx).configPath;
+  const detected = location.commands.includes(adapter.id)
+    || Boolean(home && agentFolderInUse(home(ctx.home, ctx.env, ctx.platform), configPath));
   let status: AgentLocationStatus | undefined;
   if (adapter.id === 'openclaw') {
     status = detected ? {id: location.id, name: location.name, running: true, detected, hookStatus: 'unsupported',
@@ -216,16 +226,73 @@ export function locationStatus(adapter: AgentAdapter, location: AgentLocation): 
   } else {
     const found = adapter.hookStatus(ctx);
     const hookStatus = location.problem && !hasHooks(found) ? 'unsupported' : found;
-    const configPath = adapter.detect(ctx).configPath;
     status = detected || hasHooks(hookStatus) ? {
       id: location.id, name: location.name, running: true, detected, hookStatus,
       configPath: configPath && (ctx.agentPath?.(configPath) ?? configPath),
-      hint: location.problem ?? (hookStatus === 'needs-approval' ? adapter.hint(hookStatus) : undefined),
+      hint: location.problem ?? (!detected && hasHooks(hookStatus)
+        ? `${adapter.name} isn’t installed in this distribution, so these hooks never run there.`
+        // A Codex here that can't run the hooks must be updated before it can approve them.
+        : [adapter.id === 'codex' ? codexUpdateSteps(ctx).join(' ') : '',
+           hookStatus === 'needs-approval' ? adapter.hint(hookStatus) : undefined].filter(Boolean).join(' ') || undefined),
     } : undefined;
   }
   if (status) lastLocationStatus.set(key, status);
   else lastLocationStatus.delete(key);
   return status;
+}
+
+// An agent's settings folder shows that the agent is in a place, unless all that it holds is the hook
+// file that Agent Buddy wrote, with its backups. An older probe counted a Windows program that WSL
+// finds through the Windows PATH as the agent, so setup could leave such a folder in a distribution.
+// Status requests arrive every second, so the folders are read again only when one of them changes.
+// A folder's mtime changes in steps (on Windows, about 16 ms), so a change in the same step as a read
+// keeps the mtime. An answer is kept only when it was read 2 seconds or more after the folders first
+// had these mtimes. Both times come from this computer's clock: a WSL distribution's clock can differ.
+const foldersInUse = new Map<string, {key: string; inUse: boolean; since: number; readAt: number}>();
+const mtimeStepMarginMs = 2000;
+
+function agentFolderInUse(folder: string, configPath: string | undefined): boolean {
+  const path = configPath ? relative(folder, configPath) : '';
+  const parts = path && !path.startsWith('..') && !isAbsolute(path) ? path.split(/[\\/]/) : [];
+  // The folders from the agent's folder down to the hook file. A file that is added or deleted in
+  // one of them changes the mtime of that folder.
+  const folders = [folder, ...parts.slice(0, -1).map((_, index) => join(folder, ...parts.slice(0, index + 1)))];
+  const times: number[] = [];
+  for (const [index, each] of folders.entries()) {
+    try {
+      times.push(statSync(each).mtimeMs);
+    } catch {
+      if (index === 0) {
+        foldersInUse.delete(folder);
+        return false;
+      }
+      times.push(-1);
+    }
+  }
+  const key = `${configPath ?? ''}:${times.join(':')}`;
+  const known = foldersInUse.get(folder);
+  if (known?.key === key && known.readAt - known.since >= mtimeStepMarginMs) return known.inUse;
+  const now = Date.now();
+  const inUse = !parts.length || !onlyHookFiles(folder, parts);
+  foldersInUse.set(folder, {key, inUse, since: known?.key === key ? known.since : now, readAt: now});
+  return inUse;
+}
+
+// Whether all that the folder holds is the file at `parts` below it, with its backups. The agent's
+// own folder must hold something. A folder on the way to the file can be empty: Copilot and Grok
+// keep the hook file in a hooks folder, which stays when Remove deletes the file.
+function onlyHookFiles(folder: string, parts: string[], top = true): boolean {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(folder, {withFileTypes: true});
+  } catch {
+    return false;
+  }
+  const [name, ...rest] = parts as [string, ...string[]];
+  return (!top || entries.length > 0) && entries.every(entry => rest.length
+    ? entry.isDirectory() && entry.name === name && onlyHookFiles(join(folder, name), rest, false)
+    : entry.isFile() && (entry.name === name || entry.name === `${name}.bak`
+      || (entry.name.startsWith(`${name}.agent-companion-`) && entry.name.endsWith('.bak'))));
 }
 
 // The other places where agents run: WSL distributions on Windows.
@@ -240,7 +307,7 @@ interface LocationTarget {
   ctx: AgentContext;
 }
 
-// The running locations where the agent or its hooks are.
+// The running locations where the agent is, or, for a removal, where its hooks are.
 async function locationTargets(adapter: AgentAdapter, ctx: AgentContext, hooksOnly: boolean,
 ): Promise<LocationTarget[]> {
   if (!ctx.locations || adapter.id === 'openclaw') return [];
@@ -252,8 +319,7 @@ function targetsIn(adapter: AgentAdapter, locations: AgentLocation[], hooksOnly:
   if (adapter.id === 'openclaw') return [];
   return locations.flatMap(location => {
     const status = location.running && location.ctx ? locationStatus(adapter, location) : undefined;
-    if (!status || !(hooksOnly ? hasHooks(status.hookStatus) : status.detected || hasHooks(status.hookStatus)))
-      return [];
+    if (!status || !(hooksOnly ? hasHooks(status.hookStatus) : status.detected)) return [];
     return [{location, ctx: location.ctx!}];
   });
 }

@@ -161,6 +161,12 @@ firmware. Firmware replacement is a separate option. Its confirmation dialog
 checks the supported board model and explains both installation stages.
 
 On Windows, detection includes Windows agents and running WSL distributions.
+WSL adds the Windows PATH to each distribution, so a Windows program that WSL
+finds under a drive such as `/mnt/c` doesn't count as an agent of the
+distribution. An agent counts there when its program is a Linux one, or when its
+settings folder there, such as `~/.codex`, holds files that the agent wrote. A
+folder that holds only hooks that Agent Buddy put there doesn't count, and
+**Remove** deletes those hooks.
 Open a stopped distribution before selecting **Rescan agents**. Rescan checks
 running distributions again instead of waiting for the cached scan to expire.
 Approved hook removal includes WSL installations and may start stopped
@@ -502,9 +508,13 @@ use the same hooks:
   (`npm install -g @openai/codex`). Each place approves only its own hooks: for
   hooks in a WSL distribution, the guide tells you to run `codex` in that
   distribution. After you approve the hooks, quit and reopen the app. The app
-  reads hook approvals only when it starts. If your Codex CLI, or the Codex that
-  the app includes, is older than 0.148.0, Settings tells you to update it,
-  because it doesn't run the hooks until you do.
+  reads hook approvals only when it starts. If a Codex that you use is older
+  than 0.148.0, Settings tells you to update it, because it doesn't run the
+  hooks until you do. Settings checks the Codex CLI, the Codex in the ChatGPT
+  app, the Codex in the Codex extension of VS Code, VS Code Insiders, Cursor,
+  and Windsurf (also in a remote window, such as one in WSL), and the `codex` in
+  each WSL distribution. An editor counts while it is installed, and a remote
+  window while you still open it (its extensions changed in the last 30 days).
 - **Claude app** (the Code tab) uses `~/.claude`. After setup, quit and reopen
   the app, then start a new session in the Code tab. Cowork, cloud, and SSH
   sessions don't run the hooks on your computer. If the character doesn't react

@@ -1,5 +1,5 @@
-import {existsSync, readFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {existsSync, readdirSync, readFileSync, realpathSync, statSync} from 'node:fs';
+import {basename, join} from 'node:path';
 import {isRecord, recordOf, updateJsonFile} from './file-utils.js';
 import {codexQuote, findExecutable, isCompanionHookCommand, hasCommand, powershellHookCommand, shellQuote, versionOf,
         versionOfExecutable} from './commands.js';
@@ -26,7 +26,7 @@ export const codexAdapter: AgentAdapter = {
   detect(ctx) {
     const configPath = codexHooksPath(ctx.home, ctx.env);
     const apps = codexApps(ctx);
-    const version = clientVersions(versionOf('codex', ctx)?.replace(/^codex-cli\s*/i, ''), apps);
+    const version = clientVersions(cliVersion(versionOf('codex', ctx)), apps);
     return {installed: hasCommand('codex', ctx) || existsSync(configPath) || apps.length > 0, version, configPath};
   },
   hookStatus(ctx) {
@@ -98,25 +98,198 @@ export function codexApproval(ctx: AgentContext,
   return {command, app: bundled.app};
 }
 
-// What the user updates before Codex runs the Agent Buddy hooks: the codex on PATH and each Codex
-// desktop app whose Codex can't run them. Reopening such a client doesn't help. A version that is
-// not known yet doesn't count.
+// A Codex that runs here, with its version once that is known.
+export interface CodexClient {
+  kind: 'cli' | 'app' | 'extension';
+  // How the user knows it: "Codex CLI", an app such as "ChatGPT app", or an editor such as "VS Code".
+  label: string;
+  version?: string;
+}
+
+// Each Codex here: the codex on PATH, the CLI that each Codex desktop app includes, and the CLI that
+// the Codex extension includes in each editor. In a location whose commands this service can't
+// run, such as a WSL distribution, the version of codex comes from the location's probe.
+export function codexClients(ctx: AgentContext,
+                             version: (path: string) => string | undefined = path => versionOfExecutable(path, ctx),
+): CodexClient[] {
+  const read = (path: string | undefined) => path ? cliVersion(version(path)) : undefined;
+  const onPath = ctx.commandVersions ? undefined : findExecutable('codex', ctx.env, ctx.platform);
+  const cli = ctx.commandVersions ? cliVersion(ctx.commandVersions.codex) : read(onPath);
+  return [
+    ...(onPath || cli ? [{kind: 'cli' as const, label: 'Codex CLI', ...(cli ? {version: cli} : {})}] : []),
+    ...codexApps(ctx).map(app => {
+      const found = read(bundledCodexCli(ctx, app));
+      return {kind: 'app' as const, label: app.label, ...(found ? {version: found} : {})};
+    }),
+    ...codexExtensions(ctx, read),
+  ];
+}
+
+// What the user updates before Codex runs the Agent Buddy hooks: each Codex here that can't run
+// them. Reopening such a client doesn't help. A version that is not known yet doesn't count.
+// `place` names a location other than this computer, such as "WSL: Ubuntu".
 export function codexUpdateSteps(ctx: AgentContext,
                                  version: (path: string) => string | undefined = path => versionOfExecutable(path, ctx),
-): string[] {
-  const tooOld = (path: string | undefined) => {
-    const found = path ? version(path)?.replace(/^codex-cli\s*/i, '') : undefined;
-    return found && !runsOurHooks(versionParts(found)) ? found : undefined;
-  };
-  const cli = tooOld(findExecutable('codex', ctx.env, ctx.platform));
-  return [
-    ...(cli ? [`Your Codex CLI ${cli} can’t run the Agent Buddy hooks. Update the Codex CLI.`] : []),
-    ...codexApps(ctx).flatMap(app => {
-      const found = tooOld(bundledCodexCli(ctx, app));
-      return found ? [`Your ${app.label} includes Codex ${found}, which can’t run the Agent Buddy hooks. `
-        + `Update the ${app.label}, then reopen it.`] : [];
-    }),
-  ];
+                                 place?: string): string[] {
+  const steps = codexClients(ctx, version).flatMap(client => client.version && !runsOurHooks(versionParts(client.version))
+    ? [updateStep(client.kind, client.label, client.version, place)] : []);
+  return [...new Set(steps)];
+}
+
+function updateStep(kind: CodexClient['kind'], label: string, version: string, place: string | undefined): string {
+  const problem = 'can’t run the Agent Buddy hooks';
+  const text = kind === 'cli' ? `your Codex CLI ${version} ${problem}. Update the Codex CLI.`
+    : kind === 'app' ? `your ${label} includes Codex ${version}, which ${problem}. Update the ${label}, then reopen it.`
+    : `the Codex extension in ${label} includes Codex ${version}, which ${problem}. `
+      + `Update the extension, then reload the ${label} window.`;
+  return place ? `In ${place}, ${text}` : text[0]!.toUpperCase() + text.slice(1);
+}
+
+function cliVersion(text: string | undefined): string | undefined {
+  return text?.replace(/^codex-cli\s*/i, '') || undefined;
+}
+
+// The editors that run the Codex extension (openai.chatgpt), with the folders in the home folder that
+// hold their extensions. An editor that is gone leaves its folder, so the local folder counts only
+// while the editor is installed. The server folder holds the extensions of a remote window, such as
+// a VS Code window in WSL or over SSH.
+interface CodexEditor {
+  label: string;
+  local: string;
+  server: string;
+  // The command that the editor's package puts on PATH on Linux.
+  command: string;
+  // A real path of that command in another editor's folder: Cursor and Windsurf can add a `code` command.
+  otherEditor?: RegExp;
+  app: AppSpec;
+}
+
+const codexEditors: readonly CodexEditor[] = [
+  {label: 'VS Code', local: '.vscode', server: '.vscode-server', command: 'code', otherEditor: /cursor|windsurf/i, app: {
+    label: 'VS Code', mac: 'Visual Studio Code.app', windows: {folders: [
+      {base: 'LOCALAPPDATA', folder: 'Programs\\Microsoft VS Code', program: 'Code.exe'},
+      {base: 'ProgramFiles', folder: 'Microsoft VS Code', program: 'Code.exe'},
+    ]},
+  }},
+  {label: 'VS Code Insiders', local: '.vscode-insiders', server: '.vscode-server-insiders', command: 'code-insiders',
+   otherEditor: /cursor|windsurf/i, app: {
+    label: 'VS Code Insiders', mac: 'Visual Studio Code - Insiders.app', windows: {folders: [
+      {base: 'LOCALAPPDATA', folder: 'Programs\\Microsoft VS Code Insiders', program: 'Code - Insiders.exe'},
+      {base: 'ProgramFiles', folder: 'Microsoft VS Code Insiders', program: 'Code - Insiders.exe'},
+    ]},
+  }},
+  {label: 'Cursor', local: '.cursor', server: '.cursor-server', command: 'cursor', app: {
+    label: 'Cursor', mac: 'Cursor.app', windows: {folders: [{base: 'LOCALAPPDATA', folder: 'Programs\\cursor', program: 'Cursor.exe'}]},
+  }},
+  {label: 'Windsurf', local: '.windsurf', server: '.windsurf-server', command: 'windsurf', app: {
+    label: 'Windsurf', mac: 'Windsurf.app', windows: {folders: [{base: 'LOCALAPPDATA', folder: 'Programs\\Windsurf', program: 'Windsurf.exe'}]},
+  }},
+];
+
+// On macOS and Windows, the editor's app shows that it is installed. On Linux, its command does,
+// unless that command is really in another editor's folder.
+function editorInstalled(ctx: AgentContext, editor: CodexEditor): boolean {
+  if (ctx.platform === 'darwin' || ctx.platform === 'win32') return Boolean(findApp(ctx, editor.app));
+  const command = findExecutable(editor.command, ctx.env, ctx.platform);
+  if (!command) return false;
+  try {
+    return !editor.otherEditor?.test(realpathSync(command));
+  } catch {
+    return false;
+  }
+}
+
+// A remote window updates its extensions while it is connected, so a server folder whose list hasn't
+// changed for this long belongs to remote windows that the user no longer opens.
+const serverListMaxAgeMs = 30 * 24 * 60 * 60_000;
+
+// A remote place, such as a WSL distribution, has no installed editor of its own: only server folders.
+function codexExtensions(ctx: AgentContext, read: (path: string | undefined) => string | undefined): CodexClient[] {
+  return codexEditors.flatMap(editor => {
+    const local = ctx.hostPath ? undefined : installedCodexExtension(join(ctx.home, editor.local, 'extensions'));
+    const server = installedCodexExtension(join(ctx.home, editor.server, 'extensions'));
+    return [
+      ...(local && editorInstalled(ctx, editor) ? [local.folder] : []),
+      ...(server && Date.now() - server.changedAt < serverListMaxAgeMs ? [server.folder] : []),
+    ].map(extension => {
+      const found = extensionCodexVersion(ctx, extension, read);
+      return {kind: 'extension' as const, label: editor.label, ...(found ? {version: found} : {})};
+    });
+  });
+}
+
+// An editor lists the folder of each installed extension in extensions.json. The folder of an older
+// version can stay until the editor deletes it, so only the listed folder counts. Status requests
+// arrive every second, so a list is read again only when it changes.
+const extensionLists = new Map<string, {key: string; folder?: string}>();
+
+function installedCodexExtension(extensions: string): {folder: string; changedAt: number} | undefined {
+  const list = join(extensions, 'extensions.json');
+  let key: string;
+  let changedAt: number;
+  try {
+    const details = statSync(list);
+    key = `${details.mtimeMs}:${details.size}`;
+    changedAt = details.mtimeMs;
+  } catch {
+    extensionLists.delete(list);
+    return undefined;
+  }
+  let known = extensionLists.get(list);
+  if (known?.key !== key) {
+    let folder: string | undefined;
+    try {
+      const entries: unknown = JSON.parse(readFileSync(list, 'utf8'));
+      const entry = recordOf(Array.isArray(entries) ? entries.find(item =>
+        String(recordOf(recordOf(item).identifier).id).toLowerCase() === 'openai.chatgpt') : undefined);
+      // Older lists give only the full location, as a URI path such as /c:/Users/.../openai.chatgpt-<version>.
+      const name = typeof entry.relativeLocation === 'string' ? entry.relativeLocation
+        : basename(String(recordOf(entry.location).path ?? ''));
+      folder = /^openai\.chatgpt-[\w.-]+$/i.test(name) ? join(extensions, name) : undefined;
+    } catch {
+      folder = undefined;
+    }
+    known = {key, folder};
+    extensionLists.set(list, known);
+  }
+  return known.folder ? {folder: known.folder, changedAt} : undefined;
+}
+
+// The extension keeps its Codex in bin/<system>/, beside a codex-package.json that gives its
+// version. Without that file, the version comes from the CLI, which only runs on this computer. An
+// installed extension's folder doesn't change, so what it has is read once.
+const extensionContents = new Map<string, {version?: string; cli?: string}>();
+
+function extensionCodexVersion(ctx: AgentContext, extension: string,
+                               read: (path: string | undefined) => string | undefined): string | undefined {
+  let contents = extensionContents.get(extension);
+  if (!contents) {
+    contents = {};
+    const bin = join(extension, 'bin');
+    let systems: string[] = [];
+    try {
+      systems = readdirSync(bin);
+    } catch {
+      // No bin folder.
+    }
+    for (const system of systems) {
+      try {
+        const found = (JSON.parse(readFileSync(join(bin, system, 'codex-package.json'), 'utf8')) as {version?: unknown}).version;
+        if (typeof found === 'string' && found) {
+          contents.version = found;
+          break;
+        }
+      } catch {
+        // No codex-package.json in this folder.
+      }
+    }
+    if (!contents.version) {
+      contents.cli = systems.map(system => join(bin, system, ctx.platform === 'win32' ? 'codex.exe' : 'codex'))
+        .find(path => existsSync(path));
+    }
+    extensionContents.set(extension, contents);
+  }
+  return contents.version ?? (ctx.hostPath ? undefined : read(contents.cli));
 }
 
 // Codex 0.148.0-alpha.6 added async hooks (openai/codex#37533). An older Codex skips async hooks

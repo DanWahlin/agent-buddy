@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import {existsSync, readdirSync} from 'node:fs';
-import {chmod, lstat, mkdir, readFile, rm, stat, symlink, writeFile} from 'node:fs/promises';
+import {chmod, lstat, mkdir, readFile, rm, stat, symlink, utimes, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 import {parseDocument} from 'yaml';
 import {claudeAdapter, claudeConfigPath} from '../src/agents/claude.js';
-import {codexAdapter, codexApproval, codexApps, codexRunStep, codexUpdateSteps} from '../src/agents/codex.js';
+import {codexAdapter, codexApproval, codexApps, codexClients, codexRunStep, codexUpdateSteps} from '../src/agents/codex.js';
 import {asarPackageVersion, bundledCodexCli, clientVersions, findApp, parseWindowsPackages} from '../src/agents/apps.js';
 import {codexQuote, versionOf} from '../src/agents/commands.js';
 import {copilotAdapter, copilotAppSpec, copilotVersions} from '../src/agents/copilot.js';
@@ -1034,6 +1034,85 @@ test('a newer macOS ChatGPT app keeps its Codex CLI in a codex-cli folder', asyn
     assert.equal(bundledCodexCli(withApps, chatgpt()), cli);
     assert.deepEqual(codexApproval(withApps, () => 'codex-cli 0.165.0-alpha.1.2'), {command: `'${cli}'`, app: 'ChatGPT app'});
     assert.deepEqual(codexUpdateSteps(withApps, () => 'codex-cli 0.165.0-alpha.1.2'), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('the Codex extension in each installed editor gives the version of its Codex', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const apps = join(root, 'Applications');
+    const withApps = {...ctx, appFolders: [apps]};
+    const extension = async (editor: string, name: string, version?: string) => {
+      const bin = join(home, editor, 'extensions', name, 'bin', 'macos-aarch64');
+      await mkdir(bin, {recursive: true});
+      await writeFile(join(bin, 'codex'), '');
+      if (version) await writeFile(join(bin, 'codex-package.json'), JSON.stringify({layoutVersion: 1, version}));
+      return join(bin, 'codex');
+    };
+    const list = async (editor: string, entry: Record<string, unknown>) => {
+      const path = join(home, editor, 'extensions', 'extensions.json');
+      await writeFile(path, JSON.stringify([
+        {identifier: {id: 'github.copilot-chat'}, version: '0.30.3', relativeLocation: 'github.copilot-chat-0.30.3'},
+        {identifier: {id: 'openai.chatgpt'}, version: '26', ...entry},
+      ]));
+      return path;
+    };
+    const unknown = () => undefined;
+    // Without the editor's list of installed extensions, a folder doesn't count.
+    await fakeMacApp(apps, 'Visual Studio Code.app', '1.105.1');
+    await extension('.vscode', 'openai.chatgpt-26.715.1-darwin-arm64', '0.145.0-alpha.30');
+    assert.deepEqual(codexClients(withApps, unknown), []);
+    await list('.vscode', {relativeLocation: 'openai.chatgpt-26.715.1-darwin-arm64'});
+    assert.deepEqual(codexClients(withApps, unknown), [{kind: 'extension', label: 'VS Code', version: '0.145.0-alpha.30'}]);
+    assert.deepEqual(codexUpdateSteps(withApps, unknown), [
+      'The Codex extension in VS Code includes Codex 0.145.0-alpha.30, which can’t run the Agent Buddy hooks. '
+        + 'Update the extension, then reload the VS Code window.',
+    ]);
+    // An editor that is gone leaves its folder, which doesn't count. On macOS and Windows, only the
+    // app shows that the editor is installed, because another editor can add a `code` command.
+    assert.deepEqual(codexClients(ctx, unknown), []);
+    if (posix) {
+      await touch(join(root, 'bin', 'code'));
+      const withCode = {...ctx, env: {PATH: join(root, 'bin')}};
+      assert.deepEqual(codexClients(withCode, unknown), []);
+      // On Linux, the editor's command shows it, unless the command is really another editor's, such as Cursor's.
+      assert.equal(codexClients({...withCode, platform: 'linux'}, unknown)[0]?.label, 'VS Code');
+      const cursorCode = join(root, 'cursor', 'resources', 'app', 'bin', 'code');
+      await touch(cursorCode);
+      await rm(join(root, 'bin', 'code'));
+      await symlink(cursorCode, join(root, 'bin', 'code'));
+      assert.deepEqual(codexClients({...withCode, platform: 'linux'}, unknown), []);
+    }
+    // After an update, the old folder stays until VS Code deletes it, but only the listed folder counts.
+    await extension('.vscode', 'openai.chatgpt-26.1007.21434-darwin-arm64', '0.162.0-alpha.17.2');
+    await list('.vscode', {relativeLocation: 'openai.chatgpt-26.1007.21434-darwin-arm64'});
+    assert.deepEqual(codexUpdateSteps(withApps, unknown), []);
+
+    // Cursor has its own folder. Its older list gives only the location, and an extension without
+    // codex-package.json gives the version that its CLI prints.
+    await fakeMacApp(apps, 'Cursor.app', '2.0.0');
+    const cli = await extension('.cursor', 'openai.chatgpt-26.600.1-darwin-arm64');
+    await list('.cursor', {location: {$mid: 1, path: `/${join(home, '.cursor', 'extensions', 'openai.chatgpt-26.600.1-darwin-arm64')
+      .replaceAll('\\', '/')}`, scheme: 'file'}});
+    const version = (path: string) => path === cli ? 'codex-cli 0.140.0' : undefined;
+    assert.deepEqual(codexClients(withApps, version).map(client => `${client.label} ${client.version}`),
+                     ['VS Code 0.162.0-alpha.17.2', 'Cursor 0.140.0']);
+    // A listed folder that is not an extension folder doesn't count.
+    await list('.cursor', {relativeLocation: '../../openai.chatgpt-1'});
+    assert.deepEqual(codexClients(withApps, version).map(client => client.label), ['VS Code']);
+
+    // A remote window keeps its extensions in a server folder, such as one in a WSL distribution.
+    // Its CLI doesn't run here, and a list that hasn't changed for 30 days belongs to remote
+    // windows that the user no longer opens.
+    await extension('.cursor-server', 'openai.chatgpt-26.600.1-linux-x64');
+    const serverList = await list('.cursor-server', {relativeLocation: 'openai.chatgpt-26.600.1-linux-x64'});
+    const remote = {...ctx, hostPath: (path: string) => path};
+    assert.deepEqual(codexClients(remote, () => 'codex-cli 0.140.0'), [{kind: 'extension', label: 'Cursor'}]);
+    const old = new Date(Date.now() - 40 * 24 * 60 * 60_000);
+    await utimes(serverList, old, old);
+    assert.deepEqual(codexClients(remote, () => 'codex-cli 0.140.0'), []);
   } finally {
     await cleanup();
   }

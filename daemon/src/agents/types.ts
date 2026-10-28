@@ -39,6 +39,9 @@ export interface AgentContext {
   // The folders where apps are found, in place of /Applications and ~/Applications on macOS, and
   // /usr/lib and /opt on Linux.
   appFolders?: readonly string[];
+  // What each agent command printed for --version, for a location whose commands this service
+  // can't run, such as a WSL distribution. A probe in the location reads them.
+  commandVersions?: Readonly<Record<string, string>>;
 }
 
 export interface AgentLocation {
