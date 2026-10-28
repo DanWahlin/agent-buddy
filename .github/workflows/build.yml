@@ -135,6 +135,8 @@ jobs:
       matrix:
         os: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
+    # A run takes 2 to 5 minutes, so a hang fails here, not after the 6-hour default.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: daemon
@@ -151,6 +153,8 @@ jobs:
           cache-dependency-path: daemon/package-lock.json
       - run: npm ci
       - name: Test companion daemon
+        # The build and tests take less than a minute.
+        timeout-minutes: 5
         run: npm test
       - name: Build and load the fixed serialport binding
         working-directory: .
