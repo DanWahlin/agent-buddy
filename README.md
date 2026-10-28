@@ -110,6 +110,50 @@ flowchart LR
 **With the desktop app (recommended).** You need only the
 app. You do not need Python, Node.js, or a clone of the repository.
 
+<a id="install-with-a-coding-agent"></a>
+**Let a coding agent install it (optional).** Any coding agent that can run
+commands on your computer can download, install, and open the app for you.
+Paste this prompt into an interactive session, so that you can approve each
+command:
+
+```text
+Install the latest Agent Buddy desktop app on this computer from
+https://github.com/DanWahlin/agent-buddy/releases/latest
+The GitHub API lists the files of that release and their download links:
+https://api.github.com/repos/DanWahlin/agent-buddy/releases/latest
+
+1. Find my OS and CPU. On Windows, check the CPU of the computer, not of
+   your process: Windows 11 on ARM also runs x64 programs, and they report
+   x64. (Get-CimInstance Win32_Processor).Architecture is 12 on an ARM PC.
+2. Download the matching file from that release:
+   - macOS 11 or later (Apple Silicon or Intel): agent-companion-desktop-<version>-macos-universal.dmg
+   - Windows x64: agent-companion-desktop-<version>-windows-x64-setup.exe
+   - Windows on ARM: agent-companion-desktop-<version>-windows-arm64-setup.exe
+   - Debian, Ubuntu, or another Linux that uses apt (x86_64): agent-companion-desktop-<version>-linux-amd64.deb
+   - Other Linux (x86_64): agent-companion-desktop-<version>-linux-x86_64.AppImage
+   If no file matches, such as for Linux on ARM or an older macOS, stop and
+   tell me.
+3. Check the file against SHA256SUMS from the same release. If it doesn't
+   match, stop and tell me.
+4. If Agent Buddy is running, quit it. Then install the file:
+   - macOS: move an older /Applications/Agent Buddy.app to the Trash. Copy
+     Agent Buddy.app from the DMG to /Applications, and eject the DMG.
+     Remove the com.apple.quarantine attribute from the app if it has one.
+   - Windows: start the setup program, and let me finish it.
+   - .deb: sudo apt install ./<file>
+   - AppImage: put it in a permanent folder, such as ~/Applications, and make
+     it executable. If it asks for FUSE, install FUSE 2.
+5. Open the app so that it keeps running after your command ends. Then stop:
+   I finish setup in the app.
+
+Don't install agent hooks or change agent settings. The app does that after
+I approve it. If you can't download or install the file, tell me the commands
+to run.
+```
+
+On a new installation, the app opens the welcome screen. Select
+**Get Started**, then continue at step 3.
+
 1. Download the desktop app for your OS from
    [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest):
    `agent-companion-desktop-<version>-macos-universal.dmg`,

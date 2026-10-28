@@ -423,8 +423,8 @@ jobs:
             no clone of the repository and no Node.js. If a service from a clone runs, the app follows that one.
 
             > [!TIP]
-            > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:
-            > `copilot -p "Install the latest Agent Buddy desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
+            > A coding agent can install it for you. Paste [this prompt](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#install-with-a-coding-agent)
+            > into any coding agent that can run commands on your computer.
             > The Windows app is code-signed. The macOS and Linux apps aren't, so you may still need the step for your OS below.
 
             #### 🍎 macOS (Apple Silicon and Intel)
