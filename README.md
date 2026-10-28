@@ -209,7 +209,7 @@ to run.
   new port. Setup follows the device and saves its new port.
 - To repair or replace firmware later, turn on **Use a physical device** on the
   **Device** tab. Open **USB release install or recovery**, detect and select
-  the device, then approve **Install v<version>**. The desktop character follows
+  the device, then approve **Install v&lt;version&gt;**. The desktop character follows
   the device ([details](#run-the-desktop-app)).
 
 </details>
@@ -253,8 +253,8 @@ character and select **Settings** ([all controls](#desktop-agent-buddy)).
 
 ## Step 1: Flash the firmware
 
-The easiest way is the desktop app: open Settings, go to the **Device** tab, and
-open **USB release install or recovery**, and click **Install v<version>** (see [Quick start](#quick-start)).
+The easiest way is the desktop app: open Settings, go to the **Device** tab,
+open **USB release install or recovery**, and click **Install v&lt;version&gt;** (see [Quick start](#quick-start)).
 The steps below use `flash.py` instead, for computers without the desktop app.
 You don't need Arduino tools or the source code for them. If you'd rather build
 the firmware yourself, see [Build from source](docs/build-from-source.md).
@@ -859,7 +859,7 @@ characters show up on the settings page on their own.
 **Firmware.** Reflash only when a release's notes mention firmware changes. With
 the desktop app, update the app first. When the device runs other firmware than
 the app's release, the **Device** tab shows a dot and **Device firmware** shows
-**Update available**. Connect the device over USB and click **Update to v<version>**.
+**Update available**. Connect the device over USB and click **Update to v&lt;version&gt;**.
 The button installs the firmware release that matches the companion service's version, for the board the device reports.
 For a device that does not answer, choose its board first; firmware for a different board can stop the device.
 **USB release install or recovery** is only for a new device or one that does not answer. Without the desktop app, follow [Step 1](#step-1-flash-the-firmware)
@@ -946,7 +946,7 @@ ignoring USB. Then:
   mode itself. Press BOOT only for the steps below.
 - **Couldn't connect to the ESP32-S3:** the device did not go into download mode
   by itself. Unplug the USB cable. Hold BOOT, connect the cable, and release BOOT
-  after 2 seconds. The screen stays dark. Then click **Update to v<version>**, or
+  after 2 seconds. The screen stays dark. Then click **Update to v&lt;version&gt;**, or
   open **USB release install or recovery**, click **Detect**, and install.
   If the screen stays dark after the install, unplug the cable and connect it
   again without BOOT. When the device starts, the app installs your character again.
