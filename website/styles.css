@@ -31,7 +31,11 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { color-scheme: dark; scroll-behavior: smooth; scroll-padding-top: 60px; -webkit-text-size-adjust: 100%; }
+html { color-scheme: dark; scroll-padding-top: 60px; -webkit-text-size-adjust: 100%; }
+/* Smooth only once the page has loaded (main.js sets the class). A link from another
+   page to a section, such as /#start, then jumps there at once: a smooth scroll that
+   starts while the page loads can stop part of the way. */
+html.smooth-scroll { scroll-behavior: smooth; }
 body {
   margin: 0;
   background: var(--bg);
@@ -123,9 +127,11 @@ button { font: inherit; color: inherit; }
 .btn-small { font-size: 15px; padding: 8px 18px; }
 .btn-ghost { background: transparent; border: 1px solid var(--line-2); color: var(--ink); }
 .btn-ghost:hover { background: rgba(255, 255, 255, 0.06); }
+/* The gallery hides the Preview button of a character that the site has no pack for. */
+.btn[hidden] { display: none; }
 .link-arrow { color: var(--blue); font-size: 19px; padding: 10px 4px; }
-.link-arrow span { display: inline-block; transition: transform 0.3s var(--ease); }
-.link-arrow:hover span { transform: translateX(4px); }
+.link-arrow span, .pack-more span { display: inline-block; transition: transform 0.3s var(--ease); }
+.link-arrow:hover span, .pack-more:hover span { transform: translateX(4px); }
 
 /* ---------- Nav ---------- */
 .nav {
@@ -184,11 +190,9 @@ button { font: inherit; color: inherit; }
   content: ""; z-index: 2; pointer-events: none;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.04));
 }
-.device-screen video, .device-screen canvas, .device-screen .layer {
+.device-screen video, .device-screen canvas {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
 }
-.device-screen .layer { opacity: 0; transition: opacity 0.6s ease; }
-.device-screen .layer.is-on { opacity: 1; }
 .tilt { transition: transform 0.6s var(--ease); }
 
 /* State colors, shared by devices, state headings, and event cards. */
@@ -364,10 +368,7 @@ button { font: inherit; color: inherit; }
 @keyframes ripple { 0% { opacity: 0.9; transform: scale(0.4); } 18% { opacity: 0; transform: scale(2.2); } 100% { opacity: 0; } }
 @media (max-width: 900px) { .cards { grid-template-columns: 1fr; max-width: 440px; margin-inline: auto; } }
 
-/* ---------- Characters ---------- */
-.picker-stage { display: grid; place-items: center; margin: 48px 0 32px; }
-.custom-pack { display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); font-size: 15px; background: radial-gradient(circle, #0b1020, #000 70%); }
-.custom-pack .plus { width: 92px; height: 92px; border-radius: 50%; border: 2px dashed rgba(255, 255, 255, 0.3); display: grid; place-items: center; font-size: 44px; font-weight: 300; color: var(--soft); }
+/* ---------- Segmented controls ---------- */
 .segmented {
   display: inline-flex; gap: 4px; padding: 4px;
   border-radius: 999px;
@@ -385,13 +386,11 @@ button { font: inherit; color: inherit; }
 }
 .segmented button[aria-pressed="true"] { background: var(--ink); color: #000; }
 @media (max-width: 480px) { .segmented button { padding: 9px 13px; font-size: 14px; } }
-.char-caption { color: var(--muted); margin: 22px auto 0; min-height: 3em; max-width: 520px; }
-.char-caption a { white-space: nowrap; }
 
 /* ---------- Live demo ---------- */
 .try { background: radial-gradient(ellipse 70% 50% at 50% 60%, rgba(41, 151, 255, 0.08), transparent 70%); }
 .try-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 56px; align-items: center; width: min(1120px, 100% - 48px); margin: 48px auto 0; }
-.try-stage { display: grid; justify-items: center; gap: 22px; perspective: 1400px; }
+.try-stage { display: grid; justify-items: center; gap: 22px; perspective: 1400px; position: relative; }
 #live-canvas { left: 5.79%; width: 88.41%; object-fit: fill; opacity: 0; transition: opacity 0.6s; }
 .live-ready #live-canvas { opacity: 1; }
 .live-ready.live-dozing #live-canvas { opacity: 0.35; }
@@ -404,6 +403,8 @@ button { font: inherit; color: inherit; }
 .live-ready .live-loading, .live-failed .live-loading { opacity: 0; pointer-events: none; }
 .device-hit { position: absolute; z-index: 4; left: 8.39%; top: 8.39%; width: 83.21%; height: 83.21%; border-radius: 50%; background: transparent; border: 0; cursor: pointer; }
 .live-status { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; color: var(--muted); margin: 0; text-align: center; min-height: 1.5em; }
+/* Beside the panel, the status line hangs under the device, so the device and the panel share one center. */
+.try-stage .live-status { position: absolute; inset-inline: 0; top: calc(100% + 22px); }
 .console {
   background: linear-gradient(180deg, var(--panel-2), var(--panel));
   border: 1px solid var(--line);
@@ -433,7 +434,61 @@ button { font: inherit; color: inherit; }
 .chip .badge { width: 22px; height: 22px; box-shadow: inset 0 0 0 1.5px var(--c); }
 .chip:disabled { opacity: 0.4; cursor: not-allowed; }
 .console-tip { margin: 0; color: var(--muted); font-size: 14px; }
-@media (max-width: 900px) { .try-grid { grid-template-columns: 1fr; gap: 36px; } }
+@media (max-width: 900px) { .try-grid { grid-template-columns: 1fr; gap: 36px; } .try-stage .live-status { position: static; } }
+
+/* ---------- Character gallery (gallery.html) ---------- */
+.gallery-hero { padding-top: calc(60px + clamp(36px, 5vw, 72px)); }
+/* The cards come right after the live preview, so only the preview section's own bottom padding separates them. */
+.gallery { padding-top: 0; }
+/* The same entrance as the home page, in CSS: the page loads no GSAP. */
+.gallery-hero .lines .line > span { animation: line-rise 1.4s var(--ease) both; }
+.gallery-hero .lines .line:nth-child(2) > span { animation-delay: 0.12s; }
+.gallery-hero .eyebrow, .gallery-hero .lede { animation: fade-rise 1.2s var(--ease) 0.3s both; }
+/* Two even lines on a desktop screen. */
+.gallery-hero .lede { max-width: 880px; text-wrap: balance; }
+.gallery-hero .try-grid { animation: fade-rise 1.4s var(--ease) 0.45s both; }
+@keyframes line-rise { from { transform: translateY(140%); } }
+@keyframes fade-rise { from { opacity: 0; transform: translateY(24px); } }
+.gallery-group + .gallery-group { margin-top: clamp(64px, 8vw, 104px); }
+.gallery-head { text-align: center; margin-bottom: 36px; }
+.gallery-title { font-size: clamp(32px, 4vw, 52px); line-height: 1.05; letter-spacing: -0.04em; font-weight: 700; margin: 0 0 10px; }
+.gallery-head p:last-child { color: var(--muted); margin: 0; }
+/* Rows wrap and stay centered, so four built-ins fill one row on a wide screen and two rows of two on a tablet. */
+.gallery-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; }
+.pack-card { flex: 0 1 260px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 30px 22px 26px; }
+.pack-card .device { margin: 0 auto 10px; }
+.pack-card :is(h3, h4) { font-size: 24px; margin: 0; }
+.pack-title { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.tag { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; }
+.tag.is-add-on { color: var(--g1); border-color: rgba(143, 243, 255, 0.35); }
+.pack-card .pack-meta { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; }
+.pack-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: auto; padding-top: 8px; }
+.pack-card .pack-firmware { color: var(--attn); }
+/* A pack's characters: three to a row on a wide screen, so nine fill three rows. */
+.pack-grid .pack-card { flex-basis: 300px; }
+/* Two buttons don't fit side by side in these cards, so they stack at full width. */
+.pack-grid .pack-actions { flex-direction: column; align-self: stretch; }
+.pack-grid .pack-actions .btn { justify-content: center; }
+.pack-group + .pack-group { margin-top: 56px; }
+.pack-head { text-align: center; max-width: 880px; margin: 0 auto 28px; }
+.pack-group-title { font-size: clamp(26px, 3vw, 34px); line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 8px; }
+.pack-head p { color: var(--muted); margin: 0; text-wrap: balance; }
+.pack-head .pack-note { font-size: 15px; margin-top: 8px; }
+/* The pack names in the live preview's panel, each above its characters. */
+.pack-chips + .pack-chips { margin-top: 16px; }
+.pack-name { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--soft); }
+/* On the home page, the link to all of a pack's characters in the gallery. */
+.pack-more { display: inline-block; margin-top: 10px; font-size: 14px; }
+.pack-empty { border-style: dashed; border-color: var(--line-2); }
+.pack-empty:hover { translate: none; }
+.device-screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* The "Coming soon" card's screen, when the gallery has no packs. */
+.device-screen .custom-pack { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); font-size: 13px; background: radial-gradient(circle, #0b1020, #000 70%); }
+.custom-pack .plus { width: 54px; height: 54px; border-radius: 50%; border: 2px dashed rgba(255, 255, 255, 0.3); display: grid; place-items: center; font-size: 28px; font-weight: 300; color: var(--soft); }
+.gallery-add .path { max-width: 820px; margin-inline: auto; }
+/* The steps come right after the cards, so only the gallery section's own bottom padding separates them. */
+.gallery-add { padding-top: 0; }
+.gallery-add code { font-family: var(--mono); font-size: 0.92em; color: var(--soft); background: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 2px 6px; }
 
 /* ---------- Desktop ---------- */
 .window-stage { perspective: 1600px; margin: 48px auto; width: min(1100px, 100% - 48px); }
@@ -543,7 +598,7 @@ button { font: inherit; color: inherit; }
 /* What flourish() in main.js animates stays hidden until it starts (index.html sets the class). Otherwise these
    parts show first, then jump back to where their animation starts. */
 .intro :is(.hero-bg, .hero-title .mask > span, .hero-copy .reveal-up, .hero-rise, .lines .line > span, .fade-up, .rise,
-  .state-stage .device, .agents .device, .picker-stage .device, .finale .device, .try-stage, .orbit, .shots, .video-frame,
+  .state-stage .device, .agents .device, .finale .device, .try-stage, .orbit, .shots, .video-frame,
   .finale-title, .finale .btn) { visibility: hidden; }
 
 /* ---------- Phones in landscape ---------- */
@@ -560,6 +615,7 @@ button { font: inherit; color: inherit; }
   .state-stage .device { --size: min(300px, 40vw, 68svh); }
   .events { transform: scale(0.85); transform-origin: 0 100%; }
   .try-grid { grid-template-columns: 1fr 1fr; gap: 24px; }
+  .try-stage .live-status { position: absolute; }
   .try-stage .device { --size: min(340px, 44vw, 74svh); }
   .console { padding: 20px; gap: 14px; }
   .chip { padding: 6px 11px; font-size: 13px; }

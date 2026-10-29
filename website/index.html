@@ -39,7 +39,7 @@
         <a href="#states">Overview</a>
         <a href="#try">Try it</a>
         <a href="#agents">Agents</a>
-        <a href="#characters">Characters</a>
+        <a href="gallery.html">Gallery</a>
         <a href="#desktop">Desktop</a>
         <a href="#how">How it works</a>
       </nav>
@@ -169,13 +169,17 @@
         </div>
         <div class="console" id="console">
           <fieldset>
-            <legend>Character</legend>
+            <legend>Built-in characters</legend>
             <div class="chips" id="live-chars">
               <button class="chip is-on" aria-pressed="true" data-char="copilot">Copilot</button>
               <button class="chip" aria-pressed="false" data-char="claude">Claude</button>
               <button class="chip" aria-pressed="false" data-char="grok">Grok</button>
               <button class="chip" aria-pressed="false" data-char="openclaw">OpenClaw</button>
             </div>
+          </fieldset>
+          <fieldset id="live-packs" hidden>
+            <legend>Character packs</legend>
+            <div class="pack-chip-groups" id="live-pack-groups"></div>
           </fieldset>
           <fieldset>
             <legend>State</legend>
@@ -256,40 +260,6 @@
             <p>Drowsy eyelids and drifting Zs after two quiet minutes.</p>
           </article>
         </div>
-      </div>
-    </section>
-
-    <!-- Characters -->
-    <section class="section characters" id="characters">
-      <div class="container center">
-        <h2 class="display lines">
-          <span class="line"><span>Pick your</span></span>
-          <span class="line"><span class="grad">character.</span></span>
-        </h2>
-      </div>
-      <div class="picker-stage">
-        <div class="device device-lg" id="char-device" data-state="idle">
-          <div class="device-screen">
-            <video class="layer is-on" data-char="copilot" src="assets/media/copilot.mp4" poster="assets/media/copilot.webp" muted loop playsinline preload="metadata" aria-label="The Copilot character"></video>
-            <video class="layer" data-char="claude" src="assets/media/claude.mp4" poster="assets/media/claude.webp" muted loop playsinline preload="metadata" aria-label="The Claude character"></video>
-            <video class="layer" data-char="grok" src="assets/media/grok.mp4" poster="assets/media/grok.webp" muted loop playsinline preload="metadata" aria-label="The Grok character"></video>
-            <video class="layer" data-char="openclaw" src="assets/media/openclaw.mp4" poster="assets/media/openclaw.webp" muted loop playsinline preload="metadata" aria-label="The OpenClaw character"></video>
-            <div class="layer custom-pack" data-char="custom">
-              <span class="plus" aria-hidden="true">+</span>
-              <span>Your own pack</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="container center">
-        <div class="segmented" role="group" aria-label="Characters" id="char-picker">
-          <button aria-pressed="true" data-char="copilot">Copilot</button>
-          <button aria-pressed="false" data-char="claude">Claude</button>
-          <button aria-pressed="false" data-char="grok">Grok</button>
-          <button aria-pressed="false" data-char="openclaw">OpenClaw</button>
-          <button aria-pressed="false" data-char="custom">Your own</button>
-        </div>
-        <p class="char-caption" id="char-caption">Built in. The device holds one character at a time, and you can switch over USB or Wi-Fi.</p>
       </div>
     </section>
 
@@ -429,7 +399,7 @@
               <a class="dl" data-os="linux" data-match="linux-x86_64.AppImage" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>Linux</b><span>x86_64 · AppImage</span></a>
               <a class="dl" data-os="linux-deb" data-match="linux-amd64.deb" href="https://github.com/DanWahlin/agent-buddy/releases/latest"><b>Linux</b><span>amd64 · .deb</span></a>
             </div>
-            <p class="fine" id="release-note">The app is not code-signed. See <a href="https://github.com/DanWahlin/agent-buddy#run-the-desktop-app">the first-run step</a> for your OS.</p>
+            <p class="fine" id="release-note">The macOS and Linux apps aren't code-signed. See <a href="https://github.com/DanWahlin/agent-buddy#run-the-desktop-app">the first-run step</a> for your OS.</p>
           </article>
         </div>
         <div class="dev rise">
@@ -473,6 +443,7 @@ npm run setup</code></pre>
         </div>
       </div>
       <nav class="footer-links" aria-label="Project links">
+        <a href="gallery.html">Character gallery</a>
         <a href="https://github.com/DanWahlin/agent-buddy">GitHub</a>
         <a href="https://github.com/DanWahlin/agent-buddy/releases/latest">Releases</a>
         <a href="https://github.com/DanWahlin/agent-buddy#contents">Documentation</a>
@@ -487,6 +458,7 @@ npm run setup</code></pre>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/ScrollTrigger.min.js" integrity="sha384-xNHNOfrykny9oFwnmpfNbkSc6isny38d1GZvTRVuFV0l9fTMIZKhULvomyQJSMRl" crossorigin="anonymous" defer></script>
   <script src="live.js" defer></script>
+  <script src="packs.js" defer></script>
   <script src="main.js" defer></script>
 </body>
 </html>

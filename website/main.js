@@ -57,7 +57,7 @@ $('#live-agents').innerHTML = AGENTS.map((a, i) =>
 
 const visible = new Set();
 function syncVideo(video) {
-  const on = visible.has(video) && (!video.classList.contains('layer') || video.classList.contains('is-on'));
+  const on = visible.has(video);
   if (on && video.paused) video.play().catch(() => {});
   else if (!on && !video.paused) video.pause();
 }
@@ -67,7 +67,7 @@ const videoObserver = new IntersectionObserver((entries) => {
     syncVideo(entry.target);
   }
 }, { rootMargin: '200px 0px' });
-$$('video.autoplay, video.layer').forEach((v) => videoObserver.observe(v));
+$$('video.autoplay').forEach((v) => videoObserver.observe(v));
 
 /** Mark one button in a group as pressed. */
 function press(buttons, isOn) {
@@ -78,21 +78,14 @@ function press(buttons, isOn) {
   }
 }
 
-function showLayer(container, attr, value) {
-  for (const layer of $$('.layer', container)) {
-    layer.classList.toggle('is-on', layer.dataset[attr] === value);
-    if (layer.tagName === 'VIDEO') {
-      if (layer.classList.contains('is-on')) layer.currentTime = 0;
-      syncVideo(layer);
-    }
-  }
-}
-
 /* ---------- Nav ---------- */
 
 const nav = $('#nav');
-const navLinks = $$('.nav-links a');
+// Only links to this page's sections: Gallery is another page.
+const navLinks = $$('.nav-links a[href^="#"]');
 const sections = navLinks.map((a) => $(a.getAttribute('href')));
+// In-page links scroll smoothly once the page has loaded (styles.css explains why not before).
+addEventListener('load', () => document.documentElement.classList.add('smooth-scroll'));
 
 /* ---------- Scroll-driven scenes (no library needed) ---------- */
 
@@ -208,20 +201,6 @@ function autoRotate(group, key, show, watched, { interval, threshold }) {
   }, { threshold }).observe(watched);
 }
 
-const CHARACTERS = {
-  copilot: { glow: '#4f7dff', caption: 'Built in. The device holds one character at a time, and you can switch over USB or Wi-Fi.' },
-  claude: { glow: '#e5896a', caption: 'Built in. A pixel-art character that needs current firmware.' },
-  grok: { glow: '#d8dce4', caption: 'Built in. A white ball with slanted pill eyes that slide around it as it looks.' },
-  openclaw: { glow: '#ff5a5a', caption: 'Built in. It even walks around the screen.' },
-  custom: { glow: '#8f86ff', caption: 'Make your own .acpk pack and add it in Settings. <a href="https://github.com/DanWahlin/agent-buddy/blob/main/characters/README.md">How to make a character</a>' },
-};
-const charDevice = $('#char-device');
-autoRotate($('#char-picker'), 'char', (id) => {
-  showLayer(charDevice, 'char', id);
-  charDevice.style.setProperty('--state', CHARACTERS[id].glow);
-  $('#char-caption').innerHTML = CHARACTERS[id].caption;
-}, charDevice, { interval: 3800, threshold: 0.5 });
-
 const shots = $$('#shots .shot');
 autoRotate($('#settings-tabs'), 'shot', (id) => {
   shots.forEach((s) => s.classList.toggle('is-on', s.dataset.shot === id));
@@ -237,7 +216,24 @@ const liveState = { mode: 'idle', agents: ['copilot', 'claude'], character: 'cop
 let liveStarted = false;
 let liveEngine = false;
 let liveVisible = false;
-const LIVE_TEXT = 'Live in your browser';
+// The first characters of each pack join the demo, with a link to the rest in the gallery.
+const PACK_CHIPS = 4;
+// A link such as ./#desktop on the gallery page opens this page at a section below the demo.
+let scrolledByHand = false;
+for (const type of ['wheel', 'touchmove', 'keydown', 'pointerdown'])
+  addEventListener(type, () => { scrolledByHand = true; }, { once: true, passive: true });
+const packsShown = (window.AgentBuddyPacks?.showChips(PACK_CHIPS) ?? Promise.resolve([]))
+  .then((packs) => {
+    if (!packs.length) return;
+    // The panel is taller now, so the scroll scenes below it measure their places again.
+    if (window.ScrollTrigger?.getAll().length) window.ScrollTrigger.refresh();
+    // Without scroll anchoring (Safari before 27), a linked section below the demo is now too
+    // high on the screen. Go to it again, unless the person has scrolled.
+    const target = location.hash.length > 1 && document.getElementById(location.hash.slice(1));
+    if (target && !scrolledByHand && ($('#try').compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING))
+      target.scrollIntoView();
+  })
+  .catch(() => {});
 
 function badgePacket() {
   if (liveState.mode === 'idle' || liveState.mode === 'sleep') return '';
@@ -257,11 +253,11 @@ function liveFailed(message) {
 async function loadLiveCharacter(id) {
   liveDevice.classList.remove('live-ready');
   liveLoading.style.setProperty('--p', 0);
-  liveStatus.textContent = `Loading the ${$(`#live-chars [data-char="${id}"]`).textContent} character…`;
+  liveStatus.textContent = `Loading the ${$(`#console [data-char="${id}"]`).textContent} character…`;
   const ok = await live.loadCharacter(id, (p) => liveLoading.style.setProperty('--p', p));
   if (!ok) return;
   liveDevice.classList.add('live-ready');
-  liveStatus.textContent = LIVE_TEXT;
+  liveStatus.textContent = '';
   if (liveVisible) live.start();
   if (liveState.mode === 'sleep') doze();
 }
@@ -279,7 +275,7 @@ async function doze() {
   } else if (liveState.mode === 'sleep') {
     // A tap woke it before it fell asleep.
     showMode('idle');
-    liveStatus.textContent = LIVE_TEXT;
+    liveStatus.textContent = '';
   }
 }
 function showMode(mode) {
@@ -291,7 +287,7 @@ function showMode(mode) {
 document.addEventListener('agentbuddy:mode', (e) => {
   if (liveState.mode === 'sleep' && e.detail.wasAsleep && !e.detail.asleep) {
     showMode('idle');
-    liveStatus.textContent = LIVE_TEXT;
+    liveStatus.textContent = '';
   }
 });
 async function startLive() {
@@ -299,10 +295,15 @@ async function startLive() {
   liveStarted = true;
   liveStatus.textContent = 'Waking up your buddy…';
   try {
+    await packsShown;
     const available = await live.init($('#live-canvas'));
     liveEngine = true;
     $$('#live-chars .chip').forEach((b) => { if (!available.includes(b.dataset.char)) b.hidden = true; });
-    if (!available.includes(liveState.character)) liveState.character = available[0];
+    window.AgentBuddyPacks?.hideMissing(available);
+    // The engine lists every pack's characters, and the demo offers only those with a chip.
+    const offered = available.filter((id) => $(`#console [data-char="${id}"]`));
+    if (!offered.length) throw new Error('No character packs.');
+    if (!offered.includes(liveState.character)) liveState.character = offered[0];
     live.setMode(liveState.mode === 'sleep' ? 'idle' : liveState.mode);
     live.setBadges(badgePacket());
     await loadLiveCharacter(liveState.character);
@@ -335,7 +336,7 @@ $('#live-states').addEventListener('click', (e) => {
     return;
   }
   live.setMode(liveState.mode);
-  if (live.ready) liveStatus.textContent = LIVE_TEXT;
+  if (live.ready) liveStatus.textContent = '';
 });
 $('#live-agents').addEventListener('click', (e) => {
   const b = e.target.closest('[data-agent]');
@@ -346,10 +347,11 @@ $('#live-agents').addEventListener('click', (e) => {
   press($$('[data-agent]', e.currentTarget), (c) => liveState.agents.includes(c.dataset.agent));
   live.setBadges(badgePacket());
 });
-$('#live-chars').addEventListener('click', (e) => {
+// The built-in and the pack chips are one choice: one character shows at a time.
+$('#console').addEventListener('click', (e) => {
   const b = e.target.closest('[data-char]');
   if (!b || b.dataset.char === liveState.character) return;
-  choose(e.currentTarget, b);
+  press($$('#console [data-char]'), (c) => c === b);
   liveState.character = b.dataset.char;
   if (liveEngine) loadLiveCharacter(liveState.character).catch((error) => liveFailed(error.message));
 });
@@ -467,7 +469,7 @@ function flourish() {
   });
 
   // Devices settle into place as they arrive.
-  for (const device of $$('.state-stage .device, .agents .device, .picker-stage .device, .finale .device, .try-stage')) {
+  for (const device of $$('.state-stage .device, .agents .device, .finale .device, .try-stage')) {
     gsap.from(device, {
       scale: 0.8, opacity: 0, y: 60, duration: 1.6, ease,
       scrollTrigger: { trigger: device, start: 'top 90%' },

@@ -38,10 +38,21 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
+      - name: Download the character previews
+        # The gallery's free preview packs are files on the character-previews
+        # pre-release (see website/README.md). A pre-release never becomes the
+        # latest release, so the app downloads don't change.
+        run: |
+          gh release download character-previews --repo "$GITHUB_REPOSITORY" \
+            --pattern character-previews.zip --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/character-previews.zip" -d "$RUNNER_TEMP/previews"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Build the website
-        # Copies the engine from desktop/engine/prebuilt and downloads the
-        # character packs from the latest release, for the live demo.
-        run: node website/scripts/build.mjs --out _site --download
+        # Copies the engine from desktop/engine/prebuilt, downloads the
+        # character packs from the latest release for the live demo, and adds
+        # the gallery's previews.
+        run: node website/scripts/build.mjs --out _site --download --packs "$RUNNER_TEMP/previews"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Set up Pages
