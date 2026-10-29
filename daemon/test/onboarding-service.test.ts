@@ -154,31 +154,37 @@ function gate() {
   return {enter, resume, entered, resumed};
 }
 
+// A real service on the fixture's fake device, with two small packs that it can install.
+async function realService({device, coordinator, root, store, installer}: Awaited<ReturnType<typeof fixture>>) {
+  await mkdir(join(root, 'packs'));
+  for (const id of ['copilot', 'claude']) {
+    const pack = Buffer.alloc(256);
+    pack.write('ACPK', 0, 'ascii');
+    pack.writeUInt16LE(1, 4);
+    pack.writeUInt16LE(256, 6);
+    pack.writeUInt32LE(pack.length, 8);
+    pack.write(id, 16, 'ascii');
+    pack.write(id, 32, 'ascii');
+    await writeFile(join(root, 'packs', `${id}.acpk`), pack);
+  }
+  device.installCharacter = async pack => {
+    device.characterId = parseCharacterPackHeader(pack).id;
+    return {character: device.characterId, transport: device.link};
+  };
+  const context = defaultAgentContext({home: root, dataDir: root, env: {
+    PATH: '', AGENT_COMPANION_AGENTS_CONFIG: join(root, 'agents.json'),
+  }});
+  return new CompanionService(device, coordinator, context, [], {refresh: async () => undefined},
+    new FakeDesktop(), {refresh: async () => false, totals: () => ({aic: null, tokens: null})},
+    () => null, installer, store);
+}
+
 test('real service methods retain setup ownership through hook, display, character, and Finish operations', async () => {
-  const {device, store, installer, coordinator, root, cleanup} = await fixture();
+  const parts = await fixture();
+  const {device, store, root, cleanup} = parts;
   try {
-    await mkdir(join(root, 'packs'));
-    for (const id of ['copilot', 'claude']) {
-      const pack = Buffer.alloc(256);
-      pack.write('ACPK', 0, 'ascii');
-      pack.writeUInt16LE(1, 4);
-      pack.writeUInt16LE(256, 6);
-      pack.writeUInt32LE(pack.length, 8);
-      pack.write(id, 16, 'ascii');
-      pack.write(id, 32, 'ascii');
-      await writeFile(join(root, 'packs', `${id}.acpk`), pack);
-    }
     device.active = true;
-    device.installCharacter = async pack => {
-      device.characterId = parseCharacterPackHeader(pack).id;
-      return {character: device.characterId, transport: device.link};
-    };
-    const context = defaultAgentContext({home: root, dataDir: root, env: {
-      PATH: '', AGENT_COMPANION_AGENTS_CONFIG: join(root, 'agents.json'),
-    }});
-    const service = new CompanionService(device, coordinator, context, [], {refresh: async () => undefined},
-      new FakeDesktop(), {refresh: async () => false, totals: () => ({aic: null, tokens: null})},
-      () => null, installer, store);
+    const service = await realService(parts);
     await store.reset({agents: ['copilot'], character: 'claude', display: 'both', port: device.usbPath});
     const hooks = await service.installOnboardingAgents(['copilot']);
     assert.equal(hooks[0]?.ok, true);
@@ -955,6 +961,64 @@ test('reopening setup preserves selected agents and approved deselection removes
     await store.finish();
     assert.deepEqual((await service.restartOnboarding()).agents, []);
     await assert.rejects(service.removeOnboardingAgent('copilot'), /selection changed/);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a running Wi-Fi scan names itself, and waiting for it ends with the scan or at the limit', async () => {
+  const parts = await fixture();
+  const {device, cleanup} = parts;
+  try {
+    device.active = true;
+    const service = await realService(parts);
+    let finish!: () => void;
+    device.scanWifi = () => new Promise(resolve => { finish = () => resolve([]); });
+    assert.equal(service.busyTask, null);
+    const scan = service.scanWifi();
+    assert.equal(service.busyTask, 'the Wi-Fi scan');
+    let ended = false;
+    const waiting = service.wifiScanEnded().then(() => { ended = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(ended, false);
+    finish();
+    assert.deepEqual(await scan, []);
+    await waiting;
+    assert.equal(service.busyTask, null);
+
+    device.scanWifi = async () => { throw new Error('No answer.'); };
+    await assert.rejects(service.scanWifi(), /No answer/);
+    await service.wifiScanEnded();
+    assert.equal(service.busyTask, null);
+
+    device.scanWifi = () => new Promise(resolve => { finish = () => resolve([]); });
+    const hung = service.scanWifi();
+    await service.wifiScanEnded(20);
+    assert.equal(service.busyTask, 'the Wi-Fi scan');
+    finish();
+    await hung;
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a character chosen for the desktop replaces the one that the last install put there', async () => {
+  const parts = await fixture();
+  const {device, cleanup} = parts;
+  try {
+    device.active = true;
+    const service = await realService(parts);
+    await service.installCharacter('claude');
+    assert.equal(service.desktopCharacter(), 'claude');
+    // The device stops answering while it restarts, and the desktop keeps the new character.
+    device.active = false;
+    assert.equal(service.desktopCharacter(), 'claude');
+    await service.setDesktop({character: 'copilot'});
+    assert.equal(service.desktopCharacter(), 'copilot');
+    assert.equal(service.status().lastInstall?.character, 'claude');
+    // A connected device decides again.
+    device.active = true;
+    assert.equal(service.desktopCharacter(), 'claude');
   } finally {
     await cleanup();
   }

@@ -6,12 +6,12 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {handleSocket} from '../src/daemon.js';
 
-async function withServer(run: (path: string) => Promise<void>): Promise<void> {
+async function withServer(run: (path: string) => Promise<void>, service: object = {}): Promise<void> {
   const folder = mkdtempSync(join(tmpdir(), 'companion-protocol-'));
   const path = process.platform === 'win32'
     ? `\\\\.\\pipe\\companion-protocol-${process.pid}-${Date.now()}` : join(folder, 'daemon.sock');
   const server: Server = createServer({allowHalfOpen: true}, socket =>
-    handleSocket(socket, {} as never, {} as never, {} as never, () => 'http://127.0.0.1:1234/'));
+    handleSocket(socket, {} as never, {} as never, service as never, () => 'http://127.0.0.1:1234/'));
   await new Promise<void>(resolve => server.listen(path, resolve));
   try {
     await run(path);
@@ -61,4 +61,26 @@ test('answers at the newline so Windows named-pipe clients need not half-close',
     const bad = await exchange(path, socket => socket.write('not json\n')) as {ok: boolean};
     assert.equal(bad.ok, false);
   });
+});
+
+test('a character install waits for a Wi-Fi scan that Settings started', async () => {
+  let finishScan!: () => void;
+  const scan = new Promise<void>(resolve => { finishScan = resolve; });
+  const installs: string[] = [];
+  const service = {
+    wifiScanEnded: () => scan,
+    installCharacter: async (character: string) => {
+      installs.push(character);
+      return {ok: true, character, name: character, transport: 'usb'};
+    },
+  };
+  await withServer(async path => {
+    const request = `${JSON.stringify({type: 'installCharacter', character: 'claude'})}\n`;
+    const reply = exchange(path, socket => socket.write(request));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual(installs, []);
+    finishScan();
+    assert.deepEqual(await reply, {ok: true, character: 'claude', name: 'claude', transport: 'usb'});
+    assert.deepEqual(installs, ['claude']);
+  }, service);
 });

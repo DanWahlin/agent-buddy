@@ -205,12 +205,14 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         // Installs take about a minute, so progress streams as JSON lines until the result.
         socket.setTimeout(0);
         let shown = -1;
-        reply(service.installCharacter(request.character, (sent, total) => {
+        const character = request.character;
+        // Settings may be scanning for Wi-Fi networks, which takes a few seconds.
+        reply(service.wifiScanEnded().then(() => service.installCharacter(character, (sent, total) => {
           const percent = Math.floor(sent * 100 / total);
           if (percent === shown || socket.destroyed) return;
           shown = percent;
           socket.write(`${JSON.stringify({progress: percent})}\n`);
-        }));
+        })));
       } else {
         throw new Error('Unknown daemon request.');
       }

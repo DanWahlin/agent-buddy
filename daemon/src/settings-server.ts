@@ -41,8 +41,9 @@ const securityHeaders = {
 };
 
 export interface SettingsServerOptions {
-  service: Pick<CompanionService, 'status' | 'installBusy' | 'characters' | 'installCharacter' | 'addCharacter'
-    | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses' | 'setAgentEnabled'
+  service: Pick<CompanionService, 'status' | 'busyTask' | 'wifiScanEnded' | 'characters' | 'installCharacter'
+    | 'addCharacter' | 'removeCharacter' | 'configureWifi' | 'scanWifi' | 'setConnection' | 'agentStatuses'
+    | 'setAgentEnabled'
     | 'installAgentHook' | 'uninstallAgentHook' | 'setAgentBadgesEnabled' | 'setDesktop' | 'startDesktop'
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
     | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
@@ -76,6 +77,14 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
   const previewPack = options.previewPack ?? (async id => (await readCharacterPack(id)).data);
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const expected = Buffer.from(token);
+
+  // Settings scans for Wi-Fi networks each time the device connects over USB. A request to install
+  // something waits for that scan, then is refused while any other task runs.
+  const requireIdle = async () => {
+    await service.wifiScanEnded();
+    const busy = service.busyTask;
+    if (busy) throw new HttpError(409, `Wait for ${busy} to finish, then try again.`);
+  };
 
   const authorized = (request: IncomingMessage, url: URL, allowQuery: boolean) => {
     const header = request.headers['x-companion-token'];
@@ -184,8 +193,7 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
             character?: unknown; display?: unknown; board?: unknown} | null;
           if (typeof body?.flash !== 'boolean' || body.confirmed !== true)
             throw new HttpError(400, 'Confirm the device setup first.');
-          if (service.onboardingStatus().busy || service.installBusy)
-            throw new HttpError(409, 'Wait for the current installation to finish.');
+          await requireIdle();
           const setup = service.onboardingStatus();
           if (setup.completed || setup.display === 'desktop' || setup.deviceDeferred || (body.flash && !setup.port))
             throw new HttpError(409, 'Select and detect the device in setup first.');
@@ -247,9 +255,8 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         return;
       }
       if (method === 'POST' && segments[2] === 'install' && segments.length === 3) {
+        await requireIdle();
         const status = service.status();
-        if (status.installing || service.installBusy || status.onboarding?.busy)
-          throw new HttpError(409, 'A character installation is already in progress.');
         if (!status.connected) throw new HttpError(409, 'Connect the Agent Companion over USB or Wi-Fi first.');
         if (!(await service.characters()).some(entry => entry.id === id))
           throw new HttpError(404, 'Unknown character.');
@@ -264,9 +271,8 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       }
     }
     if (method === 'POST' && segments.length === 2 && segments[0] === 'firmware' && segments[1] === 'update') {
+      await requireIdle();
       const status = service.status();
-      if (status.installing || status.firmware.updating || service.installBusy || status.onboarding?.busy)
-        throw new HttpError(409, 'Wait for the current installation to finish.');
       if (!status.firmware.canUpdate)
         throw new HttpError(409, status.firmware.built === null ? 'No firmware is built.'
           : status.firmware.built === status.firmware.device ? 'The device already runs this firmware.'
@@ -281,9 +287,8 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       if (body?.confirmed !== true) throw new HttpError(400, 'Confirm the supported device and firmware replacement first.');
       if (body.port !== undefined && body.port !== null && typeof body.port !== 'string')
         throw new HttpError(400, 'USB port must be a device path.');
+      await requireIdle();
       const status = service.status();
-      if (status.installing || status.firmware.updating || status.firmware.usb.installing || service.installBusy || status.onboarding?.busy)
-        throw new HttpError(409, 'Wait for the current installation to finish.');
       if (!status.firmware.usb.flasher)
         throw new HttpError(409, 'Installing firmware over USB needs the desktop app. Open the desktop app, then try again.');
       if (!status.firmware.usb.release)

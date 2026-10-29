@@ -243,6 +243,11 @@ export class CompanionService extends EventEmitter {
   // Claimed before the first await so concurrent requests can't both start an upload.
   #installBusy = false;
   #lastInstall: InstallResult | null = null;
+  // The character the last install put on the device. The desktop keeps it while the device
+  // restarts, until the person chooses another character for the desktop.
+  #installedCharacter: string | null = null;
+  // Settings scans for Wi-Fi networks each time the device connects over USB.
+  #wifiScan: Promise<unknown> = Promise.resolve();
   #wifiPaired = false;
   readonly #service = serviceInfo();
   readonly #transport: DeviceTransport;
@@ -443,7 +448,7 @@ export class CompanionService extends EventEmitter {
   desktopCharacter(): string {
     return pickDesktopCharacter({
       installing: this.#installing?.character,
-      installed: this.#lastInstall?.ok ? this.#lastInstall.character : undefined,
+      installed: this.#installedCharacter,
       device: this.#transport.character,
       preference: this.#characterPreference,
     });
@@ -533,7 +538,14 @@ export class CompanionService extends EventEmitter {
   }
 
   scanWifi(): Promise<WifiNetwork[]> {
-    return this.#mutate(() => this.#transport.scanWifi(), null, 'the Wi-Fi scan');
+    const scan = this.#mutate(() => this.#transport.scanWifi(), null, 'the Wi-Fi scan');
+    this.#wifiScan = scan.catch(() => undefined);
+    return scan;
+  }
+
+  // A scan takes a few seconds, so a request to install something waits for it rather than failing.
+  async wifiScanEnded(limitMs = 30_000): Promise<void> {
+    await Promise.race([this.#wifiScan, sleep(limitMs, undefined, {ref: false})]);
   }
 
   reloadWifi(): Promise<void> {
@@ -586,6 +598,8 @@ export class CompanionService extends EventEmitter {
         throw new Error('Unknown character.');
       await saveCharacterPreference(change.character);
       this.#characterPreference = change.character;
+      // This choice is newer than the last install, so the desktop shows it now.
+      this.#installedCharacter = null;
     }
     if (change.visible !== undefined || change.backdrop !== undefined || change.sounds !== undefined
       || change.volume !== undefined) {
@@ -612,8 +626,8 @@ export class CompanionService extends EventEmitter {
   }
 
   #setupAvailable(): void {
-    if (this.#operation || this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
-      throw new SetupError(`Wait for ${this.#busyTask()} to finish.`);
+    const busy = this.busyTask;
+    if (busy) throw new SetupError(`Wait for ${busy} to finish.`);
     if (this.#stopping || this.#restarting || this.#uninstalling)
       throw new SetupError('The companion service is stopping.');
   }
@@ -623,9 +637,11 @@ export class CompanionService extends EventEmitter {
       throw new SetupError('Run setup again before changing its choices.');
   }
 
-  #busyTask(): string {
+  // The task that a new one must wait for, or null when nothing is running.
+  get busyTask(): string | null {
     if (this.#operation) return this.#operationTask;
-    return this.#firmwareUpdating || this.#usbInstalling ? 'the firmware install' : 'the character install';
+    if (this.#firmwareUpdating || this.#usbInstalling) return 'the firmware install';
+    return this.#installBusy ? 'the character install' : null;
   }
 
   // `task` names the operation in the message that other requests get while it runs.
@@ -1069,10 +1085,6 @@ export class CompanionService extends EventEmitter {
     else exit();
   }
 
-  get installBusy(): boolean {
-    return this.#installBusy;
-  }
-
   installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
     return this.#mutate(() => this.#installCharacter(character, progress), null, 'the character install');
   }
@@ -1098,11 +1110,13 @@ export class CompanionService extends EventEmitter {
       // The settings page learns about failures from lastInstall, so report ones that happen before the transfer too.
       this.#lastInstall = {ok: false, character, name,
                            error: error instanceof Error ? error.message : String(error)};
+      this.#installedCharacter = null;
       this.emit('change');
       throw error;
     }
     this.#installing = {character: pack.id, name: pack.name, percent: 0};
     this.#lastInstall = null;
+    this.#installedCharacter = null;
     this.emit('change');
     try {
       const result = await this.#transport.installCharacter(pack.data, (sent, total) => {
@@ -1117,6 +1131,7 @@ export class CompanionService extends EventEmitter {
       this.#characterPreference = remembered;
       console.log(`[character] installed ${result.character} via ${result.transport}`);
       this.#lastInstall = {ok: true, character: pack.id, name: pack.name, transport: result.transport};
+      this.#installedCharacter = pack.id;
       return this.#lastInstall;
     } catch (error) {
       this.#lastInstall = {ok: false, character: pack.id, name: pack.name,
