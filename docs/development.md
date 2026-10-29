@@ -507,6 +507,29 @@ PNGs and converts alpha or luminance to the mask. An optional adjacent
 
 ### Firmware updates over Wi-Fi
 
+To update firmware that you built, over Wi-Fi: build it with
+`bash tools/arduino.sh build`, then open the **Device** tab in Settings. The
+device must be on Wi-Fi and have firmware with protocol 9 or later. When the
+**Device firmware** row shows that the built firmware is different, click
+**Update**. Protocol 11 and later firmware then shows **Press BOOT to allow it**:
+press BOOT on the device within 60 seconds. The device restarts in about 15
+seconds and keeps your character and Wi-Fi settings. If the new firmware can't
+join Wi-Fi in 90 seconds, the device goes back to the previous firmware.
+
+Moving to firmware that supports this needs one USB flash, because it adds a
+second firmware slot to the partition table. A release that changes the
+partition table also needs a USB flash.
+
+If it doesn't work:
+
+- **Update is hidden:** build the firmware first with `bash tools/arduino.sh build`.
+- **Update isn't available:** the device must be on Wi-Fi and report firmware
+  protocol 9 or later.
+- **The request timed out:** click **Update** again, then press BOOT when the
+  device shows the prompt.
+- **The device went back:** the new firmware didn't join Wi-Fi in 90 seconds.
+  Install the firmware over USB.
+
 The firmware ID is the first 8 bytes of the application's ELF SHA-256, as 16
 hex digits. The device reads it from `esp_app_get_description()`, and
 `daemon/src/firmware-image.ts` reads the same bytes from the `.bin` (offset 176;
