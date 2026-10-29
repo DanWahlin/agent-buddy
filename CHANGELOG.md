@@ -2,6 +2,37 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.16.2]
+
+### Documentation
+
+- Shorten the README Quick start and update its screenshots
+
+- Shorten the README and move desktop app details to docs/desktop-app.md
+
+
+### Features and improvements
+
+- Add a README prompt that installs the desktop app with any coding agent
+
+- Add a character gallery to the website with free Animal Pack previews
+
+- Add the Halloween Pack previews to the website, and rename the character gallery to Buddies
+
+
+### Fixes
+
+- Fix button names that GitHub showed as Install v and Update to v
+
+- Fix the website hero flash on load and the offset Get it on GitHub button
+
+- Fix Install failing while Settings scans for Wi-Fi, and Show on desktop after an install
+
+
+### Other changes
+
+- Rename the website's Buddies page to Characters (characters.html)
+
 ## [v0.16.1]
 
 ### Build and maintenance
