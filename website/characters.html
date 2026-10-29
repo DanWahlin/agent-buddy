@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Characters · Agent Buddy</title>
+  <meta name="description" content="Characters for Agent Buddy, the desk buddy for your AI coding agents. Try each one live in your browser, then add it to your device or the desktop app.">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Characters · Agent Buddy">
+  <meta property="og:description" content="New looks for your desk buddy. Try each character live, then add it to your device or the desktop app.">
+  <meta property="og:url" content="https://getagentbuddy.com/characters.html">
+  <meta property="og:image" content="https://getagentbuddy.com/assets/img/og-image.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preload" href="assets/img/case.webp" as="image">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="./" aria-label="Agent Buddy home">
+        <img src="assets/img/logo.webp" alt="" width="30" height="30">
+        <span>Agent Buddy</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="./#states">Overview</a>
+        <a href="./#try">Try it</a>
+        <a href="./#agents">Agents</a>
+        <a href="characters.html" class="is-active" aria-current="page">Characters</a>
+        <a href="./#desktop">Desktop</a>
+        <a href="./#how">How it works</a>
+      </nav>
+      <a class="btn btn-small" href="./#start">Get started</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Live preview -->
+    <section class="section try gallery-hero" id="preview">
+      <div class="container center">
+        <p class="eyebrow">Characters</p>
+        <h1 class="display lines">
+          <span class="line"><span>New looks.</span></span>
+          <span class="line"><span class="grad">Same buddy.</span></span>
+        </h1>
+        <p class="lede">Every character shows the same states: working, needs attention, complete, idle, and asleep. Try one live, then add it to your device or the desktop app.</p>
+      </div>
+      <div class="try-grid">
+        <div class="try-stage">
+          <div class="device device-lg" id="live-device" data-state="idle">
+            <div class="device-screen">
+              <video class="live-fallback" src="assets/media/idle.mp4" poster="assets/media/idle.webp" muted loop playsinline preload="none" aria-label="A recording of the character"></video>
+              <canvas id="live-canvas" width="412" height="466" aria-label="The live character. Select it to tap it."></canvas>
+              <div class="live-loading" id="live-loading" aria-hidden="true">
+                <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle><circle class="arc" cx="50" cy="50" r="44"></circle></svg>
+              </div>
+            </div>
+            <button class="device-hit" id="live-tap" aria-label="Tap the character"></button>
+          </div>
+          <p class="live-status" id="live-status" role="status">Waking up your buddy…</p>
+        </div>
+        <div class="console" id="console">
+          <fieldset>
+            <legend>Built-in characters</legend>
+            <div class="chips" id="live-chars">
+              <button class="chip is-on" aria-pressed="true" data-char="copilot">Copilot</button>
+              <button class="chip" aria-pressed="false" data-char="claude">Claude</button>
+              <button class="chip" aria-pressed="false" data-char="grok">Grok</button>
+              <button class="chip" aria-pressed="false" data-char="openclaw">OpenClaw</button>
+            </div>
+          </fieldset>
+          <fieldset id="live-packs" hidden>
+            <legend>Character packs</legend>
+            <div class="pack-chip-groups" id="live-pack-groups"></div>
+          </fieldset>
+          <fieldset>
+            <legend>State</legend>
+            <div class="chips" id="live-states">
+              <button class="chip is-on" aria-pressed="true" data-mode="idle">Idle</button>
+              <button class="chip" aria-pressed="false" data-mode="working"><i style="--c:var(--work)"></i>Working</button>
+              <button class="chip" aria-pressed="false" data-mode="attention"><i style="--c:var(--attn)"></i>Needs attention</button>
+              <button class="chip" aria-pressed="false" data-mode="complete"><i style="--c:var(--done)"></i>Complete</button>
+              <button class="chip" aria-pressed="false" data-mode="sleep"><i style="--c:var(--sleep)"></i>Sleeping</button>
+            </div>
+          </fieldset>
+          <p class="console-tip">Tip: tap the screen.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Characters -->
+    <section class="section gallery" id="gallery">
+      <div class="container">
+        <div class="gallery-group">
+          <div class="gallery-head">
+            <p class="eyebrow">Included with Agent Buddy</p>
+            <h2 class="gallery-title">Built in</h2>
+            <p>Already in the app and on every device.</p>
+          </div>
+          <div class="gallery-grid">
+            <article class="card pack-card">
+              <div class="device device-sm"><div class="device-screen"><img src="assets/media/idle.webp" alt="" loading="lazy"></div></div>
+              <div class="pack-title"><h3>Copilot</h3><span class="tag">Built in</span></div>
+              <p>The default character, and the first one on every new device.</p>
+              <div class="pack-actions"><button class="btn btn-ghost btn-small" type="button" data-preview="copilot" aria-label="Preview Copilot">Preview</button></div>
+            </article>
+            <article class="card pack-card">
+              <div class="device device-sm"><div class="device-screen"><img src="assets/media/claude.webp" alt="" loading="lazy"></div></div>
+              <div class="pack-title"><h3>Claude</h3><span class="tag">Built in</span></div>
+              <p>A pixel-art character. It needs current device firmware.</p>
+              <div class="pack-actions"><button class="btn btn-ghost btn-small" type="button" data-preview="claude" aria-label="Preview Claude">Preview</button></div>
+            </article>
+            <article class="card pack-card">
+              <div class="device device-sm"><div class="device-screen"><img src="assets/media/grok.webp" alt="" loading="lazy"></div></div>
+              <div class="pack-title"><h3>Grok</h3><span class="tag">Built in</span></div>
+              <p>A white ball with slanted pill eyes that slide around it as it looks.</p>
+              <div class="pack-actions"><button class="btn btn-ghost btn-small" type="button" data-preview="grok" aria-label="Preview Grok">Preview</button></div>
+            </article>
+            <article class="card pack-card">
+              <div class="device device-sm"><div class="device-screen"><img src="assets/media/openclaw.webp" alt="" loading="lazy"></div></div>
+              <div class="pack-title"><h3>OpenClaw</h3><span class="tag">Built in</span></div>
+              <p>It even walks around the screen.</p>
+              <div class="pack-actions"><button class="btn btn-ghost btn-small" type="button" data-preview="openclaw" aria-label="Preview OpenClaw">Preview</button></div>
+            </article>
+          </div>
+        </div>
+
+        <div class="gallery-group">
+          <div class="gallery-head">
+            <p class="eyebrow">Add-on packs</p>
+            <h2 class="gallery-title">New characters</h2>
+            <p>Download a pack, then add it in Settings.</p>
+          </div>
+          <div id="add-ons">
+            <div class="gallery-grid" id="add-ons-empty">
+              <article class="card pack-card pack-empty">
+                <div class="device device-sm">
+                  <div class="device-screen">
+                    <div class="custom-pack"><span class="plus" aria-hidden="true">+</span><span>Coming soon</span></div>
+                  </div>
+                </div>
+                <h3>More are on the way</h3>
+                <p>New characters, such as seasonal packs, show up here. Check back soon.</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How to add a pack -->
+    <section class="section gallery-add" id="add">
+      <div class="container">
+        <div class="path">
+          <p class="eyebrow">Add a character pack</p>
+          <h3>Three steps, no folders to find.</h3>
+          <ol class="howto">
+            <li><span>Download the <b>.acpk</b> file of the character.</span></li>
+            <li><span>In Agent Buddy, open <b>Settings</b>, select the <b>Characters</b> tab, select <b>Add character pack</b>, and choose the file. Agent Buddy copies the pack into its own folder, so you can then delete the download.</span></li>
+            <li><span>Select <b>Install</b> to put the character on your device, or <b>Show on desktop</b> to use it in the desktop app.</span></li>
+          </ol>
+          <p class="fine">A free preview has a Preview tag at the character's feet. The full character has the same id, so when you add it later, it replaces the preview. From a source checkout, you can also run <code>npm run character path/to/pack.acpk</code>.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="assets/img/logo.webp" alt="" width="36" height="36">
+        <div>
+          <p class="footer-title">Agent Buddy</p>
+          <p class="footer-sub">An animated desk companion for your AI coding agents.</p>
+        </div>
+      </div>
+      <nav class="footer-links" aria-label="Project links">
+        <a href="characters.html">Characters</a>
+        <a href="https://github.com/DanWahlin/agent-buddy">GitHub</a>
+        <a href="https://github.com/DanWahlin/agent-buddy/releases/latest">Releases</a>
+        <a href="https://github.com/DanWahlin/agent-buddy#contents">Documentation</a>
+        <a href="https://github.com/DanWahlin/agent-buddy/blob/main/CHANGELOG.md">Changelog</a>
+      </nav>
+    </div>
+    <div class="container credits">
+      <p>Code under the <a href="https://github.com/DanWahlin/agent-buddy/blob/main/LICENSE">MIT License</a>. Agent Buddy and the Agent Buddy logo are trademarks of Dan Wahlin. <a href="https://github.com/DanWahlin/agent-buddy/blob/main/TRADEMARKS.md">Trademarks</a>.</p>
+    </div>
+  </footer>
+
+  <script src="live.js" defer></script>
+  <script src="packs.js" defer></script>
+  <script src="characters.js" defer></script>
+</body>
+</html>

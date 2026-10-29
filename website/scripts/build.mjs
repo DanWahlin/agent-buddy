@@ -12,7 +12,7 @@
 //   build/characters when you built them (python3 tools/character_pack.py
 //   build), or from the latest release's -characters.zip with --download or
 //   when build/characters is empty. The download needs the GitHub CLI (gh).
-// - packs/: the character packs that the Buddies page (buddies.html) offers, from
+// - packs/: the character packs that the Characters page (characters.html) offers, from
 //   website/packs/packs.json, or from the packs.json in --packs <folder>, such as
 //   agent-buddy-packs/dist/preview. Each pack holds one or more characters. The
 //   build checks every character's .acpk file, writes packs/index.json and each
@@ -103,7 +103,7 @@ fs.writeFileSync(path.join(out, ".nojekyll"), "");
 console.log(`Built ${path.relative(process.cwd(), out) || "."} with ${packs.length} character pack(s), `
   + `${addOnCharacters.length} of them in ${addOns.length} add-on pack(s).`);
 
-// The Buddies page's packs, in the order of packs.json:
+// The Characters page's packs, in the order of packs.json:
 //
 //   { "packs": [{ "id": "animal-pack", "name": "Animal Pack", "description": "...",
 //                 "note": "...", "preview": true, "featured": ["dog", "cat"],

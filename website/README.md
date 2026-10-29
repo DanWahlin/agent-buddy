@@ -29,19 +29,19 @@ The build copies the page and adds what the live demo ("Try it") needs:
   (`python3 tools/character_pack.py build`). If not, it downloads the latest
   release's `-characters.zip` with the GitHub CLI (`gh`). Add `--download` to
   always download them.
-- `packs/`, the list (`index.json`) and card images of the Buddies page's
+- `packs/`, the list (`index.json`) and card images of the Characters page's
   add-on packs (see below). Their `.acpk` files go to `engine/`.
 
 If the packs are missing, the live demo shows a recording.
 
-## Buddies page
+## Characters page
 
-`buddies.html` (<https://getagentbuddy.com/buddies.html>) lists the characters
+`characters.html` (<https://getagentbuddy.com/characters.html>) lists the characters
 that people can add to Agent Buddy, with a live preview of each one. People
 download a character, then add it in Settings with **Add character pack**, which
 copies it into the app's own folder. Every app version since 0.14 can do this.
-The page's old address, `gallery.html` (the character gallery), now only sends
-visitors to `buddies.html`, with the `#pack-<id>` part of the link, so old
+The page's old addresses, `gallery.html` and `buddies.html`, now only send
+visitors to `characters.html`, with the `#pack-<id>` part of the link, so old
 links still work.
 
 The page groups characters into packs, such as the Animal Pack. Each pack's
@@ -56,8 +56,8 @@ header. The live site uses the files on the `character-previews` pre-release
 unless you add `--packs <folder>`.
 
 The home page shows the packs too. Its live demo has chips for four characters
-of each pack, with a link to the pack on the Buddies page
-(`buddies.html#pack-<id>`). `packs.js` makes the chips for both pages.
+of each pack, with a link to the pack on the Characters page
+(`characters.html#pack-<id>`). `packs.js` makes the chips for both pages.
 
 ```json
 {
@@ -84,7 +84,7 @@ of each pack, with a link to the pack on the Buddies page
   **Free preview**, and their buttons say **Download preview**.
 - `featured` is optional. It lists the characters that the home page's live
   demo shows first, in that order. Without it, the demo shows the pack's first
-  four characters. The Buddies page always shows every character, in the order
+  four characters. The Characters page always shows every character, in the order
   of `characters`.
 - A character whose blink patches need firmware with adaptive patch RAM gets a
   "Needs current device firmware" line on its card.
@@ -98,7 +98,7 @@ file, so the site keeps one copy of each character. For a sharper card, add
 `<id>.webp` to the folder, a square still of the character on a black screen,
 like the posters in `assets/media/`.
 
-To see the Buddies page with packs on your computer, build the site from a pack
+To see the Characters page with packs on your computer, build the site from a pack
 folder. For example, the Animal Pack's free previews, which
 `tools/build_previews.py` in the private `agent-buddy-packs` repository makes:
 
@@ -114,7 +114,7 @@ publishes a release (it starts the deploy, so the demo gets the new packs), and
 on demand. In the repository's
 **Settings > Pages**, set **Source** to **GitHub Actions**.
 
-**The Buddies page's packs.** The workflow downloads `character-previews.zip`
+**The Characters page's packs.** The workflow downloads `character-previews.zip`
 from the `character-previews` release and builds with `--packs`. The zip holds
 `packs.json` and each character's `.acpk` and `.webp` files. The release is a
 pre-release, so it never becomes the latest release, and the app's download
@@ -144,14 +144,14 @@ issue the certificate:
 | File | What it holds |
 | --- | --- |
 | `index.html` | All the copy and sections |
-| `buddies.html` | The Buddies page, with the characters that people can add |
-| `gallery.html` | The page's old address. It sends visitors on to `buddies.html`. |
+| `characters.html` | The Characters page, with the characters that people can add |
+| `gallery.html`, `buddies.html` | The page's old addresses. They send visitors on to `characters.html`. |
 | `styles.css` | The design of both pages. Colors are in `:root` and match the overview video. |
 | `main.js` | Scroll scenes, video playback, and the live demo controls |
-| `buddies.js` | The Buddies page's pack cards and its live preview |
-| `packs.js` | Reads `packs/index.json` and makes the pack chips of the live demo and the Buddies page |
+| `characters.js` | The Characters page's pack cards and its live preview |
+| `packs.js` | Reads `packs/index.json` and makes the pack chips of the live demo and the Characters page |
 | `live.js` | Runs the engine on a canvas: packs, modes, badges, usage, and taps |
-| `packs/` | The Buddies page's character packs and `packs.json` |
+| `packs/` | The Characters page's character packs and `packs.json` |
 
 **The video.** `assets/media/overview.mp4` is the overview video's final render
 with music (`renders/video-with-music.mp4`), made smaller for the web. To update

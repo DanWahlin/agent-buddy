@@ -1,6 +1,6 @@
 'use strict';
 /* The character packs from packs/index.json (made by website/scripts/build.mjs). The home
-   page's live demo and the Buddies page's live preview show their characters as chips.
+   page's live demo and the Characters page's live preview show their characters as chips.
    Names and descriptions are always set as text, never as markup. */
 
 window.AgentBuddyPacks = (() => {
@@ -29,7 +29,7 @@ window.AgentBuddyPacks = (() => {
   }
 
   // The pack's name, then a chip for each character. With `few`, only that many show (see
-  // firstCharacters), and a link goes to the pack on the Buddies page.
+  // firstCharacters), and a link goes to the pack on the Characters page.
   function chips(pack, few) {
     const label = element('p', 'pack-name', pack.name);
     label.id = `chips-${pack.id}`;
@@ -49,8 +49,8 @@ window.AgentBuddyPacks = (() => {
     group.append(label, row);
     if (few) {
       const count = pack.characters.length;
-      const more = element('a', 'pack-more', count > few ? `See all ${count} buddies ` : 'See them on the Buddies page ');
-      more.href = `buddies.html#pack-${pack.id}`;
+      const more = element('a', 'pack-more', count > few ? `See all ${count} characters ` : 'See them on the Characters page ');
+      more.href = `characters.html#pack-${pack.id}`;
       const arrow = element('span', '', '›');
       arrow.setAttribute('aria-hidden', 'true');
       more.append(arrow);

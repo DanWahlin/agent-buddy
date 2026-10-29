@@ -1,5 +1,5 @@
 'use strict';
-/* Agent Buddy's Buddies page: the character packs from packs/index.json (made by
+/* Agent Buddy's Characters page: the character packs from packs/index.json (made by
    website/scripts/build.mjs), and a live preview that runs the device's own engine
    (live.js) on any of the characters. */
 
@@ -81,7 +81,7 @@ const packsLoaded = showChips().then((packs) => {
   if (!packs.length) return packs;
   $('#add-ons-empty').remove();
   $('#add-ons').append(...packs.map(packGroup));
-  // A link to a pack, such as buddies.html#pack-animal-pack from the home page, can only scroll once the pack is here.
+  // A link to a pack, such as characters.html#pack-animal-pack from the home page, can only scroll once the pack is here.
   const target = location.hash.startsWith('#pack-') && document.getElementById(location.hash.slice(1));
   if (target) target.scrollIntoView();
   return packs;
