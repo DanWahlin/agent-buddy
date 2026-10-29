@@ -81,7 +81,7 @@ function press(buttons, isOn) {
 /* ---------- Nav ---------- */
 
 const nav = $('#nav');
-// Only links to this page's sections: Gallery is another page.
+// Only links to this page's sections: Buddies is another page.
 const navLinks = $$('.nav-links a[href^="#"]');
 const sections = navLinks.map((a) => $(a.getAttribute('href')));
 // In-page links scroll smoothly once the page has loaded (styles.css explains why not before).
@@ -216,9 +216,9 @@ const liveState = { mode: 'idle', agents: ['copilot', 'claude'], character: 'cop
 let liveStarted = false;
 let liveEngine = false;
 let liveVisible = false;
-// The first characters of each pack join the demo, with a link to the rest in the gallery.
+// The first characters of each pack join the demo, with a link to the rest on the Buddies page.
 const PACK_CHIPS = 4;
-// A link such as ./#desktop on the gallery page opens this page at a section below the demo.
+// A link such as ./#desktop on the Buddies page opens this page at a section below the demo.
 let scrolledByHand = false;
 for (const type of ['wheel', 'touchmove', 'keydown', 'pointerdown'])
   addEventListener(type, () => { scrolledByHand = true; }, { once: true, passive: true });

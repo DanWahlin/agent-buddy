@@ -1,7 +1,7 @@
 'use strict';
 /* The character packs from packs/index.json (made by website/scripts/build.mjs). The home
-   page's live demo and the gallery's live preview show their characters as chips. Names and
-   descriptions are always set as text, never as markup. */
+   page's live demo and the Buddies page's live preview show their characters as chips.
+   Names and descriptions are always set as text, never as markup. */
 
 window.AgentBuddyPacks = (() => {
   function element(tag, className, text) {
@@ -20,13 +20,21 @@ window.AgentBuddyPacks = (() => {
     .then(({ packs }) => (Array.isArray(packs) ? packs.filter((pack) => pack?.characters?.length) : []))
     .catch(() => []);
 
-  // The pack's name, then a chip for each character. With `few`, only the first characters
-  // show, and a link goes to the pack in the gallery.
+  // The characters for `few` chips: the pack's featured ones in their order, then the others,
+  // so a pack that features none shows its first ones.
+  function firstCharacters(pack, few) {
+    const featured = (Array.isArray(pack.featured) ? pack.featured : [])
+      .map((id) => pack.characters.find((character) => character.id === id)).filter(Boolean);
+    return [...featured, ...pack.characters.filter((character) => !featured.includes(character))].slice(0, few);
+  }
+
+  // The pack's name, then a chip for each character. With `few`, only that many show (see
+  // firstCharacters), and a link goes to the pack on the Buddies page.
   function chips(pack, few) {
     const label = element('p', 'pack-name', pack.name);
     label.id = `chips-${pack.id}`;
     const row = element('div', 'chips');
-    for (const character of few ? pack.characters.slice(0, few) : pack.characters) {
+    for (const character of few ? firstCharacters(pack, few) : pack.characters) {
       const chip = element('button', 'chip', character.name);
       chip.type = 'button';
       chip.setAttribute('aria-pressed', 'false');
@@ -41,8 +49,8 @@ window.AgentBuddyPacks = (() => {
     group.append(label, row);
     if (few) {
       const count = pack.characters.length;
-      const more = element('a', 'pack-more', count > few ? `See all ${count} characters in the gallery ` : 'See them in the gallery ');
-      more.href = `gallery.html#pack-${pack.id}`;
+      const more = element('a', 'pack-more', count > few ? `See all ${count} buddies ` : 'See them on the Buddies page ');
+      more.href = `buddies.html#pack-${pack.id}`;
       const arrow = element('span', '', '›');
       arrow.setAttribute('aria-hidden', 'true');
       more.append(arrow);

@@ -69,7 +69,7 @@ desktop, with or without the device.
   Hermes Agent, and OpenClaw.
 - **Swappable characters:** the device holds one character at a time. It comes
   with Copilot, and you can install OpenClaw, Claude, Grok, a pack from the
-  [character gallery](https://getagentbuddy.com/gallery.html), or your own, over
+  [Buddies page](https://getagentbuddy.com/buddies.html), or your own, over
   USB or Wi-Fi.
 - **Settings:** a local web page for agents, badges, characters, Wi-Fi, the
   connection mode, and the desktop app, with light and dark themes.
@@ -693,7 +693,7 @@ shows each character that you can install, with the current one marked
 
 The app and release archives include **Copilot**, **OpenClaw**, **Claude**, and
 **Grok**. For more characters, see the
-[character gallery](https://getagentbuddy.com/gallery.html): download a pack,
+[Buddies page](https://getagentbuddy.com/buddies.html): download a pack,
 then add it in Settings.
 
 <p align="center">
@@ -703,7 +703,7 @@ then add it in Settings.
 - Select **Install** to switch characters. A progress bar tracks the transfer,
   which takes about a minute, and the device restarts when it's done.
 - Select **Add character pack** to add a `.acpk` pack, such as one from the
-  gallery or your own. Agent Buddy keeps a copy, so you can delete the
+  Buddies page or your own. Agent Buddy keeps a copy, so you can delete the
   download. To remove a pack that you added, select the **×** in the upper-right
   corner of its card. The installed character has no **×** until you install
   another one.

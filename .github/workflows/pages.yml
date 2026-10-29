@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: '24'
       - name: Download the character previews
-        # The gallery's free preview packs are files on the character-previews
+        # The Buddies page's free preview packs are files on the character-previews
         # pre-release (see website/README.md). A pre-release never becomes the
         # latest release, so the app downloads don't change.
         run: |
@@ -51,7 +51,7 @@ jobs:
       - name: Build the website
         # Copies the engine from desktop/engine/prebuilt, downloads the
         # character packs from the latest release for the live demo, and adds
-        # the gallery's previews.
+        # the Buddies page's previews.
         run: node website/scripts/build.mjs --out _site --download --packs "$RUNNER_TEMP/previews"
         env:
           GH_TOKEN: ${{ github.token }}

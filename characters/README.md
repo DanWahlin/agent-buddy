@@ -8,8 +8,8 @@ add-on packs from `build/characters`.
 Keep all other character sources, previews, and pack builds in a separate
 private repository. Import their finished `.acpk` files with **Add character
 pack** in Settings. Imported packs remain separate from the shipped built-ins.
-To offer a finished pack to everyone, add it to the website's character gallery
-([`website/README.md`](../website/README.md#character-gallery)).
+To offer a finished pack to everyone, add it to the website's Buddies page
+([`website/README.md`](../website/README.md#buddies-page)).
 
 Each lowercase folder is a self-contained character pack source. `character.json` tells the generic packer where to find the packed frame payload, metadata, and optional validator:
 

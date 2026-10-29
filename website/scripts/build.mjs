@@ -12,7 +12,7 @@
 //   build/characters when you built them (python3 tools/character_pack.py
 //   build), or from the latest release's -characters.zip with --download or
 //   when build/characters is empty. The download needs the GitHub CLI (gh).
-// - packs/: the character packs that the gallery (gallery.html) offers, from
+// - packs/: the character packs that the Buddies page (buddies.html) offers, from
 //   website/packs/packs.json, or from the packs.json in --packs <folder>, such as
 //   agent-buddy-packs/dist/preview. Each pack holds one or more characters. The
 //   build checks every character's .acpk file, writes packs/index.json and each
@@ -86,8 +86,8 @@ for (const character of addOnCharacters) {
   packs.push({ id: character.id, bytes: character.bytes });
 }
 fs.writeFileSync(path.join(addOnDir, "index.json"), JSON.stringify({
-  packs: addOns.map(({ id, name, description, note, preview, characters }) => ({
-    id, name, description, note, preview,
+  packs: addOns.map(({ id, name, description, note, preview, featured, characters }) => ({
+    id, name, description, note, preview, featured,
     characters: characters.map((character) => ({
       id: character.id, name: character.name, kind: character.kind, description: character.description,
       bytes: character.bytes, sha256: character.sha256, file: `engine/${character.id}.acpk`,
@@ -101,17 +101,18 @@ fs.writeFileSync(path.join(engineDir, "packs.json"), JSON.stringify({ packs }, n
 fs.writeFileSync(path.join(out, ".nojekyll"), "");
 
 console.log(`Built ${path.relative(process.cwd(), out) || "."} with ${packs.length} character pack(s), `
-  + `${addOnCharacters.length} of them in ${addOns.length} gallery pack(s).`);
+  + `${addOnCharacters.length} of them in ${addOns.length} add-on pack(s).`);
 
-// The gallery's packs, in the order of packs.json:
+// The Buddies page's packs, in the order of packs.json:
 //
 //   { "packs": [{ "id": "animal-pack", "name": "Animal Pack", "description": "...",
-//                 "note": "...", "preview": true,
+//                 "note": "...", "preview": true, "featured": ["dog", "cat"],
 //                 "characters": [{ "id": "dog", "name": "Biscuit", "kind": "puppy",
 //                                  "description": "..." }] }] }
 //
-// "note", "preview" (free previews of paid characters), and each character's "name"
-// (instead of the name in its pack) and "kind" are optional. Each character is
+// "note", "preview" (free previews of paid characters), "featured" (the characters that
+// the home page's live demo shows, in that order, instead of the first ones), and each
+// character's "name" (instead of the name in its pack) and "kind" are optional. Each character is
 // <folder>/<id>.acpk, and can have a poster, <folder>/<id>.webp: a square still of
 // the character, like assets/media/<id>.webp. Without a poster, the card shows the
 // small thumbnail inside the character's pack.
@@ -132,7 +133,7 @@ function readAddOns(folder) {
   const groups = new Set();
   const seen = new Set();
   return entries.map((entry) => {
-    const { id, name, description, note, preview, characters } = entry ?? {};
+    const { id, name, description, note, preview, featured, characters } = entry ?? {};
     if (typeof id !== "string" || !GROUP_ID.test(id)) throw new Error(`${list}: "${id}" is not a valid pack id.`);
     if (groups.has(id)) throw new Error(`${list}: the pack "${id}" is in the list twice.`);
     groups.add(id);
@@ -140,8 +141,14 @@ function readAddOns(folder) {
     if (note !== undefined && !text(note)) throw new Error(`${list}: the note of the pack "${id}" must be text.`);
     if (preview !== undefined && typeof preview !== "boolean") throw new Error(`${list}: "preview" of the pack "${id}" must be true or false.`);
     if (!Array.isArray(characters) || !characters.length) throw new Error(`${list}: the pack "${id}" needs characters.`);
+    const ids = characters.map((character) => character?.id);
+    if (featured !== undefined && (!Array.isArray(featured) || !featured.length || new Set(featured).size !== featured.length
+      || featured.some((character) => !ids.includes(character)))) {
+      throw new Error(`${list}: "featured" of the pack "${id}" must list some of its characters, each one time.`);
+    }
     return {
       id, name: name.trim(), description: description.trim(), note: note?.trim() ?? null, preview: preview === true,
+      featured: featured ?? null,
       characters: characters.map((character) => readAddOnCharacter(folder, list, seen, character)),
     };
   });

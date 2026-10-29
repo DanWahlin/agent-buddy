@@ -1,5 +1,5 @@
 'use strict';
-/* Agent Buddy character gallery: the character packs from packs/index.json (made by
+/* Agent Buddy's Buddies page: the character packs from packs/index.json (made by
    website/scripts/build.mjs), and a live preview that runs the device's own engine
    (live.js) on any of the characters. */
 
@@ -76,12 +76,12 @@ function packGroup(pack) {
   return group;
 }
 
-// Resolves with the gallery's packs. Without them, the page keeps its "coming soon" card.
+// Resolves with the page's packs. Without them, the page keeps its "coming soon" card.
 const packsLoaded = showChips().then((packs) => {
   if (!packs.length) return packs;
   $('#add-ons-empty').remove();
   $('#add-ons').append(...packs.map(packGroup));
-  // A link to a pack, such as gallery.html#pack-animal-pack from the home page, can only scroll once the pack is here.
+  // A link to a pack, such as buddies.html#pack-animal-pack from the home page, can only scroll once the pack is here.
   const target = location.hash.startsWith('#pack-') && document.getElementById(location.hash.slice(1));
   if (target) target.scrollIntoView();
   return packs;
@@ -172,7 +172,7 @@ async function startLive() {
     $$('#live-chars [data-char]').forEach((b) => { if (!available.includes(b.dataset.char)) b.hidden = true; });
     $$('[data-preview]').forEach((b) => { if (!available.includes(b.dataset.preview)) b.hidden = true; });
     hideMissing(available);
-    // A pack character shows first, because new characters are what the gallery is for.
+    // A pack character shows first, because new characters are what this page is for.
     const offered = $$('#console [data-char]').filter((b) => !b.hidden).map((b) => b.dataset.char);
     const first = packs.flatMap((pack) => pack.characters).find((character) => offered.includes(character.id))?.id
       ?? (offered.includes('copilot') ? 'copilot' : offered[0]);
