@@ -48,7 +48,7 @@ constexpr LabeledButton kModeButtons[] = {
   {{58, 306, 165, 34}, SettingsAction::Idle, "Idle", 2},
   {{243, 306, 165, 34}, SettingsAction::Working, "Working", 2},
   {{58, 344, 165, 34}, SettingsAction::Complete, "Complete", 2},
-  {{243, 344, 165, 34}, SettingsAction::Attention, "Needs attention", 1},
+  {{243, 344, 165, 34}, SettingsAction::Attention, "Attention", 2},
   {{58, 382, 165, 34}, SettingsAction::Surprise, "Surprise", 2},
   {{243, 382, 165, 34}, SettingsAction::Close, "Close", 2},
 };

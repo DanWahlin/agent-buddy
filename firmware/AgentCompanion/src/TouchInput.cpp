@@ -21,7 +21,8 @@ bool initialized = false;
 // the flag is already set, the line can stay asserted with no further edge to
 // wake us and touch would stop for good with no error reported. Sweeping the
 // controller occasionally clears any latched state and also recovers the missed
-// touch itself.
+// touch itself. A board whose controller pulses the line instead, and doesn't
+// answer between touches, turns the sweep off (board::kTouchIdleSweep).
 uint32_t lastTouchReadMs = 0;
 float touchRotation = 0.0f;
 
@@ -57,7 +58,7 @@ bool initializeTouchInput() {
     return false;
   }
   board::configureTouch(controller);
-  controller.setMaxCoordinates(kPanelSize - 1, kPanelSize - 1);
+  controller.setMaxCoordinates(kPanelWidth - 1, kPanelHeight - 1);
   controller.setMirrorXY(kTouchMirrorX, kTouchMirrorY);
   Wire.setTimeOut(8);
   pinMode(kTouchInterrupt, INPUT_PULLUP);
@@ -81,7 +82,7 @@ bool pollTouchGesture(TouchGesture& gesture) {
   pending = false;
   portEXIT_CRITICAL(&touchLock);
   const uint32_t now = esp_timer_get_time() / 1000;
-  const bool sweep = now - lastTouchReadMs >= kTouchSweepMs;
+  const bool sweep = board::kTouchIdleSweep && now - lastTouchReadMs >= kTouchSweepMs;
   if (!ready && !tracker.active() && !sweep) return false;
   lastTouchReadMs = now;
   int16_t x[2] = {}, y[2] = {};
@@ -91,8 +92,9 @@ bool pollTouchGesture(TouchGesture& gesture) {
   if (!ready && !tracker.active() && !count) return false;
   if (count) {
     int16_t transformedX, transformedY;
-    if (!ScreenOrientation::panelToContent(
-            touchRotation, kPanelSize, kDisplaySize, x[0], y[0], transformedX, transformedY)) {
+    if (!ScreenOrientation::panelToContent(touchRotation, kPanelWidth, kPanelHeight, kDisplaySize,
+                                           kShownContentSize, x[0], y[0], transformedX,
+                                           transformedY)) {
       return tracker.sample(false, 0, 0, now, gesture);
     }
     x[0] = transformedX;

@@ -3,7 +3,7 @@ import {
   isOrientationOffset, isOrientationTenths, orientationFromTenths, orientationProtocol,
   type DeviceOrientation,
 } from './orientation-settings.js';
-import {assertReleaseBoard, deviceBoard, releaseBoard} from './firmware-release.js';
+import {assertReleaseBoard, deviceBoard} from './firmware-release.js';
 import {deviceNetwork, type CharacterState, type DeviceNetwork, type InstallProgress} from './protocol.js';
 import {
   activePacket,
@@ -62,7 +62,8 @@ export class WifiTransport {
   #character: string | null = null;
   #adaptivePatchRam = false;
   #firmware: string | null = null;
-  #board: string = releaseBoard;
+  // The board the device reports in its status; null when it reports none (see deviceBoard).
+  #board: string | null = null;
   #orientation: DeviceOrientation | null = null;
   #ssidBase64: string | undefined;
   #installing = false;
@@ -93,9 +94,18 @@ export class WifiTransport {
     return this.#connected ? this.#firmware : null;
   }
 
-  // The board the device's firmware is built for.
+  // The board the device's firmware is built for; null when the device does not report it.
   get board(): string | null {
     return this.#connected ? this.#board : null;
+  }
+
+  // The paired device's ID: its MAC address as 16 hex digits (see NetworkManager::ensureIdentity).
+  get deviceId(): string | null {
+    return this.#connected ? this.#config?.deviceId ?? null : null;
+  }
+
+  get protocol(): number | null {
+    return this.#connected ? this.#protocol : null;
   }
 
   get orientation(): DeviceOrientation | null {

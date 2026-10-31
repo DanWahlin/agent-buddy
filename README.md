@@ -20,6 +20,10 @@ Claude Code, Codex, Grok Build, Hermes Agent, or OpenClaw starts working,
 needs your approval, or finishes, the character shows it, along with a small
 badge for the agent involved.
 
+It also works with the Waveshare
+[ESP32-S3-Touch-AMOLED-2.06](https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm) and
+[ESP32-S3-Touch-LCD-1.54](https://www.waveshare.com/esp32-s3-lcd-1.54.htm?sku=33868) (the Touch model).
+
 Everything runs locally. There's no cloud service, account, or subscription, and
 the device works over USB or your local Wi-Fi.
 
@@ -103,7 +107,7 @@ flowchart LR
 
 | Item | Details |
 | --- | --- |
-| Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262). The **Waveshare ESP32-S3-Touch-LCD-1.54** also works. Other ESP32 displays need their own board target ([Boards](docs/development.md#boards)). |
+| Device | **Waveshare ESP32-S3-Touch-AMOLED-1.75-B or 1.75-C** from [Amazon](https://www.amazon.com/dp/B0FBWDL117) or [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm?sku=31262). These also work: the **Waveshare ESP32-S3-Touch-AMOLED-2.06** from [Waveshare](https://www.waveshare.com/esp32-s3-touch-amoled-2.06.htm), and the **Waveshare ESP32-S3-Touch-LCD-1.54** from [Waveshare](https://www.waveshare.com/esp32-s3-lcd-1.54.htm?sku=33868). Get the Touch model of the 1.54: the ESP32-S3-LCD-1.54 has no touch screen, and Agent Buddy doesn't start on it. Other ESP32 displays need their own board target ([Boards](docs/development.md#boards)). |
 | Cable | A USB data cable (charge-only cables won't work) |
 | Computer | macOS, Linux, or Windows (x64 or Arm64). On Windows, the desktop app runs the companion service natively, and agents in [WSL 2](#windows-wsl-2) use it too. |
 | Python | Only to flash the firmware without the desktop app: [3.10 or newer](https://www.python.org/downloads/). The `python3` that comes with macOS is too old. |
@@ -228,10 +232,12 @@ the source code. To build the firmware yourself, see
    `brew install python`, then open a new terminal and check again.
 
 2. From [Releases](https://github.com/DanWahlin/agent-buddy/releases/latest),
-   download `agent-buddy-v<version>-firmware.zip` and extract it. For the
-   Waveshare ESP32-S3-Touch-LCD-1.54, download
-   `agent-buddy-v<version>-waveshare-lcd-154-firmware.zip` instead. Never flash
-   one board's firmware to a different board.
+   download `agent-buddy-v<version>-firmware.zip` and extract it. For another
+   board, download the ZIP with its board ID instead:
+   `agent-buddy-v<version>-waveshare-amoled-206-firmware.zip` for the Waveshare
+   ESP32-S3-Touch-AMOLED-2.06, or
+   `agent-buddy-v<version>-waveshare-lcd-154-firmware.zip` for the Waveshare
+   ESP32-S3-Touch-LCD-1.54. Never flash one board's firmware to a different board.
 3. Open a terminal in the extracted folder (it contains `flash.py`) and install
    the flashing tool:
 
@@ -286,8 +292,10 @@ around. Leave the cable plugged in for the next step.
   `python3.13 -m venv --clear .venv`, and install the requirements again.
 - **Linux can't create the environment:** install your distribution's
   `python3-venv` package.
-- **Download mode or connection problems:** see the
-  [Waveshare board guide](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75).
+- **Download mode or connection problems:** see the Waveshare guide for your
+  board: [AMOLED-1.75](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75),
+  [AMOLED-2.06](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.06), or
+  [LCD-1.54](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.54).
 - Don't flash the application `.bin` on its own or mix files from different
   releases. `flash.py` writes the matched set at the right addresses.
 
@@ -450,7 +458,7 @@ without a touch.
 | Brightness | Adjusts display brightness |
 | Volume | Sets sound from Off to 100% (default 50%, remembered across restarts) |
 | Character | Shows the installed character |
-| Character state | Previews Idle, Working, Complete, Needs attention, or Surprise |
+| Character state | Previews Idle, Working, Complete, Attention (the Needs attention state), or Surprise |
 
 **Press the BOOT button** on the board to open the companion's Settings on your
 computer. This needs the companion service, connected over USB or Wi-Fi (over
@@ -854,8 +862,8 @@ Run these from the repository folder.
 
 In Settings, open the **Device** tab and select **Detect device**. It looks for the
 device right away and says what is wrong: no device on USB, the USB port in use by
-another program, a device that doesn't answer (it needs firmware), or Wi-Fi mode
-ignoring USB. Then:
+another program, a device that doesn't answer (it needs firmware), several devices
+that answer, or Wi-Fi mode ignoring USB. Then:
 
 1. Make sure the cable carries data and is plugged in. Close any serial monitor or
    `flash.py` run that's still using the port.
@@ -865,6 +873,9 @@ ignoring USB. Then:
    ([see Step 2](#step-2-install-the-companion-service)). In WSL, attach the device
    with `usbipd` ([see Windows](#windows-wsl-2)).
 4. For Wi-Fi, check the items under **Wi-Fi won't connect** below.
+5. If several Agent Buddy devices are connected over USB, Agent Buddy uses none of
+   them until you choose one. The Device tab shows **Choose a device**: select
+   **Use this device** for yours. Agent Buddy remembers your choice.
 
 </details>
 
@@ -905,8 +916,10 @@ ignoring USB. Then:
   damage the device. Install again from Settings, which starts over.
 - **Connection problems while it writes:** disconnect the USB cable. Hold BOOT,
   connect the cable, then release BOOT. Install again. If it
-  still fails, use [Step 1](#step-1-flash-the-firmware) or the
-  [Waveshare board guide](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75).
+  still fails, use [Step 1](#step-1-flash-the-firmware) or the Waveshare guide
+  for your board ([AMOLED-1.75](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75),
+  [AMOLED-2.06](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-2.06), or
+  [LCD-1.54](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.54)).
 
 </details>
 

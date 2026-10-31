@@ -183,6 +183,10 @@ class FakeService extends EventEmitter {
   async detectUsbDevices() {
     return {ports: [{path: '/dev/test', pid: 0x1001}], connected: this.connected ? '/dev/test' : null};
   }
+  chosenDevices: string[] = [];
+  async chooseUsbDevice(path: string) {
+    this.chosenDevices.push(path);
+  }
   async applyOnboardingDisplay() {
     this.setupActions.push('display');
   }
@@ -649,6 +653,12 @@ test('onboarding APIs require authentication, valid choices, and explicit instal
     assert.deepEqual(JSON.parse((await call('/api/devices')).body).ports, [{path: '/dev/test', pid: 0x1001}]);
     assert.equal((await post('/api/devices/detect', {}, false)).status, 401);
     assert.equal(JSON.parse((await post('/api/devices/detect', {})).body).result, 'no-device');
+    // Choosing one of several devices that answer needs the token and a port.
+    assert.equal((await post('/api/devices/choose', {path: '/dev/test'}, false)).status, 401);
+    assert.equal((await post('/api/devices/choose', {})).status, 400);
+    assert.equal((await post('/api/devices/choose', {path: 7})).status, 400);
+    assert.equal((await post('/api/devices/choose', {path: '/dev/test'})).status, 200);
+    assert.deepEqual(service.chosenDevices, ['/dev/test']);
     assert.equal((await post('/api/onboarding/device', {flash: true})).status, 400);
     assert.equal((await post('/api/onboarding/device', {flash: 'true', confirmed: true})).status, 400);
     service.setupBusy = true;

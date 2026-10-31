@@ -85,17 +85,21 @@ a small board layer holds the parts that change from one model to a different mo
 | --- | --- |
 | `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` builds without `BOARD` and that releases package. CI builds every board. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver and `configureTouch()`, `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver, `configureTouch()`, and `kTouchIdleSweep` (whether the firmware also reads touch every 250 ms between touches), `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
-| `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, and Espressif's ES8311 driver. They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
+| `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, Espressif's ES8311 driver, and `Ft3168Touch.h` (the FT3168 touch controller, which SensorLib doesn't support). They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
 
 Every board draws the same 466 x 466 content (`kDisplaySize`): the character
-packs, the settings layouts, and the effects use that size. `kPanelSize` is the
-panel's own size. A panel smaller than the content shows all of it scaled down
-(to half size at most): `ScreenTransform` averages 2 x 2 blocks of content
-pixels while it rotates, and touch maps back through the same transform. A
-smaller panel also uses the compact settings layout (`compact_layout` in
-`SettingsMenu.h`) and one size larger text on the other screens (`kCompactUi`).
+packs, the settings layouts, and the effects use that size. Each board gives
+its panel's size (`kPanelWidth` x `kPanelHeight`) and the size at which the
+panel shows the content around its center (`kShownContentSize`). At full size
+(466), a panel narrower or shorter than the content shows the middle of the
+content, and black fills the rest of a wider or taller panel. A smaller size
+(half size at most) shows all of the content scaled down: `ScreenTransform`
+averages 2 x 2 blocks of content pixels while it rotates. Touch maps back
+through the same transform. A board that shows the content smaller also uses
+the compact settings layout (`compact_layout` in `SettingsMenu.h`) and one size
+larger text on the other screens (`kCompactUi`).
 
 A board's `accelerometer()` gives `begin()` (returns `nullptr` or the failure
 reason) and `read(x, y, z)` (returns `false` when no new sample is ready). The
@@ -121,6 +125,7 @@ the board, so an upload for a different `BOARD` fails until you build again. The
 python3 tools/boards.py list
 BOARD=waveshare-amoled-175 bash tools/arduino.sh build
 BOARD=waveshare-lcd-154 bash tools/arduino.sh build
+BOARD=waveshare-amoled-206 bash tools/arduino.sh build
 ```
 
 Supported now:
@@ -129,10 +134,11 @@ Supported now:
 | --- | --- | --- | --- |
 | `waveshare-amoled-175` (default) | Waveshare ESP32-S3-Touch-AMOLED-1.75-B and -C | CO5300 466 x 466 round AMOLED, QSPI | CST9217 |
 | `waveshare-lcd-154` | Waveshare ESP32-S3-Touch-LCD-1.54 | ST7789 240 x 240 IPS LCD, SPI, PWM backlight | CST816 |
+| `waveshare-amoled-206` | Waveshare ESP32-S3-Touch-AMOLED-2.06 | CO5300 410 x 502 AMOLED, QSPI | FT3168 |
 
-Both boards use the same pinned Waveshare libraries (from the AMOLED-1.75
+All boards use the same pinned Waveshare libraries (from the AMOLED-1.75
 repository: GFX Library for Arduino 1.6.4 and SensorLib 0.3.1), so one
-`WAVESHARE_DIR` serves both.
+`WAVESHARE_DIR` serves all of them.
 
 #### Add a board
 
@@ -150,9 +156,11 @@ Known limits for boards that are not similar to the current board:
   bus, the SPI mode, any pixel-write prefix, and the chip select and
   data/command pins. A parallel RGB panel (for example ST7701) needs a
   different display backend.
-- Character packs and the renderer use 466 x 466 art. A panel from 233 to 466
-  pixels shows it scaled; a smaller or larger panel needs a different scale or
-  different art.
+- Character packs and the renderer use 466 x 466 art. A board shows it at full
+  size, or scaled down to as small as 233 x 233 (`kShownContentSize`). At full
+  size, the panel's width and height must each differ from 466 by an even number
+  of pixels. A much smaller or larger panel needs a different scale or different
+  art.
 - A board without an IMU or a speaker must still give `accelerometer()` and
   `audioOutput()`. Their `begin()` can return a reason, and the firmware then
   runs without orientation or sound.
@@ -163,19 +171,56 @@ Known limits for boards that are not similar to the current board:
   (`tools/package_release.py --all-boards`). Each ZIP's `manifest.json` names its
   `board`. Add a new board to `firmwareBoards` in `daemon/src/firmware-release.ts`
   too; a daemon test checks that the two lists match.
-- The app installs only the firmware for the device's board. A device that answers
-  over USB names its board (the `BOARD` line), and that board wins: a different
-  choice is refused. A device that does not answer, or whose firmware sends no
-  `BOARD` line (firmware from before the line, which includes LCD-1.54 builds),
-  can't name its board over USB, so setup and Settings ask the person to choose it
-  once, and the confirmation names the board. Over Wi-Fi, firmware names its board
-  in its status. The
-  daemon checks the downloaded manifest's board, and the desktop app's flasher
-  (`--board <id>`) checks it again before it writes. A device of a board that
-  releases have no firmware for shows **Other board** and installs from source
-  (`BOARD=<id> bash tools/arduino.sh upload <port>`). Firmware written to the wrong
-  board can leave the screen dark; the ESP32-S3's ROM bootloader still works, so
-  hold BOOT while you connect USB and install the right board's firmware.
+- The app installs only the firmware for the device's board (see
+  [How the app finds the device and its board](#how-the-app-finds-the-device-and-its-board)).
+  A device of a board that releases have no firmware for shows **Other board** and
+  installs from source (`BOARD=<id> bash tools/arduino.sh upload <port>`). Firmware
+  written to the wrong board can leave the screen dark; the ESP32-S3's ROM
+  bootloader still works, so hold BOOT while you connect USB and install the right
+  board's firmware.
+
+#### How the app finds the device and its board
+
+The app never guesses which device to use or which board a device is. When it
+can't tell, it says so, and the person chooses.
+
+- **Which USB device.** The service looks at the USB ports of Espressif devices
+  (vendor ID 303a). It uses the only one, or, when there are several, it asks each
+  device for its `INFO` reply (`i`) and uses the only one that answers as Agent
+  Buddy. When several answer, it uses none of them: the Device tab in Settings
+  shows **Choose a device**, with each device's board, port, USB serial number,
+  and character. The service saves the choice in `connection.json` (`usbDevice`,
+  matched by the USB serial number, which is the ESP32-S3's MAC address), and uses
+  it whenever several devices answer again. The chosen device, and a device that
+  answered before, still count when they don't answer for a moment (for example,
+  while a device installs a character over Wi-Fi), so the service doesn't take the
+  other device then. When the service uses another device because the chosen one
+  wasn't there, it looks for the chosen device every 10 seconds and switches to it
+  when it answers, after the current command (such as a character upload)
+  finishes. In setup, the port that the person
+  selects is the choice, and setup saves the device that it set up. A port that
+  `AGENT_COMPANION_PORT` names, or that setup or an install selects, is used
+  alone, and the service doesn't switch from it.
+- **Which board.** Only the device names its board: the `BOARD` line of its USB
+  `i` reply, or `board` in its Wi-Fi status. The app doesn't assume a board for
+  firmware that reports none (older firmware). Settings then shows **Board not
+  reported** and compares the device with no release, and a firmware install asks
+  the person to choose the board. On the supported boards, firmware for a
+  different board stops when it starts the touch controller (`FATAL` on USB), so
+  such a device doesn't answer, and the person chooses its board.
+- **Before firmware is written.** The board that the device reports wins, and a
+  different choice is refused (`chooseFirmwareBoard`). The service checks the
+  board in the downloaded manifest (a manifest without a board is refused), and
+  checks again after the download that the port has the same USB serial number.
+  The desktop app's flasher compares the manifest's board with `--board <id>`.
+  `flash.py` asks the device on its port for its board first, without a reset: a
+  different board is refused, and a device that doesn't say needs the
+  confirmation.
+- **What Settings shows.** The Device tab and the status card's connection details
+  show the board's name, ID, and variant, the firmware (release, local build, or
+  ID), the character, the MAC address, and the protocol. The build from this
+  computer (`build/firmware`) is the default board's firmware, so only a device of
+  that board is compared with it.
 
 #### Waveshare ESP32-S3-Touch-LCD-1.54
 
@@ -201,6 +246,38 @@ Notes for this board:
   `audioOutput()` waits that long before each sound.
 - The firmware does not use the PWR and PLUS buttons, the battery voltage, the
   ES7210 microphones, the SD card, or the RTC yet.
+
+#### Waveshare ESP32-S3-Touch-AMOLED-2.06
+
+Pins come from `pin_config.h` and the examples at revision
+`30f3b23b3d4bb38d32f7d0cddffb66759668a855` of
+[ESP32-S3-Touch-AMOLED-2.06](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-2.06).
+The build uses the AMOLED-1.75 libraries; their CO5300 driver is the same as
+the one in that repository.
+
+| Part | Pins |
+| --- | --- |
+| CO5300 display (QSPI, 80 MHz) | CS 12, SCK 11, D0..D3 4..7, RST 8, column offset 22 |
+| FT3168 touch | SDA 15, SCL 14, INT 38, RST 9, address 0x38 |
+| QMI8658 IMU | Same I2C bus, address 0x6B |
+| ES8311 codec | MCLK 16, BCLK 41, WS 45, DOUT 40, amplifier enable 46, address 0x18 |
+| Power | AXP2101 at 0x34 on the same bus. Its default outputs power the board, so the firmware doesn't configure it. |
+
+Notes for this board:
+
+- The panel is 410 x 502. It shows the 466 x 466 content at full size: the
+  middle 410 columns, with 18 black rows above and below them. The character
+  and the settings pages fit; the edges of some effects are cut off at the far
+  left and right.
+- SensorLib's FT6X36 driver doesn't accept the FT3168, so the board uses
+  `drivers/Ft3168Touch.h`. It resets the controller and sets active mode.
+- About 10 s after the last touch, the FT3168 goes to monitor mode by itself.
+  In monitor mode, it doesn't answer on I2C until a touch wakes it, so this
+  board sets `kTouchIdleSweep` to `false`: the firmware reads touch only after
+  an interrupt pulse and during a touch, as Waveshare's factory firmware does.
+- The QMI8658 axes are already the orientation frame.
+- The firmware does not use the PWR button, the battery gauge, the ES7210
+  microphones, the SD card, or the PCF85063 RTC yet.
 
 ### Reproduce the toolchain
 
@@ -1328,8 +1405,9 @@ current after an update. The `i` reply also has a
 firmware for that board. It is its own line, so the `INFO` line keeps its fields
 and stays well within the 512-byte limit of the firmware's log messages (a longer
 message is dropped; `tests/test_boards.py` checks the longest `INFO` line). A
-reply without a `BOARD` line comes from firmware built before more than one board
-was supported, which is always the default board. Keep `maxProtocol` in `daemon/src/usb-transport.ts`
+reply without a `BOARD` line comes from older firmware, and the app doesn't assume
+a board for it (see
+[How the app finds the device and its board](#how-the-app-finds-the-device-and-its-board)). Keep `maxProtocol` in `daemon/src/usb-transport.ts`
 equal to `kDeviceProtocol` in the firmware. A join attempt in
 progress pauses for the scan and resumes when it ends. The settings page reads
 the merged list from `GET /api/wifi/networks`. While the device reports a saved

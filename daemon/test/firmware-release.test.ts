@@ -99,23 +99,23 @@ test('downloads a release firmware, checks it, and keeps it', async () => {
     const requests: string[] = [];
     const releases = new FirmwareReleases({
       directory, baseUrl: 'https://example.test/releases/',
-      fetch: fakeGitHub({'v1.2.3/SHA256SUMS': sums, [`v1.2.3/${firmwareAssetName('1.2.3')}`]: archive}, requests),
+      fetch: fakeGitHub({'v1.2.3/SHA256SUMS': sums, [`v1.2.3/${firmwareAssetName('1.2.3', 'waveshare-amoled-175')}`]: archive}, requests),
     });
-    assert.equal(await releases.saved('1.2.3'), null);
+    assert.equal(await releases.saved('1.2.3', 'waveshare-amoled-175'), null);
     const seen: number[] = [];
-    const firmware = await releases.prepare('1.2.3', received => seen.push(received));
+    const firmware = await releases.prepare('1.2.3', received => seen.push(received), 'waveshare-amoled-175');
     assert.equal(firmware.id, '5c5c5c5c5c5c5c5c');
     assert.equal(firmware.dir, join(directory, 'v1.2.3'));
     assert.deepEqual(await readFile(join(firmware.dir, 'bin', 'application.bin')), appImage());
     assert.equal(seen.at(-1), archive.length);
     assert.equal(requests.length, 2);
     // A second install uses the saved copy.
-    assert.equal((await releases.prepare('1.2.3')).id, firmware.id);
-    assert.equal((await releases.saved('1.2.3'))?.id, firmware.id);
+    assert.equal((await releases.prepare('1.2.3', undefined, 'waveshare-amoled-175')).id, firmware.id);
+    assert.equal((await releases.saved('1.2.3', 'waveshare-amoled-175'))?.id, firmware.id);
     assert.equal(requests.length, 2);
     // The desktop build reads the same ID from the ZIP.
-    assert.equal(releaseFirmwareId(archive, '1.2.3'), firmware.id);
-    assert.throws(() => releaseFirmwareId(archive, '1.2.4'), /not agent-buddy v1.2.4/);
+    assert.equal(releaseFirmwareId(archive, '1.2.3', 'waveshare-amoled-175'), firmware.id);
+    assert.throws(() => releaseFirmwareId(archive, '1.2.4', 'waveshare-amoled-175'), /not agent-buddy v1.2.4/);
   } finally {
     await rm(directory, {recursive: true, force: true});
   }
@@ -123,9 +123,10 @@ test('downloads a release firmware, checks it, and keeps it', async () => {
 
 test('refuses a damaged or unsafe release firmware', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'release-'));
-  const asset = `v1.2.3/${firmwareAssetName('1.2.3')}`;
+  const asset = `v1.2.3/${firmwareAssetName('1.2.3', 'waveshare-amoled-175')}`;
   const attempt = (assets: Record<string, Buffer | string>) =>
-    new FirmwareReleases({directory, baseUrl: 'https://example.test/releases', fetch: fakeGitHub(assets)}).prepare('1.2.3');
+    new FirmwareReleases({directory, baseUrl: 'https://example.test/releases', fetch: fakeGitHub(assets)})
+      .prepare('1.2.3', undefined, 'waveshare-amoled-175');
   try {
     const good = release('1.2.3');
     await assert.rejects(attempt({}), /does not exist/);
@@ -142,10 +143,14 @@ test('refuses a damaged or unsafe release firmware', async () => {
     const swapped = release('1.2.3', manifest => { manifest.board = 'waveshare-lcd-154'; });
     await assert.rejects(attempt({'v1.2.3/SHA256SUMS': swapped.sums, [asset]: swapped.archive}),
                          /for board waveshare-lcd-154, not waveshare-amoled-175/);
+    // A bundle that does not name its board is refused, not taken for the default board.
+    const unnamed = release('1.2.3', manifest => { delete manifest.board; });
+    await assert.rejects(attempt({'v1.2.3/SHA256SUMS': unnamed.sums, [asset]: unnamed.archive}),
+                         /does not say which board/);
     const other = release('1.2.4');
     await assert.rejects(attempt({'v1.2.3/SHA256SUMS': `${createHash('sha256').update(other.archive).digest('hex')}  ${
-      firmwareAssetName('1.2.3')}\n`, [asset]: other.archive}), /not agent-buddy v1.2.3/);
-    await assert.rejects(new FirmwareReleases({directory}).prepare('../1'), /Unsupported release version/);
+      firmwareAssetName('1.2.3', 'waveshare-amoled-175')}\n`, [asset]: other.archive}), /not agent-buddy v1.2.3/);
+    await assert.rejects(new FirmwareReleases({directory}).prepare('../1', undefined, 'waveshare-amoled-175'), /Unsupported release version/);
   } finally {
     await rm(directory, {recursive: true, force: true});
   }
@@ -158,14 +163,15 @@ test('downloads and keeps the release firmware of each board apart', async () =>
     const lcd = release('1.2.3', () => undefined, 'waveshare-lcd-154', 0x6d);
     const lcdAsset = firmwareAssetName('1.2.3', 'waveshare-lcd-154');
     assert.equal(lcdAsset, 'agent-buddy-v1.2.3-waveshare-lcd-154-firmware.zip');
-    assert.equal(firmwareAssetName('1.2.3'), 'agent-buddy-v1.2.3-firmware.zip');
+    assert.equal(firmwareAssetName('1.2.3', 'waveshare-amoled-175'), 'agent-buddy-v1.2.3-firmware.zip');
     const sums = amoled.sums + lcd.sums;
     const releases = new FirmwareReleases({directory, baseUrl: 'https://example.test/releases', fetch: fakeGitHub({
-      'v1.2.3/SHA256SUMS': sums, [`v1.2.3/${firmwareAssetName('1.2.3')}`]: amoled.archive, [`v1.2.3/${lcdAsset}`]: lcd.archive})});
+      'v1.2.3/SHA256SUMS': sums, [`v1.2.3/${firmwareAssetName('1.2.3', 'waveshare-amoled-175')}`]: amoled.archive,
+      [`v1.2.3/${lcdAsset}`]: lcd.archive})});
     const one = await releases.prepare('1.2.3', undefined, 'waveshare-lcd-154');
     assert.deepEqual([one.board, one.id, one.dir], ['waveshare-lcd-154', '6d6d6d6d6d6d6d6d', join(directory, 'v1.2.3-waveshare-lcd-154')]);
-    assert.equal(await releases.saved('1.2.3'), null);
-    const other = await releases.prepare('1.2.3');
+    assert.equal(await releases.saved('1.2.3', 'waveshare-amoled-175'), null);
+    const other = await releases.prepare('1.2.3', undefined, 'waveshare-amoled-175');
     assert.deepEqual([other.board, other.id], ['waveshare-amoled-175', '5c5c5c5c5c5c5c5c']);
     assert.equal((await releases.saved('1.2.3', 'waveshare-lcd-154'))?.id, one.id);
     assert.equal(await releases.saved('1.2.3', 'other-board'), null);
@@ -183,10 +189,10 @@ test('downloads and keeps the release firmware of each board apart', async () =>
     // The desktop build reads each ZIP's board and ID.
     assert.deepEqual(releaseFirmwareInfo(lcd.archive, '1.2.3'), {board: 'waveshare-lcd-154', id: one.id});
     assert.deepEqual(releaseFirmwareInfo(amoled.archive, '1.2.3'), {board: 'waveshare-amoled-175', id: other.id});
-    assert.throws(() => releaseFirmwareId(lcd.archive, '1.2.3'), /not waveshare-amoled-175/);
-    // A ZIP from before the board layer has no board, and it is the default board's.
+    assert.throws(() => releaseFirmwareId(lcd.archive, '1.2.3', 'waveshare-amoled-175'), /not waveshare-amoled-175/);
+    // A ZIP that does not name its board is refused: nothing takes it for the default board.
     const legacy = release('1.2.3', manifest => { delete manifest.board; });
-    assert.equal(releaseFirmwareInfo(legacy.archive, '1.2.3').board, 'waveshare-amoled-175');
+    assert.throws(() => releaseFirmwareInfo(legacy.archive, '1.2.3'), /does not say which board/);
   } finally {
     await rm(directory, {recursive: true, force: true});
   }

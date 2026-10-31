@@ -6,7 +6,7 @@ import {isNamedPipe, serviceStoppedPath, socketPath, statePath} from './paths.js
 import {StateCoordinator} from './state-coordinator.js';
 import {StateStore} from './state-store.js';
 import {DeviceTransport} from './device-transport.js';
-import {isConnectionMode, loadConnectionMode} from './connection-mode.js';
+import {isConnectionMode, loadConnectionMode, loadUsbDeviceChoice} from './connection-mode.js';
 import {CompanionService} from './companion-service.js';
 import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
@@ -77,7 +77,8 @@ export async function runDaemon(): Promise<void> {
   const connectionMode = await loadConnectionMode();
   const setup = service.onboardingStatus();
   const preparingUsb = !setup.completed && setup.port && setup.display !== 'desktop' && !setup.deviceDeferred;
-  await transport.start(preparingUsb ? 'auto' : connectionMode, service.deviceEnabled, preparingUsb ? setup.port : null);
+  await transport.start(preparingUsb ? 'auto' : connectionMode, service.deviceEnabled, preparingUsb ? setup.port : null,
+                        await loadUsbDeviceChoice());
   console.log(`[daemon] listening ${path}`);
   settingsUrl = await startSettingsServer(companion);
 

@@ -9,6 +9,8 @@
 #include "waveshare_amoled_175/BoardConfig.h"
 #elif defined(AGENT_BOARD_WAVESHARE_LCD_154)
 #include "waveshare_lcd_154/BoardConfig.h"
+#elif defined(AGENT_BOARD_WAVESHARE_AMOLED_206)
+#include "waveshare_amoled_206/BoardConfig.h"
 #else  // The default board in firmware/boards.json.
 #include "waveshare_amoled_175/BoardConfig.h"
 #endif

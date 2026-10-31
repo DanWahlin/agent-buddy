@@ -772,8 +772,9 @@ export class Onboarding {
     boardSelect.value = chosen && !reported ? chosen.id : '';
     $('ob-board-label').hidden = Boolean(reported || otherBoard);
     $('ob-firmware-plan').textContent = otherBoard
-      ? `This device is a ${board} board, and releases have no firmware for it, so setup does not install one. `
-        + `Build and upload this board's firmware from source: BOARD=${board} bash tools/arduino.sh upload <port>.`
+      ? `This device reports that it is a ${board} board, and releases of this version of the app have no firmware `
+        + 'for it, so setup does not install one. A newer version of the app can support it. Or build and upload this '
+        + `board's firmware from source: BOARD=${board} bash tools/arduino.sh upload <port>.`
       : reported ? `Installs firmware${usb?.release ? ` v${usb.release}` : ''} for the ${chosen.name}, which the device `
         + `reports, then the ${name} character.`
       : 'The device does not report its board. Select its board, then install firmware and the '

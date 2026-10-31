@@ -556,6 +556,14 @@ button { font: inherit; color: inherit; }
 .howto li::before { content: counter(s); width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: rgba(255, 255, 255, 0.08); color: var(--ink); }
 .howto b { color: var(--ink); font-weight: 600; }
 .path-links { display: flex; gap: 10px; margin-top: auto; flex-wrap: wrap; }
+.path-also { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+.path-also p { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+.path-also ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.path-also li { display: grid; gap: 2px; }
+.path-also a { font-weight: 600; overflow-wrap: anywhere; }
+/* The model number stays on one line when the name wraps. */
+.path-also a span { white-space: nowrap; }
+.path-also li > span { color: var(--muted); font-size: 14px; }
 .downloads { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
 .dl { display: flex; flex-direction: column; padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); color: var(--ink); transition: background 0.25s, border-color 0.25s, transform 0.3s var(--ease); }
 .dl:hover { text-decoration: none; background: rgba(255, 255, 255, 0.08); transform: translateY(-2px); }

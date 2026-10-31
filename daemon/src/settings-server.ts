@@ -48,6 +48,7 @@ export interface SettingsServerOptions {
     | 'stopDesktop' | 'setUsage' | 'setOrientationOffset' | 'updateFirmware' | 'installFirmwareOverUsb'
     | 'uninstall' | 'stopService' | 'restartService' | 'onboardingStatus' | 'updateOnboarding'
     | 'restartOnboarding' | 'navigateOnboarding' | 'installOnboardingAgents' | 'detectUsbDevices' | 'detectDevice'
+    | 'chooseUsbDevice'
     | 'applyOnboardingDisplay'
     | 'setupOnboardingDevice' | 'finishOnboarding' | 'exitOnboarding' | 'removeOnboardingAgent' | 'rescanAgents'
     | 'on' | 'off'>;
@@ -208,6 +209,13 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
     }
     if (method === 'POST' && segments.length === 2 && segments[0] === 'devices' && segments[1] === 'detect')
       return json(response, 200, await service.detectDevice());
+    if (method === 'POST' && segments.length === 2 && segments[0] === 'devices' && segments[1] === 'choose') {
+      const body = await readJson(request) as {path?: unknown};
+      if (typeof body.path !== 'string' || !body.path || body.path.length > 256)
+        throw new HttpError(400, 'Choose a device.');
+      await service.chooseUsbDevice(body.path);
+      return json(response, 200, {ok: true});
+    }
     if (method === 'GET' && segments.length === 1 && segments[0] === 'devices')
       return json(response, 200, await service.detectUsbDevices());
     if (segments[0] === 'agents') {

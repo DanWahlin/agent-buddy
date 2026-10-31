@@ -26,14 +26,15 @@ class BoardTargetTests(unittest.TestCase):
             self.assertIn(f'"{directory}/{header}"', fallback, header)
 
     def test_board_config_defines_the_shared_contract(self):
-        names = ("kId", "kName", "kDisplayPanelName", "kTouchControllerName", "kDisplaySize", "kPanelSize",
-                 "kDisplayCsPin", "kBrightness", "kSpiFrequency", "kAudioMclkPin", "kAudioAmplifierPin",
-                 "kAudioCodecI2cAddress", "kAudioMinimumCodecVolume", "kAudioMaximumCodecVolume", "kTouchSda",
-                 "kTouchScl", "kTouchInterrupt", "kTouchReset", "kTouchI2cAddress", "kTouchMirrorX",
-                 "kTouchMirrorY", "kI2cFrequency", "kImuI2cAddress", "kImuName", "kBootButtonPin")
-        drivers = ("TouchController", "kTouchPointCapacity", "displayBus", "displayPanel", "displayScanout",
-                   "setDisplayBrightness", "beginBoard", "configureTouch", "accelerometer", "audioOutput",
-                   "variant")
+        names = ("kId", "kName", "kDisplayPanelName", "kTouchControllerName", "kDisplaySize", "kPanelWidth",
+                 "kPanelHeight", "kShownContentSize", "kDisplayCsPin", "kBrightness", "kSpiFrequency",
+                 "kAudioMclkPin", "kAudioAmplifierPin", "kAudioCodecI2cAddress", "kAudioMinimumCodecVolume",
+                 "kAudioMaximumCodecVolume", "kTouchSda", "kTouchScl", "kTouchInterrupt", "kTouchReset",
+                 "kTouchI2cAddress", "kTouchMirrorX", "kTouchMirrorY", "kI2cFrequency", "kImuI2cAddress", "kImuName",
+                 "kBootButtonPin")
+        drivers = ("TouchController", "kTouchPointCapacity", "kTouchIdleSweep", "displayBus", "displayPanel",
+                   "displayScanout", "setDisplayBrightness", "beginBoard", "configureTouch", "accelerometer",
+                   "audioOutput", "variant")
         # Each display bus needs its own pins: a QSPI pixel-write prefix, or a data/command pin.
         buses = {"Arduino_ESP32QSPI": ("kDisplayQspiWriteCommand", "kDisplayQspiPixelAddress"),
                  "Arduino_ESP32SPIDMA": ("kDisplayDcPin",)}

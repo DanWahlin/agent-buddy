@@ -30,7 +30,7 @@ bool OrientedDisplay::begin(int32_t speed) {
 bool OrientedDisplay::setTransferBuffer(uint8_t* buffer, size_t bytes) {
   error_ = nullptr;
   if (!buffer || reinterpret_cast<uintptr_t>(buffer) % alignof(uint32_t)
-      || !esp_ptr_dma_capable(buffer) || bytes < 2 * kPanelSize * sizeof(uint16_t)
+      || !esp_ptr_dma_capable(buffer) || bytes < 2 * kPanelWidth * sizeof(uint16_t)
       || bytes % (2 * alignof(uint32_t))) {
     error_ = "Invalid display transfer buffer.";
     return false;
@@ -77,45 +77,72 @@ bool OrientedDisplay::flushSource(const ScreenPixels& source) {
   }
 
   // Upright character frames keep the original direct, DMA-staged transfer when the panel shows
-  // content at full size. A smaller panel always scales through the transform below.
-  if (kPanelSize == kDisplaySize && angle() == 0.0f && source.order == Rgb565Order::Display) {
+  // content at full size; a panel narrower or shorter than the content gets the part that it shows.
+  // A panel that shows the content smaller always scales through the transform below.
+  if (kShownContentSize == kDisplaySize && angle() == 0.0f && source.order == Rgb565Order::Display) {
+    // The source's area on the panel, clipped to it.
+    const int left = std::max(source.x + kPanelContentX, 0);
+    const int top = std::max(source.y + kPanelContentY, 0);
+    const int right = std::min(source.x + source.width + kPanelContentX, kPanelWidth);
+    const int bottom = std::min(source.y + source.height + kPanelContentY, kPanelHeight);
+    const bool shown = left < right && top < bottom;
     if (frameMarginsDirty_) {
-      panel_->fillRect(0, 0, kDisplaySize, source.y, 0);
-      panel_->fillRect(0, source.y + source.height, kDisplaySize,
-                       kDisplaySize - source.y - source.height, 0);
-      panel_->fillRect(0, source.y, source.x, source.height, 0);
-      panel_->fillRect(source.x + source.width, source.y,
-                       kDisplaySize - source.x - source.width, source.height, 0);
+      if (shown) {
+        panel_->fillRect(0, 0, kPanelWidth, top, 0);
+        panel_->fillRect(0, bottom, kPanelWidth, kPanelHeight - bottom, 0);
+        panel_->fillRect(0, top, left, bottom - top, 0);
+        panel_->fillRect(right, top, kPanelWidth - right, bottom - top, 0);
+      } else {
+        panel_->fillRect(0, 0, kPanelWidth, kPanelHeight, 0);
+      }
       frameMarginsDirty_ = false;
     }
+    if (!shown) return true;
+    const int width = right - left;
+    const uint16_t* first = source.pixels + (top - kPanelContentY - source.y) * source.width
+                            + (left - kPanelContentX - source.x);
     panel_->startWrite();
-    panel_->writeAddrWindow(source.x, source.y, source.width, source.height);
-    const auto* bytes = reinterpret_cast<const uint8_t*>(source.pixels);
-    const size_t count = static_cast<size_t>(source.width) * source.height * sizeof(uint16_t);
+    panel_->writeAddrWindow(left, top, width, bottom - top);
     const int64_t started = esp_timer_get_time();
-    for (size_t offset = 0; offset < count; offset += transferBytes_) {
-      const size_t batch = std::min(transferBytes_, count - offset);
-      std::memcpy(transferBuffer_, bytes + offset, batch);
-      bus_->writeBytes(transferBuffer_, batch);
+    if (width == source.width) {
+      // Whole source rows: one run of pixels.
+      const auto* bytes = reinterpret_cast<const uint8_t*>(first);
+      const size_t count = static_cast<size_t>(width) * (bottom - top) * sizeof(uint16_t);
+      for (size_t offset = 0; offset < count; offset += transferBytes_) {
+        const size_t batch = std::min(transferBytes_, count - offset);
+        std::memcpy(transferBuffer_, bytes + offset, batch);
+        bus_->writeBytes(transferBuffer_, batch);
+      }
+    } else {
+      // The middle of each source row.
+      const size_t rowBytes = static_cast<size_t>(width) * sizeof(uint16_t);
+      const int rowsPerBatch = static_cast<int>(transferBytes_ / rowBytes);
+      for (int row = top; row < bottom; row += rowsPerBatch) {
+        const int rows = std::min(rowsPerBatch, bottom - row);
+        for (int index = 0; index < rows; ++index)
+          std::memcpy(transferBuffer_ + index * rowBytes,
+                      first + static_cast<size_t>(row - top + index) * source.width, rowBytes);
+        bus_->writeBytes(transferBuffer_, rows * rowBytes);
+      }
     }
     panel_->endWrite();
     writeUs_ = esp_timer_get_time() - started;
     return true;
   }
 
-  const ScreenTransform transform(kPanelSize, kDisplaySize, angle());
+  const ScreenTransform transform(kPanelWidth, kPanelHeight, kDisplaySize, kShownContentSize, angle());
   const size_t capacity = dma_.bufferBytes() / sizeof(uint16_t);
   const int rowsPerBatch = static_cast<int>(std::min(
-      capacity / kPanelSize, static_cast<size_t>(kPanelSize)));
+      capacity / kPanelWidth, static_cast<size_t>(kPanelHeight)));
   panel_->startWrite();
-  panel_->writeAddrWindow(0, 0, kPanelSize, kPanelSize);
+  panel_->writeAddrWindow(0, 0, kPanelWidth, kPanelHeight);
   panel_->endWrite();
   if (!dma_.start()) {
     error_ = dma_.error();
     return false;
   }
-  for (int y = 0; y < kPanelSize; y += rowsPerBatch) {
-    const int rows = std::min(rowsPerBatch, kPanelSize - y);
+  for (int y = 0; y < kPanelHeight; y += rowsPerBatch) {
+    const int rows = std::min(rowsPerBatch, kPanelHeight - y);
     const int64_t waiting = esp_timer_get_time();
     auto* output = reinterpret_cast<uint16_t*>(dma_.acquire());
     writeUs_ += esp_timer_get_time() - waiting;
@@ -127,7 +154,7 @@ bool OrientedDisplay::flushSource(const ScreenPixels& source) {
     }
     const int64_t composed = esp_timer_get_time();
     composeUs_ += composed - started;
-    if (!dma_.submit(rows * kPanelSize * sizeof(uint16_t))) break;
+    if (!dma_.submit(rows * kPanelWidth * sizeof(uint16_t))) break;
     writeUs_ += esp_timer_get_time() - composed;
   }
   const int64_t waiting = esp_timer_get_time();

@@ -41,7 +41,8 @@ board, set `BOARD` (`python3 tools/boards.py list` shows the IDs). See
 
 Each release has a firmware ZIP for every board; the desktop app installs the one
 for your board. To build another board from source, such as the Waveshare
-ESP32-S3-Touch-LCD-1.54, build and upload from the same configured shell; both
+ESP32-S3-Touch-LCD-1.54 (`waveshare-lcd-154`) or ESP32-S3-Touch-AMOLED-2.06
+(`waveshare-amoled-206`), build and upload from the same configured shell; all
 boards use the same `WAVESHARE_DIR`:
 
 ```bash

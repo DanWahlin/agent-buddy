@@ -30,12 +30,13 @@ test('the wait fails after the timeout', async () => {
   await assert.rejects(waitForFirmwareApproval(reads('waiting'), 20, 5), /Nobody pressed the BOOT button/);
 });
 
-test('release firmware goes only to the release board', () => {
-  assert.equal(deviceBoard(undefined), 'waveshare-amoled-175');
-  assert.equal(deviceBoard('../bad'), 'waveshare-amoled-175');
+test('built firmware goes only to the release board, never to a device that does not report its board', () => {
+  assert.equal(deviceBoard(undefined), null);
+  assert.equal(deviceBoard('../bad'), null);
   assert.equal(deviceBoard('other-board'), 'other-board');
-  assertReleaseBoard(deviceBoard(undefined));
+  assert.throws(() => assertReleaseBoard(deviceBoard(undefined)), /does not report which board it is/);
   assert.throws(() => assertReleaseBoard('other-board'), /BOARD=other-board/);
+  assert.doesNotThrow(() => assertReleaseBoard('waveshare-amoled-175'));
 });
 
 test('the USB i reply names the board on its own line', () => {

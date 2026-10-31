@@ -120,7 +120,7 @@
         <div id="ob-display-scene" class="ready-connection-scene"></div>
         <p id="ob-display-preview-fallback" class="hint" hidden>Still character preview unavailable.</p>
         <div id="ob-device-detection" hidden>
-        <p class="supported-device"><strong>Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C, or ESP32-S3-Touch-LCD-1.54</strong><br><span id="ob-device-connection-hint">Connect it with a USB data cable. A charge-only cable cannot detect the device.</span></p>
+        <p class="supported-device"><strong>Waveshare ESP32-S3-Touch-AMOLED-1.75-B or -C, ESP32-S3-Touch-AMOLED-2.06, or ESP32-S3-Touch-LCD-1.54</strong><br><span id="ob-device-connection-hint">Connect it with a USB data cable. A charge-only cable cannot detect the device.</span></p>
         <button type="button" class="secondary" data-action="detect-device">Detect Device</button>
         <label id="ob-port-label" class="port-field" hidden>Select the USB device
           <select id="ob-port"></select>
@@ -263,8 +263,11 @@
       </dl>
       <details class="diagnostics"><summary>Connection details and versions</summary>
         <dl class="facts">
+          <div><dt>Board</dt><dd id="fact-board">—</dd></div>
           <div><dt>Device address</dt><dd id="fact-address">—</dd></div>
           <div><dt>Wi-Fi network</dt><dd id="fact-network">—</dd></div>
+          <div><dt>Device firmware</dt><dd id="fact-firmware">—</dd></div>
+          <div><dt>MAC address</dt><dd id="fact-mac">—</dd></div>
           <div><dt>Versions</dt><dd id="fact-versions">—</dd></div>
         </dl>
       </details>
@@ -347,6 +350,8 @@
         <span>
           <strong>Device connection <span id="device-connection-state" class="pill offline">Checking…</span></strong>
           <span class="hint" id="device-connection-hint" role="status">Waiting for the companion service…</span>
+          <dl class="device-facts" id="device-facts" hidden></dl>
+          <div class="device-choices" id="device-choices" hidden></div>
         </span>
         <span class="row-actions">
           <button type="button" class="secondary" id="device-detect">Detect device</button>
