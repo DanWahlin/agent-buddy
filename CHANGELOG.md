@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.17.0]
+
+### Features and improvements
+
+- Add the Waveshare AMOLED-2.06 board, show device details in Settings, and never guess the device or board
+
 ## [v0.16.2]
 
 ### Documentation
