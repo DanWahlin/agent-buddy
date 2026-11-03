@@ -34,6 +34,15 @@ There is one of everything:
 
 ## Building
 
+For an isolated contributor session, run `aspire run` from the repository root,
+then **Start** the `desktop` resource in the dashboard (or run
+`aspire resource desktop start`). It restores frontend dependencies, builds the
+page and native app, and connects to the same development daemon without
+installing a background service. Rust and the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) are still required.
+See the [contributor loop](../docs/development.md#optional-one-command-contributor-loop)
+for details. The standalone build commands remain available:
+
 ```bash
 python3 tools/character_pack.py build   # from the repository root: the .acpk packs
 cd desktop

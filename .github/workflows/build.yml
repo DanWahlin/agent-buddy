@@ -49,6 +49,8 @@ jobs:
           node-version: '24.21.0'
           cache: npm
           cache-dependency-path: daemon/package-lock.json
+      - name: Test development launcher
+        run: npm run test:dev
       - name: Restore lossless compression cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

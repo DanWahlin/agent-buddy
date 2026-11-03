@@ -17,6 +17,19 @@ architecture, hook formats, and serial protocol are in
 | `tools/` | Build, packaging, flashing, and release scripts |
 | `tests/` | Python and native renderer tests |
 
+## Optional Aspire contributor loop
+
+From the repository root, `aspire run` starts isolated Settings and Character Lab
+without hardware. Start the `desktop` resource explicitly when needed; use the
+dashboard or `aspire resource companion state --state working` to preview states.
+See [the development guide](docs/development.md#optional-one-command-contributor-loop)
+for prerequisites, resource commands, and repository-local official Aspire skills.
+Use `aspire logs <resource>` for console output and `aspire otel spans companion`
+for dev-only Settings API traces; request/runtime metrics are in the dashboard.
+Do not substitute `npm run setup`: that installs hooks and a persistent service.
+Firmware setup/build/package actions are opt-in; flashing additionally requires
+an explicit board, port, and confirmation. Existing manual workflows remain supported.
+
 ## Tests
 
 Run the smallest set that covers a change:

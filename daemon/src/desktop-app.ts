@@ -82,7 +82,8 @@ export class DesktopApp {
     this.#path = options.path ?? desktopAppPath();
     this.#now = options.now ?? Date.now;
     this.#launch = options.launch ?? launchDesktopApp;
-    this.#locations = options.locations ?? defaultDesktopAppLocations(process.platform, homedir(), repositoryRoot());
+    this.#locations = options.locations ?? (process.env.AGENT_COMPANION_DEV === '1'
+      ? [] : defaultDesktopAppLocations(process.platform, homedir(), repositoryRoot()));
     this.#saved = loadSavedDesktopApp(this.#path);
   }
 

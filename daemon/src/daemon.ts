@@ -17,7 +17,7 @@ import {isUsageWindow, usageWindows} from './usage-tracker.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
 
-export async function runDaemon(): Promise<void> {
+export async function runDaemon(options: {onShutdown?: () => Promise<void>} = {}): Promise<void> {
   let lastAutoInstall = 0;
   let service: CompanionService | undefined;
   // A device that lost its pack (for example, an interrupted install) gets the preferred one back.
@@ -88,6 +88,7 @@ export async function runDaemon(): Promise<void> {
     await transport.stop();
     await new Promise<void>(resolve => server.close(() => resolve()));
     if (!pipe) await unlink(path).catch(() => undefined);
+    await options.onShutdown?.();
   };
   // A stop on request ends with the service manager's signal, or with 'stop' when no manager runs it.
   let exiting: Promise<void> | undefined;

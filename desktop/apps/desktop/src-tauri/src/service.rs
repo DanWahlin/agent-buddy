@@ -140,6 +140,9 @@ pub fn remember_quit_notice() {
 /// Where the daemon keeps its files. Mirrors `defaultDataDirectory` in
 /// `daemon/src/paths.ts`.
 pub fn data_directory() -> Option<PathBuf> {
+    if let Some(directory) = std::env::var_os("AGENT_COMPANION_DATA_DIR") {
+        return Some(PathBuf::from(directory)).filter(|path| path.is_absolute());
+    }
     if cfg!(windows) {
         let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).filter(|it| it.is_absolute())
             .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join("AppData").join("Local")))?;
@@ -174,6 +177,9 @@ pub fn ensure(resources: Option<PathBuf>) -> bool {
 }
 
 fn ensure_once(resources: Option<PathBuf>) -> bool {
+    if std::env::var_os("AGENT_COMPANION_DATA_DIR").is_some() {
+        return false;
+    }
     let Some(bundled) = resources.map(|it| it.join(RUNTIME)) else { return false };
     let Ok(version) = std::fs::read_to_string(bundled.join("VERSION")) else { return false };
     let version = version.trim().to_string();

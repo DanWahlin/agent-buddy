@@ -3,6 +3,97 @@
 For a quick introduction and installation, start with the [README](../README.md).
 Commands in this document run from the repository root.
 
+## Optional one-command contributor loop
+
+On macOS or Linux, install [Aspire CLI 13.6.4 or newer](https://aspire.dev/get-started/install-cli/),
+Node.js 24.11+, Python 3.10+, and `clang++` with zlib headers (Xcode Command
+Line Tools on macOS; `clang`, `zlib1g-dev`, and `python3-venv` on Ubuntu). Then,
+from a clone:
+
+```bash
+aspire run
+```
+
+Aspire restores its TypeScript AppHost and the daemon's npm dependencies, builds
+the daemon and native character renderers, and opens a local dashboard. No .NET
+SDK, container runtime, physical device, agent hooks, or installed background
+service is needed for this path. Windows contributors can use Linux/WSL for the
+native Character Lab; the existing native Windows desktop workflow is unchanged.
+
+| Resource | Startup | What to open or do |
+| --- | --- | --- |
+| `companion` | Automatic | Open **Settings (development)**, including its private token. Restart the resource after TypeScript edits to rebuild. |
+| `character-lab` | Automatic | Open **Character Lab** to exercise native firmware animation without a device. Restart after C++/character changes to rebuild. |
+| `desktop` | Explicit **Start** | Builds and launches the Rust/Tauri app against this same dev daemon. Requires stable Rust and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); see the [desktop build notes](../desktop/README.md). |
+
+The dashboard's `companion` actions are also available to agents and contributors:
+
+```bash
+aspire resource companion state --state working
+aspire resource companion state --state attention
+aspire resource desktop start
+aspire resource companion restart
+aspire logs companion
+aspire logs character-lab
+```
+
+### Logs, traces, and metrics
+
+Console output from every resource is available in the dashboard and through
+`aspire logs`. The dev daemon additionally exports OpenTelemetry to the local
+dashboard: open **Traces** for Settings API timings and response statuses, or
+**Metrics** for request counts/duration, CPU time, and resident memory.
+Agents can query traces with `aspire otel spans companion` or
+`aspire otel traces companion`.
+
+Instrumentation starts only through the dev launcher with an Aspire OTLP
+endpoint. It uses development-only npm dependencies and does not instrument
+the installed service. Request paths are grouped into bounded API categories;
+tokens, headers, bodies, dynamic identifiers, and exception messages are not
+exported. Status polling, static files, and event streams are excluded.
+Character Lab and the native desktop retain console logging; animation frames
+and desktop socket polls are not traced. No cloud telemetry service is required.
+
+### Isolated development state
+
+Settings, saved characters, icons, onboarding, and usage caches live under
+`build/dev/companion/`, not your normal installation's data directory. Each
+checkout has its own short socket/named pipe, and Aspire assigns Settings/Lab
+ports rather than taking the normal `4667`/`8765` ports. The desktop uses the
+same socket and a separate single-instance identity. Physical-device use and
+real agent usage scanning are disabled on **every daemon start**, even if they
+were enabled in a previous dev run. Other dev preferences persist.
+
+Use the **Preview character state** action instead of installing hooks just to
+exercise animation. Hook installation in Settings is still an explicit,
+real change to your agent configuration; Aspire never runs `npm run setup`.
+Starting an installed desktop app from dev Settings is refused: start the
+`desktop` resource instead. Restart/uninstall actions that would target an OS
+service are refused; use Aspire to manage this foreground process.
+
+For unattended validation, use `aspire start --non-interactive`, `aspire wait
+companion`, and `aspire wait character-lab`. `aspire stop` stops the graph;
+Ctrl+C stops an interactive `aspire run`. Neither leaves an OS service installed.
+Do not run two AppHosts against the same checkout simultaneously; use separate
+worktrees for parallel development.
+
+The Character Lab uses Aspire's checkout-local `.venv`; it needs no Python
+packages beyond the standard library. The separate art-export dependencies
+are still optional. Run `npm run test:dev` for launcher/isolation regressions
+without installing firmware tools or connecting hardware.
+
+The [source-build guide](build-from-source.md#build-from-the-aspire-dashboard)
+describes the explicit firmware toolchain/build/package/flash actions. Existing
+non-Aspire instructions below remain supported.
+
+### Aspire agent guidance
+
+The official Aspire skills are checked in under `.agents/skills/`. To refresh
+the recommended skills using a compatible CLI, run `aspire agent init
+--skill-locations standard --non-interactive --mcp=false`. That command can
+also configure Aspire's own agent telemetry hooks; it does not install Agent
+Buddy hooks. Review generated changes before committing.
+
 **Current implementation:** GPT Image-generated sprites, with an ESP32 playback
 engine and a native character review at **http://127.0.0.1:8765/character-preview.html**.
 The earlier image-morphing atlas is retained only as a superseded comparison.
