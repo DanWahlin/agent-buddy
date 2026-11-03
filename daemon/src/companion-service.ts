@@ -43,8 +43,8 @@ import {openBrowser} from './browser.js';
 import {FirmwareReleases, boardName, chooseFirmwareBoard, firmwareBoards, releaseBoard,
   type ReleaseFirmware} from './firmware-release.js';
 import {runUsbFlasher, type UsbFlasher, type UsbFlashStage} from './usb-flasher.js';
-import type {UsbPort} from './usb-transport.js';
-import {saveConnectionMode, type ConnectionMode} from './connection-mode.js';
+import type {UsbDeviceChoice, UsbDeviceSummary, UsbPort} from './usb-transport.js';
+import {saveConnectionMode, saveUsbDeviceChoice, type ConnectionMode} from './connection-mode.js';
 import type {DeviceTransport} from './device-transport.js';
 import {
   roleName,
@@ -92,8 +92,11 @@ export interface InstallResult {
 // - wifi-mode: an ESP32 is on USB, but Wi-Fi mode does not use USB.
 // - usb-unavailable: the port could not be opened; another program has it, or no permission.
 // - usb-not-answering: the port opens, but the device does not answer as an Agent Buddy.
+// - several-devices: using one of the Agent Buddy devices on USB would be a guess, so none is used
+//   until the person chooses (see DeviceStatus.choices and waiting).
 export interface DeviceDetection {
-  result: 'connected' | 'disabled' | 'busy' | 'no-device' | 'wifi-mode' | 'usb-unavailable' | 'usb-not-answering';
+  result: 'connected' | 'disabled' | 'busy' | 'no-device' | 'wifi-mode' | 'usb-unavailable' | 'usb-not-answering'
+    | 'several-devices';
   transport: 'usb' | 'wifi' | null;
   port: string | null;
   ports: string[];
@@ -121,10 +124,11 @@ export interface FirmwareStatus {
 // board, also one that has no Agent Companion firmware yet.
 export interface UsbFirmwareStatus {
   // The release with this service's version, and the firmware ID of its firmware for the connected
-  // device's board (or the default board): from the desktop build, or once it is downloaded.
+  // device's board: from the desktop build, or once it is downloaded. Null when the device does not
+  // report its board, so nothing compares it with another board's firmware.
   release: string | null;
   releaseId: string | null;
-  // The default board in firmware/boards.json; firmware from before the board layer is for it.
+  // The default board in firmware/boards.json, whose release ZIP has no board in its name.
   releaseBoard: string;
   // Every board that releases have firmware for. A device that answers names its board; for one
   // that does not, the person chooses one of these.
@@ -144,8 +148,25 @@ export interface UsbFirmwareInstaller {
   flash: UsbFlasher;
 }
 
+// What Settings shows about the device, beyond the connection, character, and firmware.
+export interface DeviceStatus {
+  // The hardware variant within the board (USB only), the MAC address, and the command protocol of
+  // the connected device; null when it is not connected or does not say.
+  variant: string | null;
+  macAddress: string | null;
+  protocol: number | null;
+  // Agent Buddy devices on USB to choose from, because using one of them would be a guess. None is
+  // used until the person chooses one.
+  choices: UsbDeviceSummary[];
+  // Agent Buddy devices on USB that do not answer now: the chosen one, or one that answered before.
+  waiting: UsbPort[];
+  // Other ESP32 ports that did not answer when several ports were checked.
+  silentPorts: string[];
+}
+
 export interface CompanionStatus extends DaemonStatus {
   service: ServiceInfo;
+  device: DeviceStatus;
   wifiPaired: boolean;
   // Whether this computer has used a device. Without one, quitting the desktop app stops the service.
   deviceUsed: boolean;
@@ -243,6 +264,11 @@ export class CompanionService extends EventEmitter {
   // Claimed before the first await so concurrent requests can't both start an upload.
   #installBusy = false;
   #lastInstall: InstallResult | null = null;
+  // The character the last install put on the device. The desktop keeps it while the device
+  // restarts, until the person chooses another character for the desktop.
+  #installedCharacter: string | null = null;
+  // Settings scans for Wi-Fi networks each time the device connects over USB.
+  #wifiScan: Promise<unknown> = Promise.resolve();
   #wifiPaired = false;
   readonly #service = serviceInfo();
   readonly #transport: DeviceTransport;
@@ -428,6 +454,14 @@ export class CompanionService extends EventEmitter {
         summary: this.#display.showUsage ? usageLines(this.#usageTotals) : [],
       },
       service: this.#service,
+      device: {
+        variant: this.#transport.variant,
+        macAddress: this.#transport.macAddress,
+        protocol: this.#transport.protocol,
+        choices: this.#transport.usbChoices,
+        waiting: this.#transport.usbWaiting,
+        silentPorts: this.#transport.usbSilentPorts.map(port => port.path),
+      },
       wifiPaired: this.#wifiPaired,
       deviceUsed: this.deviceUsed,
       deviceEnabled: this.deviceEnabled,
@@ -443,7 +477,7 @@ export class CompanionService extends EventEmitter {
   desktopCharacter(): string {
     return pickDesktopCharacter({
       installing: this.#installing?.character,
-      installed: this.#lastInstall?.ok ? this.#lastInstall.character : undefined,
+      installed: this.#installedCharacter,
       device: this.#transport.character,
       preference: this.#characterPreference,
     });
@@ -533,7 +567,14 @@ export class CompanionService extends EventEmitter {
   }
 
   scanWifi(): Promise<WifiNetwork[]> {
-    return this.#mutate(() => this.#transport.scanWifi(), null, 'the Wi-Fi scan');
+    const scan = this.#mutate(() => this.#transport.scanWifi(), null, 'the Wi-Fi scan');
+    this.#wifiScan = scan.catch(() => undefined);
+    return scan;
+  }
+
+  // A scan takes a few seconds, so a request to install something waits for it rather than failing.
+  async wifiScanEnded(limitMs = 30_000): Promise<void> {
+    await Promise.race([this.#wifiScan, sleep(limitMs, undefined, {ref: false})]);
   }
 
   reloadWifi(): Promise<void> {
@@ -586,6 +627,8 @@ export class CompanionService extends EventEmitter {
         throw new Error('Unknown character.');
       await saveCharacterPreference(change.character);
       this.#characterPreference = change.character;
+      // This choice is newer than the last install, so the desktop shows it now.
+      this.#installedCharacter = null;
     }
     if (change.visible !== undefined || change.backdrop !== undefined || change.sounds !== undefined
       || change.volume !== undefined) {
@@ -612,8 +655,8 @@ export class CompanionService extends EventEmitter {
   }
 
   #setupAvailable(): void {
-    if (this.#operation || this.#installBusy || this.#firmwareUpdating || this.#usbInstalling)
-      throw new SetupError(`Wait for ${this.#busyTask()} to finish.`);
+    const busy = this.busyTask;
+    if (busy) throw new SetupError(`Wait for ${busy} to finish.`);
     if (this.#stopping || this.#restarting || this.#uninstalling)
       throw new SetupError('The companion service is stopping.');
   }
@@ -623,9 +666,11 @@ export class CompanionService extends EventEmitter {
       throw new SetupError('Run setup again before changing its choices.');
   }
 
-  #busyTask(): string {
+  // The task that a new one must wait for, or null when nothing is running.
+  get busyTask(): string | null {
     if (this.#operation) return this.#operationTask;
-    return this.#firmwareUpdating || this.#usbInstalling ? 'the firmware install' : 'the character install';
+    if (this.#firmwareUpdating || this.#usbInstalling) return 'the firmware install';
+    return this.#installBusy ? 'the character install' : null;
   }
 
   // `task` names the operation in the message that other requests get while it runs.
@@ -668,7 +713,11 @@ export class CompanionService extends EventEmitter {
       this.#requireSetup();
       if (change.character !== undefined && !(await this.characters()).some(entry => entry.id === change.character))
         throw new SetupError('Unknown character.', 400);
-      return this.#onboarding.update(change);
+      const state = await this.#onboarding.update(change);
+      // The port that the person selects in setup is their choice when several devices answer on USB.
+      if (typeof change.port === 'string' && this.#transport.usbChoices.some(choice => choice.path === change.port))
+        await this.chooseUsbDevice(change.port);
+      return state;
     }, 'Saving setup choices');
   }
 
@@ -800,11 +849,25 @@ export class CompanionService extends EventEmitter {
     const {ports, error} = await this.#transport.detect();
     const paths = ports.map(port => port.path);
     if (this.#transport.connected) return result('connected', paths);
+    if (this.#transport.usbChoices.length > 0) return result('several-devices', paths);
     if (paths.length === 0) return result('no-device');
     if (this.#transport.mode === 'wifi') return result('wifi-mode', paths);
     if (error && /access|denied|busy|permission|EACCES|EBUSY|EPERM|cannot open|could not open|unable to open/i.test(error))
       return result('usb-unavailable', paths, error);
     return result('usb-not-answering', paths, error);
+  }
+
+  // The person's choice when several Agent Buddy devices answer on USB. It is saved, so the same device
+  // is used whenever they answer together again.
+  chooseUsbDevice(path: string): Promise<void> {
+    return this.#mutate(async () => {
+      const device = this.#transport.usbChoices.find(entry => entry.path === path);
+      if (!device) throw new Error('That device is no longer one of the choices. Select Detect device, then choose again.');
+      const choice = {serialNumber: device.serialNumber ?? null, path: device.path};
+      await saveUsbDeviceChoice(choice);
+      console.log(`[usb] using the device on ${path}${choice.serialNumber ? ` (${choice.serialNumber})` : ''}, as chosen`);
+      await this.#transport.chooseUsbDevice(choice);
+    }, null, 'the device choice');
   }
 
   async detectUsbDevices(): Promise<{ports: Awaited<ReturnType<DeviceTransport['usbPorts']>>; connected: string | null}> {
@@ -916,6 +979,13 @@ export class CompanionService extends EventEmitter {
       throw new SetupError('Finish preparing the selected device or choose Use desktop for now.');
     await this.#applySetupDisplay(state);
     if (state.display !== 'desktop' && !state.deviceDeferred && state.port) await this.setConnection('auto');
+    if (state.display !== 'desktop' && !state.deviceDeferred && this.#transport.transport === 'usb'
+        && this.#transport.address) {
+      // The device that setup used is the person's choice when several devices answer on USB.
+      const choice = {serialNumber: this.#transport.usbSerialNumber, path: this.#transport.address};
+      await saveUsbDeviceChoice(choice);
+      this.#transport.rememberUsbDevice(choice);
+    }
     await this.#transport.selectUsbPort(null);
     const completed = await this.#onboarding.finish();
     this.emit('change');
@@ -1076,10 +1146,6 @@ export class CompanionService extends EventEmitter {
     else exit();
   }
 
-  get installBusy(): boolean {
-    return this.#installBusy;
-  }
-
   installCharacter(character: string, progress?: InstallProgress): Promise<InstallResult> {
     return this.#mutate(() => this.#installCharacter(character, progress), null, 'the character install');
   }
@@ -1105,11 +1171,13 @@ export class CompanionService extends EventEmitter {
       // The settings page learns about failures from lastInstall, so report ones that happen before the transfer too.
       this.#lastInstall = {ok: false, character, name,
                            error: error instanceof Error ? error.message : String(error)};
+      this.#installedCharacter = null;
       this.emit('change');
       throw error;
     }
     this.#installing = {character: pack.id, name: pack.name, percent: 0};
     this.#lastInstall = null;
+    this.#installedCharacter = null;
     this.emit('change');
     try {
       const result = await this.#transport.installCharacter(pack.data, (sent, total) => {
@@ -1124,6 +1192,7 @@ export class CompanionService extends EventEmitter {
       this.#characterPreference = remembered;
       console.log(`[character] installed ${result.character} via ${result.transport}`);
       this.#lastInstall = {ok: true, character: pack.id, name: pack.name, transport: result.transport};
+      this.#installedCharacter = pack.id;
       return this.#lastInstall;
     } catch (error) {
       this.#lastInstall = {ok: false, character: pack.id, name: pack.name,
@@ -1166,9 +1235,10 @@ export class CompanionService extends EventEmitter {
   #usbFirmwareStatus(): UsbFirmwareStatus {
     const unanswered = this.#transport.usbUnanswered;
     const releaseId = (board: string) => this.#releases.get(board)?.id ?? this.#service.releaseFirmwareIds[board] ?? null;
+    const board = this.#transport.board;
     return {
       release: this.#service.version,
-      releaseId: releaseId(this.#transport.board ?? releaseBoard),
+      releaseId: board === null ? null : releaseId(board),
       releaseBoard,
       boards: firmwareBoards.map(({id, name, models}) => ({id, name, models, releaseId: releaseId(id)})),
       flasher: this.#desktopApp.flasher() !== null,
@@ -1226,9 +1296,13 @@ export class CompanionService extends EventEmitter {
     if (this.#pendingRestore === token) this.#pendingRestore = null;
   }
 
-  // The board that the device answering on this USB port reports, or null when none answers there.
+  // The board that the device on this USB port reports: the connected device, or a device that just
+  // answered when the person has to choose one (matched by USB serial number). Null when none says.
   #reportedUsbBoard(port: UsbPort): string | null {
-    return this.#transport.matchesUsbPort(port) ? this.#transport.board : null;
+    if (this.#transport.matchesUsbPort(port)) return this.#transport.board;
+    const device = this.#transport.usbChoices.find(choice =>
+      port.serialNumber ? choice.serialNumber === port.serialNumber : choice.path === port.path);
+    return device?.board ?? null;
   }
 
   async #installFirmwareOverUsb(selectedPort?: string | null, chosenBoard?: string | null): Promise<void> {

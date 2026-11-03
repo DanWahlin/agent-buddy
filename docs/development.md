@@ -176,17 +176,21 @@ a small board layer holds the parts that change from one model to a different mo
 | --- | --- |
 | `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` builds without `BOARD` and that releases package. CI builds every board. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver and `configureTouch()`, `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver, `configureTouch()`, and `kTouchIdleSweep` (whether the firmware also reads touch every 250 ms between touches), `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
-| `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, and Espressif's ES8311 driver. They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
+| `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, Espressif's ES8311 driver, and `Ft3168Touch.h` (the FT3168 touch controller, which SensorLib doesn't support). They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
 
 Every board draws the same 466 x 466 content (`kDisplaySize`): the character
-packs, the settings layouts, and the effects use that size. `kPanelSize` is the
-panel's own size. A panel smaller than the content shows all of it scaled down
-(to half size at most): `ScreenTransform` averages 2 x 2 blocks of content
-pixels while it rotates, and touch maps back through the same transform. A
-smaller panel also uses the compact settings layout (`compact_layout` in
-`SettingsMenu.h`) and one size larger text on the other screens (`kCompactUi`).
+packs, the settings layouts, and the effects use that size. Each board gives
+its panel's size (`kPanelWidth` x `kPanelHeight`) and the size at which the
+panel shows the content around its center (`kShownContentSize`). At full size
+(466), a panel narrower or shorter than the content shows the middle of the
+content, and black fills the rest of a wider or taller panel. A smaller size
+(half size at most) shows all of the content scaled down: `ScreenTransform`
+averages 2 x 2 blocks of content pixels while it rotates. Touch maps back
+through the same transform. A board that shows the content smaller also uses
+the compact settings layout (`compact_layout` in `SettingsMenu.h`) and one size
+larger text on the other screens (`kCompactUi`).
 
 A board's `accelerometer()` gives `begin()` (returns `nullptr` or the failure
 reason) and `read(x, y, z)` (returns `false` when no new sample is ready). The
@@ -212,6 +216,7 @@ the board, so an upload for a different `BOARD` fails until you build again. The
 python3 tools/boards.py list
 BOARD=waveshare-amoled-175 bash tools/arduino.sh build
 BOARD=waveshare-lcd-154 bash tools/arduino.sh build
+BOARD=waveshare-amoled-206 bash tools/arduino.sh build
 ```
 
 Supported now:
@@ -220,10 +225,11 @@ Supported now:
 | --- | --- | --- | --- |
 | `waveshare-amoled-175` (default) | Waveshare ESP32-S3-Touch-AMOLED-1.75-B and -C | CO5300 466 x 466 round AMOLED, QSPI | CST9217 |
 | `waveshare-lcd-154` | Waveshare ESP32-S3-Touch-LCD-1.54 | ST7789 240 x 240 IPS LCD, SPI, PWM backlight | CST816 |
+| `waveshare-amoled-206` | Waveshare ESP32-S3-Touch-AMOLED-2.06 | CO5300 410 x 502 AMOLED, QSPI | FT3168 |
 
-Both boards use the same pinned Waveshare libraries (from the AMOLED-1.75
+All boards use the same pinned Waveshare libraries (from the AMOLED-1.75
 repository: GFX Library for Arduino 1.6.4 and SensorLib 0.3.1), so one
-`WAVESHARE_DIR` serves both.
+`WAVESHARE_DIR` serves all of them.
 
 #### Add a board
 
@@ -241,9 +247,11 @@ Known limits for boards that are not similar to the current board:
   bus, the SPI mode, any pixel-write prefix, and the chip select and
   data/command pins. A parallel RGB panel (for example ST7701) needs a
   different display backend.
-- Character packs and the renderer use 466 x 466 art. A panel from 233 to 466
-  pixels shows it scaled; a smaller or larger panel needs a different scale or
-  different art.
+- Character packs and the renderer use 466 x 466 art. A board shows it at full
+  size, or scaled down to as small as 233 x 233 (`kShownContentSize`). At full
+  size, the panel's width and height must each differ from 466 by an even number
+  of pixels. A much smaller or larger panel needs a different scale or different
+  art.
 - A board without an IMU or a speaker must still give `accelerometer()` and
   `audioOutput()`. Their `begin()` can return a reason, and the firmware then
   runs without orientation or sound.
@@ -254,19 +262,56 @@ Known limits for boards that are not similar to the current board:
   (`tools/package_release.py --all-boards`). Each ZIP's `manifest.json` names its
   `board`. Add a new board to `firmwareBoards` in `daemon/src/firmware-release.ts`
   too; a daemon test checks that the two lists match.
-- The app installs only the firmware for the device's board. A device that answers
-  over USB names its board (the `BOARD` line), and that board wins: a different
-  choice is refused. A device that does not answer, or whose firmware sends no
-  `BOARD` line (firmware from before the line, which includes LCD-1.54 builds),
-  can't name its board over USB, so setup and Settings ask the person to choose it
-  once, and the confirmation names the board. Over Wi-Fi, firmware names its board
-  in its status. The
-  daemon checks the downloaded manifest's board, and the desktop app's flasher
-  (`--board <id>`) checks it again before it writes. A device of a board that
-  releases have no firmware for shows **Other board** and installs from source
-  (`BOARD=<id> bash tools/arduino.sh upload <port>`). Firmware written to the wrong
-  board can leave the screen dark; the ESP32-S3's ROM bootloader still works, so
-  hold BOOT while you connect USB and install the right board's firmware.
+- The app installs only the firmware for the device's board (see
+  [How the app finds the device and its board](#how-the-app-finds-the-device-and-its-board)).
+  A device of a board that releases have no firmware for shows **Other board** and
+  installs from source (`BOARD=<id> bash tools/arduino.sh upload <port>`). Firmware
+  written to the wrong board can leave the screen dark; the ESP32-S3's ROM
+  bootloader still works, so hold BOOT while you connect USB and install the right
+  board's firmware.
+
+#### How the app finds the device and its board
+
+The app never guesses which device to use or which board a device is. When it
+can't tell, it says so, and the person chooses.
+
+- **Which USB device.** The service looks at the USB ports of Espressif devices
+  (vendor ID 303a). It uses the only one, or, when there are several, it asks each
+  device for its `INFO` reply (`i`) and uses the only one that answers as Agent
+  Buddy. When several answer, it uses none of them: the Device tab in Settings
+  shows **Choose a device**, with each device's board, port, USB serial number,
+  and character. The service saves the choice in `connection.json` (`usbDevice`,
+  matched by the USB serial number, which is the ESP32-S3's MAC address), and uses
+  it whenever several devices answer again. The chosen device, and a device that
+  answered before, still count when they don't answer for a moment (for example,
+  while a device installs a character over Wi-Fi), so the service doesn't take the
+  other device then. When the service uses another device because the chosen one
+  wasn't there, it looks for the chosen device every 10 seconds and switches to it
+  when it answers, after the current command (such as a character upload)
+  finishes. In setup, the port that the person
+  selects is the choice, and setup saves the device that it set up. A port that
+  `AGENT_COMPANION_PORT` names, or that setup or an install selects, is used
+  alone, and the service doesn't switch from it.
+- **Which board.** Only the device names its board: the `BOARD` line of its USB
+  `i` reply, or `board` in its Wi-Fi status. The app doesn't assume a board for
+  firmware that reports none (older firmware). Settings then shows **Board not
+  reported** and compares the device with no release, and a firmware install asks
+  the person to choose the board. On the supported boards, firmware for a
+  different board stops when it starts the touch controller (`FATAL` on USB), so
+  such a device doesn't answer, and the person chooses its board.
+- **Before firmware is written.** The board that the device reports wins, and a
+  different choice is refused (`chooseFirmwareBoard`). The service checks the
+  board in the downloaded manifest (a manifest without a board is refused), and
+  checks again after the download that the port has the same USB serial number.
+  The desktop app's flasher compares the manifest's board with `--board <id>`.
+  `flash.py` asks the device on its port for its board first, without a reset: a
+  different board is refused, and a device that doesn't say needs the
+  confirmation.
+- **What Settings shows.** The Device tab and the status card's connection details
+  show the board's name, ID, and variant, the firmware (release, local build, or
+  ID), the character, the MAC address, and the protocol. The build from this
+  computer (`build/firmware`) is the default board's firmware, so only a device of
+  that board is compared with it.
 
 #### Waveshare ESP32-S3-Touch-LCD-1.54
 
@@ -292,6 +337,38 @@ Notes for this board:
   `audioOutput()` waits that long before each sound.
 - The firmware does not use the PWR and PLUS buttons, the battery voltage, the
   ES7210 microphones, the SD card, or the RTC yet.
+
+#### Waveshare ESP32-S3-Touch-AMOLED-2.06
+
+Pins come from `pin_config.h` and the examples at revision
+`30f3b23b3d4bb38d32f7d0cddffb66759668a855` of
+[ESP32-S3-Touch-AMOLED-2.06](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-2.06).
+The build uses the AMOLED-1.75 libraries; their CO5300 driver is the same as
+the one in that repository.
+
+| Part | Pins |
+| --- | --- |
+| CO5300 display (QSPI, 80 MHz) | CS 12, SCK 11, D0..D3 4..7, RST 8, column offset 22 |
+| FT3168 touch | SDA 15, SCL 14, INT 38, RST 9, address 0x38 |
+| QMI8658 IMU | Same I2C bus, address 0x6B |
+| ES8311 codec | MCLK 16, BCLK 41, WS 45, DOUT 40, amplifier enable 46, address 0x18 |
+| Power | AXP2101 at 0x34 on the same bus. Its default outputs power the board, so the firmware doesn't configure it. |
+
+Notes for this board:
+
+- The panel is 410 x 502. It shows the 466 x 466 content at full size: the
+  middle 410 columns, with 18 black rows above and below them. The character
+  and the settings pages fit; the edges of some effects are cut off at the far
+  left and right.
+- SensorLib's FT6X36 driver doesn't accept the FT3168, so the board uses
+  `drivers/Ft3168Touch.h`. It resets the controller and sets active mode.
+- About 10 s after the last touch, the FT3168 goes to monitor mode by itself.
+  In monitor mode, it doesn't answer on I2C until a touch wakes it, so this
+  board sets `kTouchIdleSweep` to `false`: the firmware reads touch only after
+  an interrupt pulse and during a touch, as Waveshare's factory firmware does.
+- The QMI8658 axes are already the orientation frame.
+- The firmware does not use the PWR button, the battery gauge, the ES7210
+  microphones, the SD card, or the PCF85063 RTC yet.
 
 ### Reproduce the toolchain
 
@@ -491,7 +568,7 @@ duplicate commands and uninstalling doesn't remove another tool's hook.
 | --- | --- | --- | --- |
 | GitHub Copilot | `~/.copilot/hooks/agent-companion.json` | Existing v1 event names map directly. The old `hook <event>` command still works and is treated as Copilot. Copilot fires no notification for `ask_user` or `exit_plan_mode`, so a `preToolUse` for either one becomes Needs attention. | Restart GitHub Copilot after setup. Copilot denies every tool call when a `preToolUse` hook fails, and a running session keeps the hooks it started with, so each hook runs through the system shell (`cmd.exe /d /c if exist <node> if exist <cli> (<node> <cli> hook ... & more >nul) ...` on Windows, `/bin/sh` elsewhere). The shell runs Node.js only while Node.js and the CLI are on disk, reads the rest of the event (with `cat` on macOS and Linux, because the shell's own read loop is too slow for a large event within Copilot's 2-second hook limit), and exits with 0 whatever Node.js did: after an uninstall, while it removes files, or when a module can't load. The `hook` command loads neither the daemon nor the serial port's native module. Hook files that earlier versions wrote still show as installed; an app update or Reinstall rewrites them. Other agents don't block a tool call when a hook fails (Claude Code, Grok, and Hermes block only on exit code 2; Codex runs its tool hooks asynchronously). |
 | Claude Code | `~/.claude/settings.json` | `PermissionRequest`, `Elicitation`, and selected notifications become Needs attention. `AskUserQuestion` and `ExitPlanMode` are treated as waiting for the user. | Claude may ask for folder trust. The hook runs Node.js directly (exec form), unlike Copilot's: Grok runs Claude's hooks with `command` but without `args`, so a `cmd.exe` or `/bin/sh` command there would run the hook's input. A failed Claude hook doesn't block, so after an uninstall a Claude session that was open only shows a hook error until it restarts. The Code tab of the Claude app reads the same settings, and an installed Claude app counts as Claude Code being detected. Cowork and cloud sessions don't run local hooks. |
-| Codex | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. The ChatGPT app (which replaced the Codex app) and the VS Code extension load the same hooks and approvals, but only the terminal UI can write an approval, and a running app reads approvals only when it starts. So the guide gives a terminal command (`codex` when it is 0.129.0 or later, the first version with hook approval; else the newest CLI that a ChatGPT or Codex app includes and that is 0.129.0 or later; a prerelease of 0.129.0 is older) and a step to reopen the app. Each place approves only its own hooks, so the guide gives this command only when this computer's hooks wait, and tells the user to run `codex` in each WSL distribution whose hooks wait. An installed ChatGPT app counts as Codex being detected (see Desktop apps below). On Windows, Codex runs hooks in its session shell (PowerShell), so `commandWindows` uses `& '<node>' '<cli>' hook codex <event>`; the old cmd.exe form shows as `outdated`. |
+| Codex | `~/.codex/hooks.json` | `PermissionRequest` becomes Needs attention. `Interrupt` clears the session. Hook groups are appended so Codex trust keys for existing hooks don't shift. | Approve once with `/hooks`; status shows `needs-approval` until trust is visible. The ChatGPT app (which replaced the Codex app) and the VS Code extension load the same hooks and approvals, but only the terminal UI can write an approval, and a running app reads approvals only when it starts. So the guide gives a terminal command (`codex` when it is 0.148.0-alpha.6 or later, the first version with async hooks, because an older Codex skips the async Agent Buddy hooks and doesn't list them in `/hooks`; else the newest CLI that a ChatGPT or Codex app includes and that is that new; 0.148.0-alpha.1 to alpha.5 are older) and a step to reopen the app. When the `codex` on PATH or an app's Codex is older, Settings (the Codex `note`) and the setup guide tell the user to update it, because reopening it doesn't load the hooks. The same check covers the Codex extension (`openai.chatgpt`) of VS Code, VS Code Insiders, Cursor, and Windsurf: its version comes from `bin/<system>/codex-package.json` in the folder that the editor's `extensions/extensions.json` names (an old folder can stay until the editor deletes it), or else from `codex --version` on this computer. An uninstalled editor leaves its folder, so a local folder counts only while the editor is installed: its app on macOS and Windows (another editor, such as Cursor, can add a `code` command), or on Linux its command (`code`, `code-insiders`, `cursor`, `windsurf`) when that command's real path is not in another editor's folder. A remote window's `-server` folder counts only while its list changed in the last 30 days, and a remote place such as a WSL distribution has only those. In a WSL distribution, the probe reads `timeout 5 codex --version` with no stdin (its stdin is the probe script), the distribution's row in Settings shows the advice before any approval advice, and the setup guide names the distribution and puts its update step before the step that runs codex there to approve the hooks (a codex that can't run them doesn't list them in `/hooks`). WSL adds the Windows PATH, so the probe ignores a command under the drives' mount (such as `/mnt/c/`): that is the Windows agent. An older probe counted it, so setup could leave an agent's settings folder in a distribution that holds only the hook file and its backups, or, after Remove, only the empty `hooks` folder of the Copilot or Grok hook file. Such a folder doesn't count as detection (`agentFolderInUse` in `agents/index.ts`, read again when the mtime of a folder on the hook file's path changes, and in the 2 seconds after the folders first have new mtimes, as measured on this computer's clock, because a folder's mtime changes in steps of up to about 16 ms on NTFS and a WSL distribution's clock can differ): hooks in a place without the agent don't change the combined status or the setup steps, its row says that they never run there, and installs skip that place, but Remove still deletes them. Each place approves only its own hooks, so the guide gives this command only when this computer's hooks wait, and tells the user to run `codex` in each WSL distribution whose hooks wait. An installed ChatGPT app counts as Codex being detected (see Desktop apps below). On Windows, Codex runs hooks in its session shell (PowerShell), so `commandWindows` uses `& '<node>' '<cli>' hook codex <event>`; the old cmd.exe form shows as `outdated`. |
 | Grok Build | `~/.grok/hooks/agent-companion.json` | Permission and elicitation notifications become Needs attention. `Stop` only completes when its reason is `end_turn`; channel shutdown clears. | Grok's hook directory is trusted. Claude hooks invoked by Grok are ignored when Grok's own hook is installed and enabled. Grok passes only `command` (not `args`) for Claude hooks, so it reports the companion Claude hook as failed; the agent card's note gives the `[compat.claude] hooks = false` fix. On Windows, Grok runs hooks in PowerShell, so the command uses `& '<node>' '<cli>' hook grok <event>`; the old double-quoted form shows as `outdated`. |
 | Hermes Agent | `~/.hermes/config.yaml` (Windows: `%LOCALAPPDATA%\hermes\config.yaml`) | `pre_llm_call` starts work, `pre_tool_call`/`post_tool_call` track tools, `pre_approval_request` surfaces attention, and turn `on_session_end` completes. | Hermes asks you to approve the shell hook the first time it runs. Don't pre-seed its allowlist. |
 | OpenClaw | `<daemon data>/integrations/openclaw-plugin/` | Native plugin forwards lifecycle events directly to the daemon socket. Gateway WebSocket approvals aren't implemented yet. | Installer links/enables the plugin through `openclaw` only when the command is on `PATH`. |
@@ -543,7 +620,7 @@ list and for the GitHub Copilot app's version, and the CLI that an app includes,
 
 | App | macOS | Windows | Linux | Version |
 | --- | --- | --- | --- | --- |
-| ChatGPT (Codex) | `ChatGPT.app` with `Contents/Resources/codex`, and the older `Codex.app` | MSIX `OpenAI.Codex_2p2nqsd0c76g0`; CLI at `<root>\app\resources\codex.exe` | `/usr/lib/chatgpt`; CLI at `resources/codex` | `Info.plist`; MSIX full name; `resources/linux-package-metadata.json` |
+| ChatGPT (Codex) | `ChatGPT.app` with `Contents/Resources/codex-cli/bin/codex` (the entry point in its `codex-package.json`) or, in older builds, `Contents/Resources/codex`, and the older `Codex.app` | MSIX `OpenAI.Codex_2p2nqsd0c76g0`; CLI at `<root>\app\resources\codex.exe` | `/usr/lib/chatgpt`; CLI at `resources/codex` | `Info.plist`; MSIX full name; `resources/linux-package-metadata.json` |
 | Claude | `Claude.app` | MSIX `AnthropicPBC.Claude_fnn82j28hfe8t` or `Claude_pzs8sxrjxfjjc`, or Squirrel `%LOCALAPPDATA%\AnthropicClaude` | `/usr/lib/claude-desktop` | `Info.plist`; MSIX full name or `app-<version>`; `package.json` in `resources/app.asar` |
 | GitHub Copilot | `GitHub Copilot.app` | `%LOCALAPPDATA%\Programs\GitHub Copilot\github.exe` or `%ProgramFiles%\GitHub Copilot` | `/usr/lib/GitHub Copilot` (no AppImage) | `Info.plist`; `DisplayVersion` of `HKCU\...\Uninstall\GitHub Copilot`; none |
 
@@ -598,6 +675,29 @@ PNGs and converts alpha or luminance to the mask. An optional adjacent
 
 ### Firmware updates over Wi-Fi
 
+To update firmware that you built, over Wi-Fi: build it with
+`bash tools/arduino.sh build`, then open the **Device** tab in Settings. The
+device must be on Wi-Fi and have firmware with protocol 9 or later. When the
+**Device firmware** row shows that the built firmware is different, click
+**Update**. Protocol 11 and later firmware then shows **Press BOOT to allow it**:
+press BOOT on the device within 60 seconds. The device restarts in about 15
+seconds and keeps your character and Wi-Fi settings. If the new firmware can't
+join Wi-Fi in 90 seconds, the device goes back to the previous firmware.
+
+Moving to firmware that supports this needs one USB flash, because it adds a
+second firmware slot to the partition table. A release that changes the
+partition table also needs a USB flash.
+
+If it doesn't work:
+
+- **Update is hidden:** build the firmware first with `bash tools/arduino.sh build`.
+- **Update isn't available:** the device must be on Wi-Fi and report firmware
+  protocol 9 or later.
+- **The request timed out:** click **Update** again, then press BOOT when the
+  device shows the prompt.
+- **The device went back:** the new firmware didn't join Wi-Fi in 90 seconds.
+  Install the firmware over USB.
+
 The firmware ID is the first 8 bytes of the application's ELF SHA-256, as 16
 hex digits. The device reads it from `esp_app_get_description()`, and
 `daemon/src/firmware-image.ts` reads the same bytes from the `.bin` (offset 176;
@@ -637,7 +737,7 @@ upload.
 
 ### Firmware installs over USB
 
-**Update to v<version>** and the **USB release install or recovery** section on
+**Update to v&lt;version&gt;** and the **USB release install or recovery** section on
 the Device tab install the release that matches
 the daemon's `VERSION` (`v<VERSION>`, not "latest"), so the firmware and the
 service always match. `POST /api/firmware/usb` starts it, and
@@ -1396,8 +1496,9 @@ current after an update. The `i` reply also has a
 firmware for that board. It is its own line, so the `INFO` line keeps its fields
 and stays well within the 512-byte limit of the firmware's log messages (a longer
 message is dropped; `tests/test_boards.py` checks the longest `INFO` line). A
-reply without a `BOARD` line comes from firmware built before more than one board
-was supported, which is always the default board. Keep `maxProtocol` in `daemon/src/usb-transport.ts`
+reply without a `BOARD` line comes from older firmware, and the app doesn't assume
+a board for it (see
+[How the app finds the device and its board](#how-the-app-finds-the-device-and-its-board)). Keep `maxProtocol` in `daemon/src/usb-transport.ts`
 equal to `kDeviceProtocol` in the firmware. A join attempt in
 progress pauses for the scan and resumes when it ends. The settings page reads
 the merged list from `GET /api/wifi/networks`. While the device reports a saved

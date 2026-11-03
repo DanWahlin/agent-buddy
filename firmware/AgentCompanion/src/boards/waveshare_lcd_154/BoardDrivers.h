@@ -13,6 +13,8 @@ namespace copilot {
 namespace board {
 using TouchController = TouchDrvCST816;
 constexpr uint8_t kTouchPointCapacity = 1;
+// The touch sweep also reads the controller when idle (see TouchInput.cpp and configureTouch()).
+constexpr bool kTouchIdleSweep = true;
 static_assert(kTouchI2cAddress == CST816_SLAVE_ADDRESS, "Touch address differs from the driver.");
 static_assert(kImuI2cAddress == QMI8658_L_SLAVE_ADDRESS, "IMU address differs from the driver.");
 static_assert(kAudioCodecI2cAddress == ES8311_ADDRESS_0, "Codec address differs from the driver.");
@@ -39,7 +41,7 @@ inline Arduino_DataBus& displayBus() {
 }
 
 inline DisplayPanel& displayPanel() {
-  static DisplayPanel panel(&displayBus(), kDisplayResetPin, 0, true, kPanelSize, kPanelSize);
+  static DisplayPanel panel(&displayBus(), kDisplayResetPin, 0, true, kPanelWidth, kPanelHeight);
   return panel;
 }
 

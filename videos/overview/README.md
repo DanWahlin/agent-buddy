@@ -62,7 +62,7 @@ the desktop recording. The render loads GSAP from a CDN.
 | 0:15 | States | Working (0:15), Needs attention (0:20), Complete (0:25). Each step shows the agent event first, then the device reacts, with its badge |
 | 0:30 | Agents | "Six agents. One buddy." The six badges around the device |
 | 0:36.5 | Little touches | Tap to say hi, usage at a glance (a magnifier shows AIC, then fades to Tokens), naps when idle |
-| 0:44.5 | Characters | Copilot, Claude, OpenClaw, and "Your own", with "More coming soon" under the title |
+| 0:44.5 | Characters | Copilot, Claude, Grok, OpenClaw, and "Your own", with "More coming soon" under the title |
 | 0:51.5 | Desktop app | The Desktop Agent Buddy recording: Working, Needs attention, Complete |
 | 0:58 | Settings | "Deploy different characters and change app settings." Characters tab, then the full Agents tab (dark theme), which pans down to show all six agents, on a taller card |
 | 1:05 | Values | "Local. Private. Yours." No cloud, no account, no extra subscription, USB or Wi-Fi, source on GitHub |
@@ -71,10 +71,6 @@ the desktop recording. The render loads GSAP from a CDN.
 One engine take (`hero`) runs from Meet through Agents, so the character never
 cuts while the device moves between those scenes. Its events use the scene
 times, so they stay in sync when a scene changes length.
-
-A take with `"websiteOnly": true`, such as `grok`, makes a clip for the website
-and not for the video. `npm run assets` and the build skip it. To render it, give
-its name: `node scripts/render-device.mjs grok`.
 
 ## Device footage
 

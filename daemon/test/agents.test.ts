@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import {existsSync, readdirSync} from 'node:fs';
-import {chmod, lstat, mkdir, readFile, rm, stat, symlink, writeFile} from 'node:fs/promises';
+import {chmod, lstat, mkdir, readFile, rm, stat, symlink, utimes, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 import {parseDocument} from 'yaml';
 import {claudeAdapter, claudeConfigPath} from '../src/agents/claude.js';
-import {codexAdapter, codexApproval, codexApps, codexRunStep} from '../src/agents/codex.js';
-import {asarPackageVersion, clientVersions, findApp, parseWindowsPackages} from '../src/agents/apps.js';
+import {codexAdapter, codexApproval, codexApps, codexClients, codexRunStep, codexUpdateSteps} from '../src/agents/codex.js';
+import {asarPackageVersion, bundledCodexCli, clientVersions, findApp, parseWindowsPackages} from '../src/agents/apps.js';
 import {codexQuote, versionOf} from '../src/agents/commands.js';
 import {copilotAdapter, copilotAppSpec, copilotVersions} from '../src/agents/copilot.js';
 import {grokAdapter, runsClaudeHooks} from '../src/agents/grok.js';
@@ -467,11 +467,7 @@ test('agents report the one-time step they still need', async () => {
     assert.match(codex()?.action?.steps.join(' ') ?? '', /Agent Buddy hooks \(10 waiting\)/);
     assert.match(codex()?.action?.steps.at(-1) ?? '', /ChatGPT app, the Codex app, or VS Code, quit and reopen/);
     assert.equal(codex()?.action?.command, undefined);
-    const approved = JSON.parse(await readFile(join(home, '.codex', 'hooks.json'), 'utf8')).hooks as
-      Record<string, Array<{hooks: unknown[]}>>;
-    const keys = Object.entries(approved).flatMap(([event, groups]) => groups.map((_, index) =>
-      `[hooks.state."${join(home, '.codex', 'hooks.json')}:${event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()}:${index}:0"]\ntrusted_hash = "a"\n`));
-    await writeFile(join(home, '.codex', 'config.toml'), keys.join(''));
+    await approveCodexHooks(home);
     assert.equal(codex()?.action?.kind, 'restart');
     assert.match(codex()?.action?.steps.join(' ') ?? '', /Restart any Codex sessions[\s\S]*quit and reopen/);
     assert.equal(agentStatuses(ctx, new Map(), new Map([['codex', Date.now()]])).find(agent => agent.id === 'codex')?.action,
@@ -931,6 +927,15 @@ async function fakeMacApp(folder: string, bundle: string, version: string, codex
   return cli;
 }
 
+// Approves each hook in the Codex hooks file, as /hooks in the Codex CLI does.
+async function approveCodexHooks(home: string): Promise<void> {
+  const path = join(home, '.codex', 'hooks.json');
+  const hooks = JSON.parse(await readFile(path, 'utf8')).hooks as Record<string, Array<{hooks: unknown[]}>>;
+  const keys = Object.entries(hooks).flatMap(([event, groups]) => groups.map((_, index) =>
+    `[hooks.state."${path}:${event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()}:${index}:0"]\ntrusted_hash = "a"\n`));
+  await writeFile(join(home, '.codex', 'config.toml'), keys.join(''));
+}
+
 test('Codex and Claude are detected from their desktop apps alone, with the version of each client', async () => {
   const {root, ctx, cleanup} = await fixture();
   try {
@@ -949,8 +954,10 @@ test('Codex and Claude are detected from their desktop apps alone, with the vers
                                                      configPath: join(ctx.home, '.codex', 'hooks.json')});
     assert.equal(codexApps({...withApps, platform: 'linux'}).length, 0);
 
-    // Only a CLI from Codex 0.129.0 or later can approve hooks, and the newest one is offered.
-    const versions: Record<string, string> = {[chatgptCodex]: 'codex-cli 0.145.0-alpha.30', [appCodex]: 'codex-cli 0.121.0'};
+    // Only a CLI that runs async hooks (Codex 0.148.0-alpha.6 or later) lists the hooks in /hooks,
+    // and the newest one is offered.
+    const versions: Record<string, string> = {[chatgptCodex]: 'codex-cli 0.148.0-alpha.6',
+                                              [appCodex]: 'codex-cli 0.145.0-alpha.30'};
     const command = (env = withApps.env) => codexApproval({...withApps, env}, path => versions[path])?.command;
     assert.equal(command(), `'${chatgptCodex}'`);
     versions[appCodex] = 'codex-cli 0.163.0';
@@ -960,34 +967,152 @@ test('Codex and Claude are detected from their desktop apps alone, with the vers
     assert.equal(codexRunStep(approval, 'darwin'),
                  `Open a terminal in any folder and run the Codex CLI that your Codex app includes: '${appCodex}'`);
     // A version that is not known yet doesn't exclude a CLI, but a known good version comes first.
-    versions[appCodex] = 'codex-cli 0.128.9';
+    versions[appCodex] = 'codex-cli 0.147.9';
     delete versions[chatgptCodex];
     assert.equal(command(), `'${chatgptCodex}'`);
     versions[appCodex] = 'codex-cli 0.150.0';
     assert.equal(command(), `'${appCodex}'`);
-    // The prereleases of 0.129.0 came before hook approval.
-    versions[appCodex] = 'codex-cli 0.129.0-alpha.7';
-    versions[chatgptCodex] = 'codex-cli 0.121.0';
+    // The first prereleases of 0.148.0 came before async hooks. Hook approval alone is not enough.
+    versions[appCodex] = 'codex-cli 0.148.0-alpha.5';
+    versions[chatgptCodex] = 'codex-cli 0.129.0';
     assert.equal(command(), undefined);
-    versions[appCodex] = 'codex-cli 0.129.0';
+    // Prerelease numbers compare as numbers, so alpha.10 is newer than alpha.7.
+    versions[appCodex] = 'codex-cli 0.148.0-alpha.10';
+    versions[chatgptCodex] = 'codex-cli 0.148.0-alpha.7';
     assert.equal(command(), `'${appCodex}'`);
     if (posix) {
-      // A codex on PATH comes first, unless its version is known to be too old.
+      // A codex on PATH comes first, unless its version is known to be too old. Then the user must also
+      // update it, because it skips the hooks that another CLI approves.
       const bin = join(root, 'bin');
       await touch(join(bin, 'codex'));
       assert.equal(command({PATH: bin}), 'codex');
-      versions[join(bin, 'codex')] = 'codex-cli 0.128.0';
+      versions[join(bin, 'codex')] = 'codex-cli 0.147.0';
       assert.equal(command({PATH: bin}), `'${appCodex}'`);
+      assert.deepEqual(codexUpdateSteps({...withApps, env: {PATH: bin}}, path => versions[path]),
+                       ['Your Codex CLI 0.147.0 can’t run the Agent Buddy hooks. Update the Codex CLI.']);
       versions[appCodex] = 'codex-cli 0.121.0';
+      versions[chatgptCodex] = 'codex-cli 0.145.0-alpha.30';
       assert.equal(command({PATH: bin}), undefined);
     }
     assert.equal(codexApproval(ctx, () => 'codex-cli 0.200.0'), undefined);
+
+    // An app whose Codex can't run the hooks needs an update. A version that is not known yet doesn't count.
+    versions[chatgptCodex] = 'codex-cli 0.145.0-alpha.30';
+    versions[appCodex] = 'codex-cli 0.148.0-alpha.6';
+    assert.deepEqual(codexUpdateSteps(withApps, path => versions[path]), [
+      'Your ChatGPT app includes Codex 0.145.0-alpha.30, which can’t run the Agent Buddy hooks. '
+        + 'Update the ChatGPT app, then reopen it.',
+    ]);
+    delete versions[chatgptCodex];
+    assert.deepEqual(codexUpdateSteps(withApps, path => versions[path]), []);
 
     await fakeMacApp(apps, 'Claude.app', '2.31226.0');
     assert.deepEqual(claudeAdapter.detect(withApps), {installed: true, version: 'Claude app 2.31226.0',
                                                       configPath: join(ctx.home, '.claude', 'settings.json')});
     assert.equal(clientVersions('0.162.1', [{label: 'Codex app', path: ''}]), 'CLI 0.162.1 · Codex app');
     assert.equal(findApp(withApps, {label: 'Missing app', mac: 'Missing.app'}), undefined);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a newer macOS ChatGPT app keeps its Codex CLI in a codex-cli folder', async () => {
+  const {root, ctx, cleanup} = await fixture();
+  try {
+    const apps = join(root, 'Applications');
+    const withApps = {...ctx, appFolders: [apps]};
+    const legacy = await fakeMacApp(apps, 'ChatGPT.app', '26.715', '');
+    const chatgpt = () => codexApps(withApps)[0]!;
+    assert.equal(bundledCodexCli(withApps, chatgpt()), legacy);
+    // The app runs codex-cli/CodexCLI.app/Contents/MacOS/codex. Its codex-package.json names bin/codex as
+    // the entry point, a script that starts that program, so it is the command to run in a terminal.
+    const cli = join(apps, 'ChatGPT.app', 'Contents', 'Resources', 'codex-cli', 'bin', 'codex');
+    await touch(cli);
+    assert.equal(bundledCodexCli(withApps, chatgpt()), cli);
+    await rm(legacy);
+    assert.deepEqual(codexApps(withApps).map(app => app.label), ['ChatGPT app']);
+    assert.equal(bundledCodexCli(withApps, chatgpt()), cli);
+    assert.deepEqual(codexApproval(withApps, () => 'codex-cli 0.165.0-alpha.1.2'), {command: `'${cli}'`, app: 'ChatGPT app'});
+    assert.deepEqual(codexUpdateSteps(withApps, () => 'codex-cli 0.165.0-alpha.1.2'), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('the Codex extension in each installed editor gives the version of its Codex', async () => {
+  const {root, home, ctx, cleanup} = await fixture();
+  try {
+    const apps = join(root, 'Applications');
+    const withApps = {...ctx, appFolders: [apps]};
+    const extension = async (editor: string, name: string, version?: string) => {
+      const bin = join(home, editor, 'extensions', name, 'bin', 'macos-aarch64');
+      await mkdir(bin, {recursive: true});
+      await writeFile(join(bin, 'codex'), '');
+      if (version) await writeFile(join(bin, 'codex-package.json'), JSON.stringify({layoutVersion: 1, version}));
+      return join(bin, 'codex');
+    };
+    const list = async (editor: string, entry: Record<string, unknown>) => {
+      const path = join(home, editor, 'extensions', 'extensions.json');
+      await writeFile(path, JSON.stringify([
+        {identifier: {id: 'github.copilot-chat'}, version: '0.30.3', relativeLocation: 'github.copilot-chat-0.30.3'},
+        {identifier: {id: 'openai.chatgpt'}, version: '26', ...entry},
+      ]));
+      return path;
+    };
+    const unknown = () => undefined;
+    // Without the editor's list of installed extensions, a folder doesn't count.
+    await fakeMacApp(apps, 'Visual Studio Code.app', '1.105.1');
+    await extension('.vscode', 'openai.chatgpt-26.715.1-darwin-arm64', '0.145.0-alpha.30');
+    assert.deepEqual(codexClients(withApps, unknown), []);
+    await list('.vscode', {relativeLocation: 'openai.chatgpt-26.715.1-darwin-arm64'});
+    assert.deepEqual(codexClients(withApps, unknown), [{kind: 'extension', label: 'VS Code', version: '0.145.0-alpha.30'}]);
+    assert.deepEqual(codexUpdateSteps(withApps, unknown), [
+      'The Codex extension in VS Code includes Codex 0.145.0-alpha.30, which can’t run the Agent Buddy hooks. '
+        + 'Update the extension, then reload the VS Code window.',
+    ]);
+    // An editor that is gone leaves its folder, which doesn't count. On macOS and Windows, only the
+    // app shows that the editor is installed, because another editor can add a `code` command.
+    assert.deepEqual(codexClients(ctx, unknown), []);
+    if (posix) {
+      await touch(join(root, 'bin', 'code'));
+      const withCode = {...ctx, env: {PATH: join(root, 'bin')}};
+      assert.deepEqual(codexClients(withCode, unknown), []);
+      // On Linux, the editor's command shows it, unless the command is really another editor's, such as Cursor's.
+      assert.equal(codexClients({...withCode, platform: 'linux'}, unknown)[0]?.label, 'VS Code');
+      const cursorCode = join(root, 'cursor', 'resources', 'app', 'bin', 'code');
+      await touch(cursorCode);
+      await rm(join(root, 'bin', 'code'));
+      await symlink(cursorCode, join(root, 'bin', 'code'));
+      assert.deepEqual(codexClients({...withCode, platform: 'linux'}, unknown), []);
+    }
+    // After an update, the old folder stays until VS Code deletes it, but only the listed folder counts.
+    await extension('.vscode', 'openai.chatgpt-26.1007.21434-darwin-arm64', '0.162.0-alpha.17.2');
+    await list('.vscode', {relativeLocation: 'openai.chatgpt-26.1007.21434-darwin-arm64'});
+    assert.deepEqual(codexUpdateSteps(withApps, unknown), []);
+
+    // Cursor has its own folder. Its older list gives only the location, and an extension without
+    // codex-package.json gives the version that its CLI prints.
+    await fakeMacApp(apps, 'Cursor.app', '2.0.0');
+    const cli = await extension('.cursor', 'openai.chatgpt-26.600.1-darwin-arm64');
+    await list('.cursor', {location: {$mid: 1, path: `/${join(home, '.cursor', 'extensions', 'openai.chatgpt-26.600.1-darwin-arm64')
+      .replaceAll('\\', '/')}`, scheme: 'file'}});
+    const version = (path: string) => path === cli ? 'codex-cli 0.140.0' : undefined;
+    assert.deepEqual(codexClients(withApps, version).map(client => `${client.label} ${client.version}`),
+                     ['VS Code 0.162.0-alpha.17.2', 'Cursor 0.140.0']);
+    // A listed folder that is not an extension folder doesn't count.
+    await list('.cursor', {relativeLocation: '../../openai.chatgpt-1'});
+    assert.deepEqual(codexClients(withApps, version).map(client => client.label), ['VS Code']);
+
+    // A remote window keeps its extensions in a server folder, such as one in a WSL distribution.
+    // Its CLI doesn't run here, and a list that hasn't changed for 30 days belongs to remote
+    // windows that the user no longer opens.
+    await extension('.cursor-server', 'openai.chatgpt-26.600.1-linux-x64');
+    const serverList = await list('.cursor-server', {relativeLocation: 'openai.chatgpt-26.600.1-linux-x64'});
+    const remote = {...ctx, hostPath: (path: string) => path};
+    assert.deepEqual(codexClients(remote, () => 'codex-cli 0.140.0'), [{kind: 'extension', label: 'Cursor'}]);
+    const old = new Date(Date.now() - 40 * 24 * 60 * 60_000);
+    await utimes(serverList, old, old);
+    assert.deepEqual(codexClients(remote, () => 'codex-cli 0.140.0'), []);
   } finally {
     await cleanup();
   }
@@ -1015,11 +1140,23 @@ test('the setup steps name the desktop apps and the command that approves Codex 
     assert.ok(codex.action?.steps[0]?.endsWith(`includes: '${bundled}'`));
     assert.match(codex.action?.steps[1] ?? '', /can’t approve hooks/);
     if (posix) {
-      // When its version is known to be too old, the user must install the Codex CLI.
-      await fakeMacApp(apps, 'ChatGPT.app', '26.715', 'codex-cli 0.121.0');
+      // An app whose Codex can't run async hooks doesn't list them to approve either, so the user must
+      // install the Codex CLI. Reopening such an app doesn't load the hooks: it needs an update.
+      await fakeMacApp(apps, 'ChatGPT.app', '26.715', 'codex-cli 0.145.0-alpha.30');
       for (let tries = 0; tries < 100 && status('codex').action?.command; tries++) await new Promise(r => setTimeout(r, 20));
       assert.equal(status('codex').action?.command, undefined);
       assert.match(status('codex').action?.steps[0] ?? '', /^Install the Codex CLI/);
+      const update = 'Your ChatGPT app includes Codex 0.145.0-alpha.30, which can’t run the Agent Buddy hooks. '
+        + 'Update the ChatGPT app, then reopen it.';
+      assert.equal(status('codex').action?.steps.at(-1), update);
+      await approveCodexHooks(home);
+      assert.equal(status('codex').action?.kind, 'restart');
+      assert.equal(status('codex').action?.steps.at(-1), update);
+      // When the hooks run in another Codex, such as the CLI, Settings still tells the user to update the app.
+      const seen = status('codex', new Map([['codex', Date.now()]]));
+      assert.equal(seen.hookStatus, 'installed');
+      assert.equal(seen.action, undefined);
+      assert.equal(seen.hint, update);
     }
 
     await claudeAdapter.install(withApps);

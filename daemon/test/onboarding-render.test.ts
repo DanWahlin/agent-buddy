@@ -520,7 +520,7 @@ test('character setup names the installation and keeps Wi-Fi graphics during res
     controller.status.firmware = {...controller.status.firmware, board: 'custom-board'};
     controller.renderFirmware(false);
   `, context);
-  assert.match(element('ob-firmware-plan').textContent, /custom-board board, and releases have no firmware.*BOARD=custom-board/);
+  assert.match(element('ob-firmware-plan').textContent, /reports that it is a custom-board board, and releases of this version of the app have no firmware.*BOARD=custom-board/);
   assert.equal(element('ob-board-label').hidden, true);
   assert.equal(element('ob-install-firmware').disabled, true);
 });

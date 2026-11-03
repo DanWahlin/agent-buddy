@@ -1,5 +1,5 @@
 import type {CharacterState, DeviceNetwork, InstallProgress, WifiNetwork} from './protocol.js';
-import {UsbTransport, type UsbPort} from './usb-transport.js';
+import {UsbTransport, type UsbDeviceChoice, type UsbDeviceSummary, type UsbPort} from './usb-transport.js';
 import {WifiTransport} from './wifi-transport.js';
 import type {WifiConfig} from './wifi-config.js';
 import type {ConnectionMode} from './connection-mode.js';
@@ -69,6 +69,50 @@ export class DeviceTransport {
       ? this.#wifi.board : null;
   }
 
+  // The hardware variant within the board, which only the USB BOARD line reports.
+  get variant(): string | null {
+    return this.#usb.connected ? this.#usb.variant : null;
+  }
+
+  // The connected device's MAC address: the USB serial number of its ESP32-S3, or the Wi-Fi device ID.
+  get macAddress(): string | null {
+    return this.#usb.connected ? macFromUsbSerial(this.#usb.serialNumber) : macFromDeviceId(this.#wifi.deviceId);
+  }
+
+  // The USB serial number of the connected device, when it is connected over USB.
+  get usbSerialNumber(): string | null {
+    return this.#usb.connected ? this.#usb.serialNumber : null;
+  }
+
+  get protocol(): number | null {
+    return this.#usb.connected ? this.#usb.protocol : this.#wifi.protocol;
+  }
+
+  // Agent Buddy devices on USB to choose from, because using one of them would be a guess.
+  get usbChoices(): UsbDeviceSummary[] {
+    return this.#mode === 'wifi' || !this.#enabled ? [] : this.#usb.choices;
+  }
+
+  // Agent Buddy devices on USB that do not answer now: the chosen one, or one that answered before.
+  get usbWaiting(): UsbPort[] {
+    return this.#mode === 'wifi' || !this.#enabled ? [] : this.#usb.waiting;
+  }
+
+  // Other ESP32 ports that did not answer in the last scan that checked several ports.
+  get usbSilentPorts(): UsbPort[] {
+    return this.#mode === 'wifi' || !this.#enabled ? [] : this.#usb.silentPorts;
+  }
+
+  // Saves the choice for later scans without a scan now, for a device that is connected already.
+  rememberUsbDevice(choice: UsbDeviceChoice): void {
+    this.#usb.setChosenDevice(choice);
+  }
+
+  chooseUsbDevice(choice: UsbDeviceChoice): Promise<void> {
+    if (this.#installing) throw new Error('Wait for the current installation to finish.');
+    return this.#usb.chooseDevice(choice);
+  }
+
   // Firmware updates go over Wi-Fi, to protocol 9 or later firmware, which reports its ID there.
   get firmwareOverWifi(): boolean {
     return this.#wifi.connected && this.#wifi.firmware !== null;
@@ -102,8 +146,11 @@ export class DeviceTransport {
     return this.#mode;
   }
 
-  async start(mode: ConnectionMode = 'auto', enabled = true, selectedPort: string | null = null): Promise<void> {
+  // `chosen` is the saved choice among several USB devices that answer.
+  async start(mode: ConnectionMode = 'auto', enabled = true, selectedPort: string | null = null,
+              chosen: UsbDeviceChoice | null = null): Promise<void> {
     this.#enabled = enabled;
+    this.#usb.setChosenDevice(chosen);
     await this.#usb.selectPort(selectedPort, true);
     await this.setMode(mode);
   }
@@ -268,4 +315,17 @@ export class DeviceTransport {
     }
     if (this.connected && this.character === 'none') this.#missing();
   }
+}
+
+// The ESP32-S3's USB serial number is its MAC address; anything else is not shown as one.
+export function macFromUsbSerial(serial: string | null): string | null {
+  const hex = serial?.match(/^([0-9a-f]{2})[:_-]?([0-9a-f]{2})[:_-]?([0-9a-f]{2})[:_-]?([0-9a-f]{2})[:_-]?([0-9a-f]{2})[:_-]?([0-9a-f]{2})$/i);
+  return hex ? hex.slice(1).join(':').toUpperCase() : null;
+}
+
+// The firmware's device ID is its 48-bit MAC address as a little-endian number in 16 hex digits.
+export function macFromDeviceId(id: string | null): string | null {
+  if (!id || !/^0000[0-9a-f]{12}$/i.test(id)) return null;
+  const bytes = id.slice(4).match(/../g)!;
+  return bytes.reverse().join(':').toUpperCase();
 }

@@ -42,7 +42,7 @@ function validateConfig(c) {
   need(Array.isArray(c.hook?.lines) && c.hook.lines.length === 3, "hook.lines needs 3 lines.");
   for (const [name, take] of Object.entries(c.takes || {})) {
     need(take.from && take.duration > 0, `takes.${name} needs "from" and "duration".`);
-    if (!take.websiteOnly && !exists(`assets/clips/device-${name}.mp4`)) errors.push(`assets/clips/device-${name}.mp4 is missing. Run "npm run assets".`);
+    if (!exists(`assets/clips/device-${name}.mp4`)) errors.push(`assets/clips/device-${name}.mp4 is missing. Run "npm run assets".`);
   }
   for (const f of ["assets/device/case.png", "assets/device/case.json", "assets/badges/badges.json"])
     need(exists(f), `${f} is missing. Run "npm run assets".`);
@@ -127,7 +127,6 @@ const devices = [];
 let videoTrack = 20;
 function addDevice({ id, take, cx, cy, size, lens = null }) {
   const t = cfg.takes[take];
-  if (t?.websiteOnly) throw new Error(`takes.${take} is for the website only. Remove "websiteOnly" to use it in the video.`);
   const d = round(size * CASE.screenRadius * 2, 2);
   const off = round((size - d) / 2, 2);
   const dev = { id, take, cx, cy, size, d, off, start: takeStart(cfg, t), dur: t.duration, track: videoTrack++, lens };

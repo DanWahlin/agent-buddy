@@ -5,12 +5,23 @@
 
 // Board pins, panel size, and chip addresses are in boards/<board>/BoardConfig.h.
 namespace copilot {
-// kDisplaySize is the content size on every board; kPanelSize is the panel's. Scanout shrinks the
-// content by up to half, averaging 2x2 blocks (see ScreenTransform.h).
-static_assert(kPanelSize > 0 && kPanelSize <= kDisplaySize && 2 * kPanelSize >= kDisplaySize,
+// kDisplaySize is the content size on every board. The panel is kPanelWidth x kPanelHeight, and it
+// shows the content at kShownContentSize around its center (see ScreenTransform.h). At full size, a
+// panel narrower or shorter than the content shows its middle; a smaller size scales the content
+// down by up to half, averaging 2x2 blocks.
+static_assert(kPanelWidth > 0 && kPanelHeight > 0, "The panel needs a width and a height.");
+static_assert(kShownContentSize > 0 && kShownContentSize <= kDisplaySize
+                  && 2 * kShownContentSize >= kDisplaySize,
               "The panel must show the content at full size or down to half size.");
-// A panel smaller than the content uses the compact settings layout and one size larger text.
-constexpr bool kCompactUi = kPanelSize < kDisplaySize;
+// At full size, upright frames go straight to the panel, so content pixels must land on panel pixels.
+static_assert(kShownContentSize < kDisplaySize
+                  || ((kPanelWidth - kDisplaySize) % 2 == 0 && (kPanelHeight - kDisplaySize) % 2 == 0),
+              "At full size, the panel and the content must differ by an even number of pixels.");
+// Where the content's top-left corner is on the panel when the panel shows it at full size.
+constexpr int kPanelContentX = (kPanelWidth - kDisplaySize) / 2;
+constexpr int kPanelContentY = (kPanelHeight - kDisplaySize) / 2;
+// A panel that shows the content smaller uses the compact settings layout and one size larger text.
+constexpr bool kCompactUi = kShownContentSize < kDisplaySize;
 constexpr int kFrameWidth = 400;
 constexpr int kFrameHeight = 352;
 constexpr int kFrameX = (kDisplaySize - kFrameWidth) / 2;

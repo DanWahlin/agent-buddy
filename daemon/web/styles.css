@@ -440,6 +440,14 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 .setting-row > span:first-child { flex: 1; min-width: 0; }
 .setting-row .hint { margin: 0; }
 .setting-row > .volume-control { display: flex; flex: none; align-items: center; gap: .6rem; }
+/* The connected device's details, and the devices to choose from when several answer on USB. */
+.device-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem 1rem; margin: .5rem 0 0;
+  font-size: .85rem; }
+.device-facts dt { color: var(--muted); }
+.device-facts dd { margin: 0; overflow-wrap: anywhere; }
+.device-choices { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: .5rem 1rem; align-items: center;
+  margin-top: .5rem; font-size: .85rem; }
+.device-choices .device-choice { overflow-wrap: anywhere; }
 /* Own track and thumb: the general input padding would keep the thumb off the ends. */
 .volume-control input[type="range"] {
   --fill: .3; --thumb: 18px;

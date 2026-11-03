@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {existsSync} from 'node:fs';
-import {mkdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {existsSync, readdirSync} from 'node:fs';
+import {mkdir, readFile, rm, stat, utimes, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
@@ -36,22 +37,53 @@ test('reads what a distribution reports about itself', () => {
   const probe = parseProbe([
     'Welcome to Ubuntu',
     probeOutput(['home=/home/dan', 'node=/mnt/c/Program Files/nodejs/node.exe', 'mount=/mnt/c/',
-                 'env:CODEX_HOME=/home/dan/codex', 'env:EMPTY=', 'command=claude', 'command=codex', 'interop=1']),
+                 'env:CODEX_HOME=/home/dan/codex', 'env:EMPTY=', 'command=claude', 'command=codex',
+                 'version:codex=codex-cli 0.140.0', 'version:grok=', 'interop=1']),
   ].join('\r\n'));
   assert.deepEqual(probe, {
     home: '/home/dan', node: '/mnt/c/Program Files/nodejs/node.exe', mount: '/mnt/', env: {CODEX_HOME: '/home/dan/codex'},
-    commands: ['claude', 'codex'], interop: true,
+    commands: ['claude', 'codex'], versions: {codex: 'codex-cli 0.140.0'}, interop: true,
   });
   // A custom automount root, no interop, and a node path that wslpath could not make.
   assert.deepEqual(parseProbe(probeOutput(['home=/root', 'node=', 'mount=/c/'])),
-                   {home: '/root', mount: '/', env: {}, commands: [], interop: false});
+                   {home: '/root', mount: '/', env: {}, commands: [], versions: {}, interop: false});
   assert.equal(parseProbe('no markers here'), undefined);
   assert.equal(parseProbe(probeOutput(['home=relative'])), undefined);
 
   const script = probeScript('C:\\Program Files\\nodejs\\node.exe');
   assert.match(script, /wslpath -u 'C:\\Program Files\\nodejs\\node\.exe'/);
+  assert.match(script, /timeout 5 codex --version <\/dev\/null/);
   assert.match(script, /WSLInterop-late/);
   assert.match(script, /exit 0\n$/);
+});
+
+// The probe runs as `sh -s`, so its stdin is the script. A codex that reads stdin gets none, and the
+// rest of the script still runs. WSL adds the Windows PATH, so a Windows program under the drives'
+// mount doesn't count as the distribution's agent.
+test('the probe reads the version of codex and skips Windows programs, without losing the rest of its script',
+     {skip: process.platform === 'win32' && 'needs sh'}, async () => {
+  const root = join(process.cwd(), '.test-output', `wsl-probe-${randomUUID()}`);
+  const bin = join(root, 'bin');
+  const windowsNpm = join(root, 'mnt', 'c', 'Users', 'dan', 'AppData', 'Roaming', 'npm');
+  try {
+    await mkdir(bin, {recursive: true});
+    await mkdir(windowsNpm, {recursive: true});
+    await writeFile(join(bin, 'codex'), "#!/bin/sh\ncat >/dev/null\necho 'codex-cli 0.140.0'\n", {mode: 0o755});
+    // macOS has no timeout command.
+    await writeFile(join(bin, 'timeout'), '#!/bin/sh\nshift\nexec "$@"\n', {mode: 0o755});
+    await writeFile(join(bin, 'wslpath'), `#!/bin/sh\necho '${join(root, 'mnt', 'c')}/'\n`, {mode: 0o755});
+    await writeFile(join(windowsNpm, 'claude'), '#!/bin/sh\nexit 127\n', {mode: 0o755});
+    const script = probeScript('C:\\node.exe').replace('exit 0\n', 'p after 1\nexit 0\n');
+    const output = execFileSync('sh', ['-s'], {input: script, encoding: 'utf8',
+                                               env: {PATH: `${bin}:${windowsNpm}:/usr/bin:/bin`, HOME: '/home/dan'}});
+    const probe = parseProbe(output);
+    assert.deepEqual(probe?.commands, ['codex']);
+    assert.deepEqual(probe?.versions, {codex: 'codex-cli 0.140.0'});
+    assert.equal(probe?.mount, `${join(root, 'mnt')}/`);
+    assert.match(output, /@@agent-companion:after=1/);
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
 });
 
 test('reads wsl.exe lists in UTF-16 and UTF-8, without the distributions of other tools', () => {
@@ -101,7 +133,8 @@ test('gives a distribution Linux hooks that run the Windows node.exe and CLI', (
   });
   const ctx = wslContext(host, 'Ubuntu', {
     home: '/home/dan', node: '/mnt/c/Program Files/nodejs/node.exe', mount: '/mnt/',
-    env: {CODEX_HOME: '/home/dan/codex', GROK_HOME: 'relative'}, commands: [], interop: true,
+    env: {CODEX_HOME: '/home/dan/codex', GROK_HOME: 'relative'}, commands: [], versions: {codex: 'codex-cli 0.164.0'},
+    interop: true,
   });
   assert.equal(ctx.platform, 'linux');
   assert.equal(ctx.home, '\\\\wsl$\\Ubuntu\\home\\dan');
@@ -109,6 +142,8 @@ test('gives a distribution Linux hooks that run the Windows node.exe and CLI', (
   assert.equal(ctx.cli, host.cli);
   assert.equal(ctx.socketPath, host.socketPath);
   assert.deepEqual(ctx.env, {PATH: '', HOME: '/home/dan', CODEX_HOME: '\\\\wsl$\\Ubuntu\\home\\dan\\codex', GROK_HOME: 'relative'});
+  // This service can't run the distribution's codex, so its version comes from the probe.
+  assert.deepEqual(ctx.commandVersions, {codex: 'codex-cli 0.164.0'});
   assert.equal(ctx.runCommand, undefined);
 });
 
@@ -269,6 +304,7 @@ test('installs and removes hooks in a distribution where only it has the agent',
   const {hostHome, linuxHome, host, ubuntu, cleanup} = await locationFixture();
   try {
     await mkdir(join(linuxHome, '.claude'), {recursive: true});
+    ubuntu.commands = ['claude'];
     const settings = join(linuxHome, '.claude', 'settings.json');
     assert.deepEqual(await installAgent('claude', host), []);
     assert.equal(existsSync(join(hostHome, '.claude')), false);
@@ -301,9 +337,10 @@ test('installs and removes hooks in a distribution where only it has the agent',
 });
 
 test('missing-only hook setup preserves current host and WSL hook files', async () => {
-  const {hostHome, linuxHome, host, cleanup} = await locationFixture();
+  const {hostHome, linuxHome, host, ubuntu, cleanup} = await locationFixture();
   try {
     await mkdir(join(linuxHome, '.copilot'), {recursive: true});
+    ubuntu.commands = ['copilot'];
     await installAgent('copilot', host);
     const hostHooks = join(hostHome, '.copilot', 'hooks', 'agent-companion.json');
     const wslHooks = join(linuxHome, '.copilot', 'hooks', 'agent-companion.json');
@@ -329,6 +366,7 @@ test('approved removal reaches a stopped WSL installation as well as native host
   try {
     await mkdir(join(hostHome, '.claude'), {recursive: true});
     await mkdir(join(linuxHome, '.claude'), {recursive: true});
+    ubuntu.commands = ['claude'];
     await writeFile(join(hostHome, '.claude', 'settings.json'), '{}');
     await installAgent('claude', host);
     const found = agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'claude')!;
@@ -410,6 +448,128 @@ test('the Codex approval steps name each place whose hooks wait, with a CLI that
     const steps = action()?.steps ?? [];
     assert.match(steps[0] ?? '', /^Install the Codex CLI/);
     assert.equal(steps[1], 'In WSL: Ubuntu, open a terminal and run codex.');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('a Codex in a distribution that can’t run the hooks gets an update step', async () => {
+  const {linuxHome, host, ubuntu, cleanup} = await locationFixture();
+  try {
+    const codex = () => agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'codex')!;
+    const update = 'Your Codex CLI 0.140.0 can’t run the Agent Buddy hooks. Update the Codex CLI.';
+    await mkdir(join(linuxHome, '.codex'), {recursive: true});
+    ubuntu.commands = ['codex'];
+    ubuntu.ctx = {...ubuntu.ctx!, commandVersions: {codex: 'codex-cli 0.140.0'}};
+    // Settings shows it on the distribution's row, and the setup guide names the distribution.
+    assert.equal(codex().locations?.find(location => location.id === 'wsl:Ubuntu')?.hint, update);
+    await installAgent('codex', host);
+    // That codex doesn't list the hooks in /hooks, so the guide updates it before it runs it to approve them.
+    const steps = codex().action?.steps ?? [];
+    const updateStep = `In WSL: Ubuntu, y${update.slice(1)}`;
+    assert.equal(steps.filter(step => step === updateStep).length, 1);
+    assert.equal(steps.indexOf(updateStep) + 1, steps.indexOf('In WSL: Ubuntu, open a terminal and run codex.'));
+    assert.equal(codex().locations?.find(location => location.id === 'wsl:Ubuntu')?.hint,
+                 `${update} Approve the new hooks with /hooks in the Codex CLI, then reopen the ChatGPT app.`);
+
+    // A VS Code window in the distribution runs the Codex of the extension in .vscode-server.
+    const extensions = join(linuxHome, '.vscode-server', 'extensions');
+    const bin = join(extensions, 'openai.chatgpt-26.715.1-linux-x64', 'bin', 'linux-x86_64');
+    await mkdir(bin, {recursive: true});
+    await writeFile(join(bin, 'codex-package.json'), JSON.stringify({layoutVersion: 1, version: '0.145.0-alpha.30'}));
+    await writeFile(join(extensions, 'extensions.json'), JSON.stringify([
+      {identifier: {id: 'openai.chatgpt'}, version: '26.715.1', relativeLocation: 'openai.chatgpt-26.715.1-linux-x64'},
+    ]));
+    ubuntu.ctx = {...ubuntu.ctx!, commandVersions: {codex: 'codex-cli 0.164.0'}};
+    const extensionSteps = () => codex().action?.steps.filter(step => step.startsWith('In WSL: Ubuntu, the'));
+    assert.deepEqual(extensionSteps(), [
+      'In WSL: Ubuntu, the Codex extension in VS Code includes Codex 0.145.0-alpha.30, which can’t run the Agent '
+        + 'Buddy hooks. Update the extension, then reload the VS Code window.',
+    ]);
+    // Remote windows that the user no longer opens leave an old list, which doesn't count.
+    const old = new Date(Date.now() - 40 * 24 * 60 * 60_000);
+    await utimes(join(extensions, 'extensions.json'), old, old);
+    assert.deepEqual(extensionSteps(), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('hooks that an older probe put in a distribution without the agent don’t count, and Remove deletes them', async () => {
+  const {linuxHome, host, ubuntu, cleanup} = await locationFixture();
+  try {
+    // An older probe counted the Windows codex that WSL finds through the Windows PATH, so setup put
+    // hooks in the distribution, although Codex never ran there.
+    ubuntu.commands = ['codex'];
+    await installAgent('codex', host);
+    const hooks = join(linuxHome, '.codex', 'hooks.json');
+    assert.match(await readFile(hooks, 'utf8'), /hook codex/);
+    ubuntu.commands = [];
+    const codex = () => agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'codex')!;
+    const row = () => codex().locations?.find(location => location.id === 'wsl:Ubuntu');
+    // The folder holds only those hooks, so Codex isn't there, and the guide doesn't ask for approval there.
+    assert.equal(row()?.detected, false);
+    assert.equal(row()?.hookStatus, 'needs-approval');
+    assert.equal(row()?.hint, 'Codex isn’t installed in this distribution, so these hooks never run there.');
+    assert.equal(codex().hookStatus, 'missing');
+    assert.equal(codex().action, undefined);
+    // They still count as installed, so Remove deletes them, and an install doesn't put them back.
+    assert.equal(codex().installed, true);
+    await uninstallAgent('codex', host);
+    assert.doesNotMatch(await readFile(hooks, 'utf8'), /hook codex/);
+    await installAgent('codex', host);
+    assert.doesNotMatch(await readFile(hooks, 'utf8'), /hook codex/);
+    // The files that Codex writes when it runs there show that it is there.
+    await writeFile(join(linuxHome, '.codex', 'config.toml'), 'model = "gpt-5"\n');
+    assert.equal(row()?.detected, true);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('Remove leaves the empty hooks folder of Copilot, which doesn’t count as Copilot', async () => {
+  const {linuxHome, host, ubuntu, cleanup} = await locationFixture();
+  try {
+    // Copilot keeps the hook file in a hooks folder, and Remove deletes only the file.
+    ubuntu.commands = ['copilot'];
+    await installAgent('copilot', host);
+    const hooks = join(linuxHome, '.copilot', 'hooks');
+    assert.deepEqual(readdirSync(hooks), ['agent-companion.json']);
+    ubuntu.commands = [];
+    const copilot = () => agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'copilot')!;
+    const row = () => copilot().locations?.find(location => location.id === 'wsl:Ubuntu');
+    assert.equal(row()?.detected, false);
+    assert.match(row()?.hint ?? '', /isn’t installed in this distribution/);
+    await uninstallAgent('copilot', host);
+    assert.deepEqual(readdirSync(hooks), []);
+    assert.equal(row(), undefined);
+    // Install puts the hooks back on this computer only.
+    await installAgent('copilot', host);
+    assert.equal(copilot().hookStatus, 'installed');
+    assert.deepEqual(readdirSync(hooks), []);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('an empty hooks folder that Remove left doesn’t count when the service starts', async () => {
+  const {linuxHome, host, cleanup} = await locationFixture();
+  try {
+    const folder = join(linuxHome, '.copilot');
+    await mkdir(join(folder, 'hooks'), {recursive: true});
+    // A file system with coarse timestamps (such as NTFS) can give the folder the same mtime before and
+    // after a quick change. A whole second is the same each time it is set. It is a minute in the past,
+    // as from a WSL distribution whose clock is behind this computer's.
+    const sameStep = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000);
+    await utimes(join(folder, 'hooks'), sameStep, sameStep);
+    await utimes(folder, sameStep, sameStep);
+    const row = () => agentStatuses(host, new Map(), new Map()).find(agent => agent.id === 'copilot')!
+      .locations?.find(location => location.id === 'wsl:Ubuntu');
+    assert.equal(row(), undefined);
+    // A file that Copilot writes shows that it is there, also when the folder keeps its mtime.
+    await writeFile(join(folder, 'config.json'), '{}');
+    await utimes(folder, sameStep, sameStep);
+    assert.equal(row()?.detected, true);
   } finally {
     await cleanup();
   }

@@ -1,4 +1,5 @@
 #include "../firmware/AgentCompanion/src/OrientedDisplay.h"
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -33,17 +34,18 @@ void expectScanout() {
 // What the panel receives for a source: the content scaled and rotated to the panel.
 std::vector<uint16_t> scanout(const copilot::ScreenPixels& source, float angle) {
   using namespace copilot;
-  std::vector<uint16_t> expected(kPanelSize * kPanelSize);
-  assert(ScreenTransform(kPanelSize, kDisplaySize, angle)
-             .renderRows(source, 0, kPanelSize, expected.data(), expected.size()));
+  std::vector<uint16_t> expected(kPanelWidth * kPanelHeight);
+  assert(ScreenTransform(kPanelWidth, kPanelHeight, kDisplaySize, kShownContentSize, angle)
+             .renderRows(source, 0, kPanelHeight, expected.data(), expected.size()));
   return expected;
 }
 }
 
 int main() {
   using namespace copilot;
-  // A panel smaller than the content always scales, so it never takes the upright direct transfer.
-  constexpr bool fullSize = kPanelSize == kDisplaySize;
+  // A panel that shows the content smaller always scales, so it never takes the upright direct
+  // transfer.
+  constexpr bool fullSize = kShownContentSize == kDisplaySize;
   expectScanout();
   Arduino_DataBus bus;
   spi_stub::sink = &bus;
@@ -56,7 +58,7 @@ int main() {
   bus.dmaBuffer = dma.data();
   bus.dmaBytes = dma.size();
   assert(!display.setTransferBuffer(dma.data(), 2));
-  assert(!display.setTransferBuffer(dma.data(), kPanelSize * sizeof(uint16_t)));
+  assert(!display.setTransferBuffer(dma.data(), kPanelWidth * sizeof(uint16_t)));
   assert(display.error());
   assert(!display.setTransferBuffer(dma.data() + 1, dma.size() - 2));
   assert(display.setTransferBuffer(dma.data(), dma.size()));
@@ -67,38 +69,64 @@ int main() {
     character[index] = static_cast<uint16_t>(index + 1);
   const ScreenPixels characterSource{character.data(), kCharacterFrameX, 0, kCharacterFrameWidth,
                                      kCharacterFrameHeight, Rgb565Order::Display};
+  // At full size, the panel shows the part of the frame that is on it, and black margins around it.
+  const int left = std::max(kCharacterFrameX + kPanelContentX, 0);
+  const int top = std::max(kPanelContentY, 0);
+  const int right = std::min(kCharacterFrameX + kCharacterFrameWidth + kPanelContentX, kPanelWidth);
+  const int bottom = std::min(kCharacterFrameHeight + kPanelContentY, kPanelHeight);
+  const unsigned margins = (top > 0) + (bottom < kPanelHeight) + (left > 0) + (right < kPanelWidth);
   assert(display.flushFrame(character.data(), kCharacterFrameX, 0,
                             kCharacterFrameWidth, kCharacterFrameHeight));
   if (fullSize) {
-    assert(bus.bytes.size() == character.size() * sizeof(uint16_t));
-    assert(std::memcmp(bus.bytes.data(), character.data(), bus.bytes.size()) == 0);
-    assert(panel.window.x == kCharacterFrameX && panel.window.width == kCharacterFrameWidth);
-    assert(panel.marginClears == 2 && !panel.started);
+    std::vector<uint16_t> shown;
+    for (int y = top; y < bottom; ++y)
+      for (int x = left; x < right; ++x)
+        shown.push_back(character[(y - kPanelContentY) * kCharacterFrameWidth
+                                  + (x - kPanelContentX - kCharacterFrameX)]);
+    assert(bus.bytes.size() == shown.size() * sizeof(uint16_t));
+    assert(std::memcmp(bus.bytes.data(), shown.data(), bus.bytes.size()) == 0);
+    assert(panel.window.x == left && panel.window.y == top);
+    assert(panel.window.width == right - left && panel.window.height == bottom - top);
+    assert(panel.marginClears == margins && margins > 0 && !panel.started);
+    // The direct transfer agrees with the transform that rotated frames and touch use.
+    const std::vector<uint16_t> transformed = scanout(characterSource, 0);
+    for (int y = top; y < bottom; ++y)
+      assert(std::memcmp(&transformed[y * kPanelWidth + left], &shown[(y - top) * (right - left)],
+                         (right - left) * sizeof(uint16_t)) == 0);
   } else {
     const std::vector<uint16_t> expected = scanout(characterSource, 0);
     assert(bus.bytes.size() == expected.size() * sizeof(uint16_t));
     assert(std::memcmp(bus.bytes.data(), expected.data(), bus.bytes.size()) == 0);
     assert(panel.window.x == 0 && panel.window.y == 0);
-    assert(panel.window.width == kPanelSize && panel.window.height == kPanelSize);
+    assert(panel.window.width == kPanelWidth && panel.window.height == kPanelHeight);
     assert(panel.marginClears == 0 && !panel.started);
   }
   bus.bytes.clear();
   assert(display.flushFrame(character.data(), kCharacterFrameX, 0,
                             kCharacterFrameWidth, kCharacterFrameHeight));
-  if (fullSize) assert(panel.marginClears == 2);
+  if (fullSize) assert(panel.marginClears == margins);
 
   display.fillScreen(0xf800);
   bus.bytes.clear();
   display.flush();
   assert(!display.error() && !panel.started);
   assert(spi_stub::maxPending == 2 && spi_stub::owner == nullptr);
-  assert(bus.bytes.size() == kPanelSize * kPanelSize * sizeof(uint16_t));
-  for (size_t byte = 0; byte < bus.bytes.size(); byte += 2)
-    assert(bus.bytes[byte] == 0xf8 && bus.bytes[byte + 1] == 0x00);
+  assert(bus.bytes.size() == kPanelWidth * kPanelHeight * sizeof(uint16_t));
+  // Red where the panel shows the content, in display byte order, and black around it.
+  const int shownX = (kPanelWidth - kShownContentSize) / 2;
+  const int shownY = (kPanelHeight - kShownContentSize) / 2;
+  for (int y = 0; y < kPanelHeight; ++y) {
+    for (int x = 0; x < kPanelWidth; ++x) {
+      const size_t byte = (static_cast<size_t>(y) * kPanelWidth + x) * sizeof(uint16_t);
+      const bool red = x >= shownX && x < shownX + kShownContentSize
+                       && y >= shownY && y < shownY + kShownContentSize;
+      assert(bus.bytes[byte] == (red ? 0xf8 : 0x00) && bus.bytes[byte + 1] == 0x00);
+    }
+  }
   bus.bytes.clear();
   assert(display.flushFrame(character.data(), kCharacterFrameX, 0,
                             kCharacterFrameWidth, kCharacterFrameHeight));
-  if (fullSize) assert(panel.marginClears == 4);
+  if (fullSize) assert(panel.marginClears == 2 * margins);
 
   for (float angle : {kOrientationPi / 2, kOrientationPi, -kOrientationPi / 2, 0.61f}) {
     assert(display.setAngle(angle));
@@ -108,13 +136,14 @@ int main() {
                               kCharacterFrameWidth, kCharacterFrameHeight));
     assert(bus.bytes.size() == expected.size() * sizeof(uint16_t));
     assert(std::memcmp(bus.bytes.data(), expected.data(), bus.bytes.size()) == 0);
-    assert(panel.window.x == 0 && panel.window.width == kPanelSize && !panel.started);
+    assert(panel.window.x == 0 && panel.window.y == 0 && panel.window.width == kPanelWidth
+           && panel.window.height == kPanelHeight && !panel.started);
   }
   assert(display.setAngle(0));
   bus.bytes.clear();
   assert(display.flushFrame(character.data(), kCharacterFrameX, 0,
                             kCharacterFrameWidth, kCharacterFrameHeight));
-  if (fullSize) assert(panel.marginClears == 6);
+  if (fullSize) assert(panel.marginClears == 3 * margins);
   assert(!display.flushFrame(nullptr, 0, 0, kDisplaySize, kDisplaySize));
   assert(display.error() && !panel.started);
   assert(!display.flushFrame(character.data(), kDisplaySize - 1, 0, 2, 1));

@@ -279,6 +279,9 @@ function renderStatus() {
     $('fact-state').textContent = 'Unavailable';
     $('fact-address').textContent = 'Service offline';
     $('fact-network').textContent = 'Service offline';
+    $('fact-board').textContent = 'Service offline';
+    $('fact-firmware').textContent = 'Service offline';
+    $('fact-mac').textContent = 'Service offline';
     $('fact-versions').textContent = '—';
     $('summary').textContent = 'Waiting for the companion service…';
     renderDesktopApp();
@@ -302,7 +305,17 @@ function renderStatus() {
     ? `${status.transport === 'wifi' ? 'Wi-Fi' : 'USB'} connected`
     : status.deviceEnabled === false ? 'Desktop only' : 'Not connected';
   connection.className = connected ? 'connected' : '';
+  const model = connected ? boardInfo(status.firmware?.board)?.name : null;
+  if (model) {
+    const detail = document.createElement('span');
+    detail.className = 'fact-detail';
+    detail.textContent = model;
+    connection.append(detail);
+  }
   $('fact-address').textContent = connected ? where : 'Not connected';
+  $('fact-board').textContent = connected ? boardDescription(status.firmware, status.device) : 'Not connected';
+  $('fact-firmware').textContent = connected ? firmwareDescription(status.firmware) : 'Not connected';
+  $('fact-mac').textContent = connected ? status.device?.macAddress ?? 'Not reported' : 'Not connected';
   // Network names can hold any character, so they only ever go in as text.
   $('fact-network').textContent = connected && status.network?.ssid
     ? `${status.network.ssid}${status.network.connected ? '' : ' (not connected)'}`
@@ -728,21 +741,143 @@ function renderDeviceConnection() {
   const button = $('device-detect');
   if (!pill || !hint || !button) return;
   if (detection && detection.key !== connectionKey()) detection = null;
+  const model = boardInfo(status?.firmware?.board)?.name ?? 'The device';
+  // A choice that the person must make comes before what Detect device found.
   const view = !status ? {pill: 'Unknown', kind: 'offline', hint: 'Waiting for the companion service…'}
+    : status.connected ? (detection ? detectionView(detection.found)
+      : {pill: `${status.transport === 'wifi' ? 'Wi-Fi' : 'USB'} connected`, kind: 'usb',
+        hint: status.transport === 'wifi' ? `${model} is connected over Wi-Fi.`
+          : `${model} is connected over USB on ${status.port}.`})
+    : deviceChoices().length ? {pill: 'Choose a device', kind: 'warning', hint: `${waitingText() || 'Several Agent '
+      + 'Buddy devices answer on USB.'} Agent Buddy uses none of them until you choose one, and it remembers your choice.`}
     : detection ? detectionView(detection.found)
-    : status.connected ? {pill: `${status.transport === 'wifi' ? 'Wi-Fi' : 'USB'} connected`, kind: 'usb',
-      hint: status.transport === 'wifi' ? 'Connected over Wi-Fi.' : `Connected over USB on ${status.port}.`}
     : status.deviceEnabled === false ? {pill: 'Off', kind: 'offline',
       hint: 'Use a physical device is off, so Agent Buddy does not look for a device.'}
-    : {pill: 'Not connected', kind: 'offline', hint: 'Agent Buddy looks for the device by itself. '
-      + 'If it does not connect after you plug it in, select Detect device to find out why.'};
+    : {pill: 'Not connected', kind: 'offline', hint: [waitingText(), silentText(), 'Agent Buddy looks for the device '
+      + 'by itself. If it does not connect after you plug it in, select Detect device to find out why.']
+      .filter(Boolean).join(' ')};
   pill.textContent = view.pill;
   pill.className = `pill ${view.kind}`;
   hint.textContent = view.hint;
   button.textContent = detecting ? 'Detecting…' : 'Detect device';
   button.disabled = detecting || !status || status.deviceEnabled === false || Boolean(status.installing
     || status.firmware?.usb?.installing || status.firmware?.updating || status.onboarding?.busy);
+  renderDeviceDetails();
 }
+
+// Agent Buddy devices on USB to choose from, because using one of them would be a guess.
+function deviceChoices() {
+  return status && !status.connected ? status.device?.choices ?? [] : [];
+}
+
+// Agent Buddy devices on USB that do not answer now: the chosen one, or one that answered before.
+function waitingText() {
+  const waiting = status && !status.connected ? status.device?.waiting ?? [] : [];
+  if (!waiting.length) return '';
+  const where = waiting.map(port => port.serialNumber ? `${port.path} (USB serial number ${port.serialNumber})`
+    : port.path).join(', ');
+  return `The Agent Buddy device on ${where} does not answer now. It can be busy or restarting.`;
+}
+
+// Other ESP32 devices that do not answer as Agent Buddy, when several are on USB.
+function silentText() {
+  const silent = status && !status.connected ? status.device?.silentPorts ?? [] : [];
+  return silent.length ? `The ESP32 device on ${silent.join(', ')} does not answer as Agent Buddy.` : '';
+}
+
+// The board as the device reports it: its name, ID, and variant, or why it is not known.
+function boardDescription(firmware, device) {
+  const board = firmware?.board;
+  if (!board) return 'Not reported. The device runs older firmware that does not say which board it is.';
+  const info = boardInfo(board);
+  const variant = device?.variant ? `variant ${device.variant}` : '';
+  return info ? `${info.name} (${board}${variant ? `, ${variant}` : ''})`
+    : `${board}${variant ? ` (${variant})` : ''}. This version of the app has no firmware for this board.`;
+}
+
+// What the device runs: this app's release, the build from this computer, or other firmware.
+function firmwareDescription(firmware) {
+  const id = firmware?.device;
+  if (!id) return 'Older firmware that does not report its ID';
+  const {release, releaseId} = firmware.usb ?? {};
+  if (release && releaseId && id === releaseId) return `Release v${release} (${id})`;
+  if (firmware.built && id === firmware.built) return `Build from this computer (${id})`;
+  return `Firmware ${id}`;
+}
+
+let devicePending = false;
+
+// The connected device's details, or the devices to choose from when several answer on USB.
+function renderDeviceDetails() {
+  const facts = $('device-facts');
+  const list = $('device-choices');
+  if (!facts || !list) return;
+  facts.textContent = '';
+  list.textContent = '';
+  const connected = Boolean(status?.connected);
+  const choices = deviceChoices();
+  facts.hidden = !connected;
+  list.hidden = choices.length === 0;
+  if (connected) {
+    const where = status.transport === 'wifi'
+      ? `Wi-Fi, ${String(status.port).replace(/^https?:\/\//, '').replace(/:80$/, '')}` : `USB, ${status.port}`;
+    const rows = [
+      ['Board', boardDescription(status.firmware, status.device)],
+      ['Connection', where],
+      ['Firmware', firmwareDescription(status.firmware)],
+      ['Character', status.character === 'none' ? 'None installed' : characterName(status.character)],
+      ['MAC address', status.device?.macAddress ?? 'Not reported'],
+      ['Protocol', status.device?.protocol ? String(status.device.protocol) : 'Not reported'],
+    ];
+    for (const [label, value] of rows) {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const detail = document.createElement('dd');
+      detail.textContent = value;
+      facts.append(term, detail);
+    }
+  }
+  for (const choice of choices) {
+    const text = document.createElement('span');
+    text.className = 'device-choice';
+    text.textContent = choiceLabel(choice);
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'secondary';
+    use.value = choice.path;
+    use.textContent = 'Use this device';
+    use.disabled = devicePending;
+    list.append(text, use);
+  }
+}
+
+function choiceLabel(choice) {
+  const board = choice.board ? boardInfo(choice.board)?.name ?? choice.board : 'Board not reported';
+  const parts = [board, `on ${choice.path}`];
+  if (choice.serialNumber) parts.push(`USB serial number ${choice.serialNumber}`);
+  if (choice.character) parts.push(choice.character === 'none' ? 'no character' : characterName(choice.character));
+  return parts.join(' · ');
+}
+
+async function chooseDevice(path) {
+  devicePending = true;
+  renderDeviceConnection();
+  try {
+    await api('/api/devices/choose', {method: 'POST', type: 'application/json', body: JSON.stringify({path})});
+    await refreshStatus();
+    toast('Agent Buddy uses that device now, and remembers your choice.', 'success');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    devicePending = false;
+    renderDeviceConnection();
+  }
+}
+
+$('device-choices').addEventListener('click', event => {
+  const use = event.target?.closest?.('button');
+  if (use?.value && !devicePending) void chooseDevice(use.value);
+});
 
 const cableSteps = 'Use a USB data cable (a charge-only cable powers the device but is not detected), '
   + 'try another USB port, and check that the device is on.';
@@ -755,6 +890,8 @@ function detectionView(found) {
     case 'connected': return {pill: `${found.transport === 'wifi' ? 'Wi-Fi' : 'USB'} connected`, kind: 'usb',
       hint: found.transport === 'wifi' ? 'Found the device over Wi-Fi.' : `Found the device on ${found.port}.`};
     case 'disabled': return {pill: 'Off', kind: 'offline', hint: 'Turn on Use a physical device first.'};
+    case 'several-devices': return {pill: 'Choose a device', kind: 'warning', hint: `Several Agent Buddy devices `
+      + `answer on USB (${ports}). Agent Buddy uses none of them until you choose one below. It remembers your choice.`};
     case 'busy': return {pill: 'Busy', kind: 'warning', hint: 'Wait for the current installation to finish, then try again.'};
     case 'wifi-mode': return {pill: 'USB not used', kind: 'warning', hint: `A USB device is connected (${ports}), `
       + 'but Connection mode is Wi-Fi, which does not use USB. Choose Auto or USB below.'};
@@ -1034,7 +1171,12 @@ function firmwareView(firmware) {
   if (!firmware.device) return {pill: 'Old firmware', kind: 'warning', update: true, overUsb: Boolean(firmware.usb?.release),
     hint: 'This firmware is older and does not report its version, so it cannot update over Wi-Fi. '
       + 'A newer release installs over USB.'};
-  if (!firmware.built) return releaseFirmwareView(firmware);
+  // Comparing the device with a board's release would be a guess, so the person chooses the board.
+  if (!firmware.board) return {pill: 'Board not reported', kind: 'warning', update: true,
+    overUsb: Boolean(firmware.usb?.release), hint: boardNotReportedHint};
+  // The build from this computer is the default board's firmware; a device of another board only
+  // compares with its release firmware.
+  if (!firmware.built || firmware.board !== firmware.usb?.releaseBoard) return releaseFirmwareView(firmware);
   if (firmware.built === firmware.device)
     return {pill: 'Current build installed', kind: 'usb',
       hint: `The device runs the source build from this computer (${firmware.device}). No update is needed.`};
@@ -1054,20 +1196,26 @@ function otherBoard(firmware) {
 }
 
 function otherBoardHint(firmware) {
-  return `This device is a ${firmware.board} board, and releases have no firmware for it, so the app does not `
-    + `install one. Build and upload this board's firmware from source: BOARD=${firmware.board} bash tools/arduino.sh upload <port>.`;
+  return `This device reports that it is a ${firmware.board} board, and releases of this version of the app have `
+    + 'no firmware for it, so the app does not install one. A newer version of the app can support it. Or build '
+    + `and upload this board's firmware from source: BOARD=${firmware.board} bash tools/arduino.sh upload <port>.`;
 }
+
+const boardNotReportedHint = 'The device runs older firmware that does not say which board it is, so Agent Buddy '
+  + 'cannot tell which release firmware fits it. Install the release over USB, and select the board of the device '
+  + 'there.';
 
 function boardInfo(id) {
   return status?.firmware?.usb?.boards?.find(entry => entry.id === id) ?? null;
 }
 
-// The board that the device on the selected USB port reports. Only then does the device decide
-// the board: over Wi-Fi, or on another port, the device to install can be a different one.
+// The board that the device on the selected USB port reports: the connected device, or a device that
+// answered while the person has to choose one. Over Wi-Fi, or on another port, the device to install
+// can be a different one, so it does not count.
 function reportedUsbBoard() {
   const selected = $('usb-firmware-port').value;
   const board = status?.connected && status.transport === 'usb' && (!selected || selected === status.port)
-    ? status.firmware?.board : null;
+    ? status.firmware?.board : deviceChoices().find(choice => choice.path === selected)?.board ?? null;
   return boardInfo(board) ? board : null;
 }
 
@@ -1145,6 +1293,11 @@ function usbFirmwareView(usb) {
   const about = `This downloads published release ${release} from GitHub and replaces the firmware over USB. `
     + 'Wi-Fi settings stay, and the app then installs your character again.';
   if (last && !last.ok) return {pill: 'Failed', kind: 'warning', hint: `${last.error} ${about}`};
+  if (status.connected && !status.firmware?.board)
+    return {pill: 'Board not reported', kind: 'warning', hint: `${boardNotReportedHint} ${about}`};
+  if (deviceChoices().length) return {pill: 'Choose a device', kind: 'warning',
+    hint: 'Agent Buddy uses no device until you choose one under Device connection above. Or select its port '
+      + `below to install ${release} on it. ${about}`};
   // The device answers over Wi-Fi, so it has companion firmware; only its USB link is silent.
   if (usb.unanswered && status.connected) return {pill: 'USB not answering', kind: 'warning',
     hint: `The device answers over Wi-Fi but not over USB on ${usb.port}. Unplug the USB cable, `

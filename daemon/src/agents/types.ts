@@ -39,6 +39,9 @@ export interface AgentContext {
   // The folders where apps are found, in place of /Applications and ~/Applications on macOS, and
   // /usr/lib and /opt on Linux.
   appFolders?: readonly string[];
+  // What each agent command printed for --version, for a location whose commands this service
+  // can't run, such as a WSL distribution. A probe in the location reads them.
+  commandVersions?: Readonly<Record<string, string>>;
 }
 
 export interface AgentLocation {
@@ -104,7 +107,7 @@ export interface AgentAdapter {
   name: string;
   clients?: string;
   hint(status: HookStatus): string | undefined;
-  // Advice that depends on the user's other settings, shown when no other hint applies.
+  // Advice that depends on the user's other settings or apps, shown when no other hint applies.
   note?(ctx: AgentContext): string | undefined;
   detect(ctx: AgentContext): AgentDetection;
   hookStatus(ctx: AgentContext): HookStatus;

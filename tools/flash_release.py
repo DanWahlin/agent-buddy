@@ -4,10 +4,12 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
 ESPTOOL_VERSION = "5.3.0"
 MIN_PYTHON = (3, 10)
@@ -148,6 +150,67 @@ def require_dependencies():
         raise ValueError(f"esptool {ESPTOOL_VERSION} is required (found {version}). Run: {command}")
 
 
+BOARD_LINE = re.compile(r"BOARD id=([a-z0-9][a-z0-9-]{0,63})(?: |$)")
+
+
+def open_without_reset(port):
+    """Opens `port` without pulsing DTR or RTS, which reset the ESP32-S3. Windows asserts both together."""
+    import serial
+    if os.name != "posix":
+        device = serial.Serial(port=None, baudrate=115200, timeout=0.2)
+    else:
+        import termios
+
+        class NonResettingSerial(serial.Serial):
+            def _update_dtr_state(self):
+                pass
+
+            def _update_rts_state(self):
+                pass
+
+            def _reconfigure_port(self, force_update=False):
+                super()._reconfigure_port(force_update)
+                attributes = termios.tcgetattr(self.fd)
+                attributes[2] &= ~termios.HUPCL
+                termios.tcsetattr(self.fd, termios.TCSANOW, attributes)
+
+        device = NonResettingSerial(port=None, baudrate=115200, timeout=0.2)
+    device.port = port
+    device.open()
+    return device
+
+
+def read_board(device, seconds=2.0):
+    """Asks an open device for its INFO reply and returns the board on its BOARD line, or None."""
+    device.reset_input_buffer()
+    device.write(b"i")
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        match = BOARD_LINE.match(device.readline().decode("utf-8", errors="replace").strip())
+        if match:
+            return match[1]
+    return None
+
+
+def reported_board(port, seconds=2.0):
+    """The board that Agent Buddy firmware on `port` reports, or None when the device does not say:
+    other or older firmware, a device that does not answer, or a port that cannot be opened."""
+    try:
+        import serial
+    except ImportError:
+        return None
+    try:
+        device = open_without_reset(port)
+    except (OSError, ValueError, serial.SerialException):
+        return None
+    try:
+        return read_board(device, seconds)
+    except (OSError, serial.SerialException):
+        return None
+    finally:
+        device.close()
+
+
 def flash_command(root, manifest, port):
     command = [
         sys.executable, "-m", "esptool", "--chip", "esp32s3", "--port", port,
@@ -192,6 +255,15 @@ def main(argv=None, root=None):
         if not args.port:
             raise ValueError("--port is required to flash. Use --list-ports to find your device.")
         require_dependencies()
+        # A device that runs Agent Buddy firmware names its board. Firmware for another board can stop
+        # it, so a different board is refused. A device that does not say is never assumed to match.
+        board = manifest.get("board", "waveshare-amoled-175")
+        reported = reported_board(args.port)
+        if reported is not None and reported != board:
+            raise ValueError(f"The device on {args.port} reports that it is a {reported} board, but this firmware "
+                             f"is for {board}. Download the firmware ZIP for {reported} instead.")
+        print(f"The device on {args.port} reports that it is a {board} board." if reported is not None
+              else f"The device on {args.port} does not report its board. Check that it is a {board} board.")
         print(WARNING)
         if not args.yes and input("Type FLASH to replace the device firmware: ").strip() != "FLASH":
             raise ValueError("Flash cancelled; confirmation was not FLASH.")

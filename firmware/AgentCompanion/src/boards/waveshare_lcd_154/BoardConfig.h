@@ -23,7 +23,9 @@ constexpr char kImuName[] = "QMI8658";
 // The firmware draws 466x466 content on every board. This panel is 240x240, so scanout shows the
 // content at about half size (see ScreenTransform.h).
 constexpr int kDisplaySize = 466;
-constexpr int kPanelSize = 240;
+constexpr int kPanelWidth = 240;
+constexpr int kPanelHeight = 240;
+constexpr int kShownContentSize = 240;
 constexpr int kDisplayCsPin = 21;
 constexpr int kDisplayDcPin = 45;
 constexpr int kDisplaySckPin = 38;

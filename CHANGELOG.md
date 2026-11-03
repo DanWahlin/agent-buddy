@@ -2,6 +2,63 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.17.0]
+
+### Features and improvements
+
+- Add the Waveshare AMOLED-2.06 board, show device details in Settings, and never guess the device or board
+
+## [v0.16.2]
+
+### Documentation
+
+- Shorten the README Quick start and update its screenshots
+
+- Shorten the README and move desktop app details to docs/desktop-app.md
+
+
+### Features and improvements
+
+- Add a README prompt that installs the desktop app with any coding agent
+
+- Add a character gallery to the website with free Animal Pack previews
+
+- Add the Halloween Pack previews to the website, and rename the character gallery to Buddies
+
+
+### Fixes
+
+- Fix button names that GitHub showed as Install v and Update to v
+
+- Fix the website hero flash on load and the offset Get it on GitHub button
+
+- Fix Install failing while Settings scans for Wi-Fi, and Show on desktop after an install
+
+
+### Other changes
+
+- Rename the website's Buddies page to Characters (characters.html)
+
+## [v0.16.1]
+
+### Build and maintenance
+
+- Stop a hung Windows daemon test job after 20 minutes
+
+
+### Fixes
+
+- Fix the Grok live demo on the website, and deploy the site after each release
+
+- Fix Codex detection in the new ChatGPT app, and flag a Codex too old to run the hooks
+
+- Fix WSL agent detection, and warn about an old Codex in VS Code or WSL
+
+
+### Other changes
+
+- Show Grok and the Codex name in the overview video
+
 ## [v0.16.0]
 
 ### Features and improvements

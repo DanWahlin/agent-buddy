@@ -20,6 +20,8 @@ export interface WslProbe {
   mount?: string;
   env: Record<string, string>;
   commands: string[];
+  // What a command printed for --version, by command, for the commands whose version a check needs.
+  versions: Record<string, string>;
   interop: boolean;
 }
 
@@ -31,9 +33,16 @@ export function probeScript(windowsNode: string): string {
     `p() { printf '${marker}%s=%s\\n' "$1" "$2"; }`,
     'p home "$HOME"',
     `p node "$(wslpath -u ${shellQuote(windowsNode)} 2>/dev/null)"`,
-    `p mount "$(wslpath -u 'C:\\' 2>/dev/null)"`,
+    `w="$(wslpath -u 'C:\\' 2>/dev/null)"`,
+    'p mount "$w"',
     `for v in ${agentHomeVariables.join(' ')}; do eval "p env:$v \\"\\\${$v:-}\\""; done`,
-    `for c in ${wslCommands.join(' ')}; do command -v "$c" >/dev/null 2>&1 && p command "$c"; done`,
+    // WSL adds the Windows PATH, so a command can be a Windows program under the drives' mount,
+    // such as /mnt/c/. That is the Windows agent, which doesn't run here, so it doesn't count.
+    'own() { f="$(command -v "$1" 2>/dev/null)" || return 1; case "$f" in "${w%c/}"[a-zA-Z]/*) return 1 ;; esac; }',
+    `for c in ${wslCommands.join(' ')}; do own "$c" && p command "$c"; done`,
+    // A Codex older than 0.148.0-alpha.6 can't run the hooks. codex gets no stdin, because stdin is
+    // this script, and timeout ends a codex that waits.
+    'own codex && p version:codex "$(timeout 5 codex --version </dev/null 2>/dev/null | head -n 1)"',
     'if [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop-late ]; then p interop 1; fi',
     'exit 0',
     '',
@@ -41,7 +50,7 @@ export function probeScript(windowsNode: string): string {
 }
 
 export function parseProbe(text: string): WslProbe | undefined {
-  const probe: WslProbe = {home: '', env: {}, commands: [], interop: false};
+  const probe: WslProbe = {home: '', env: {}, commands: [], versions: {}, interop: false};
   for (const line of text.split(/\r?\n/)) {
     const start = line.indexOf(marker);
     if (start < 0) continue;
@@ -54,6 +63,7 @@ export function parseProbe(text: string): WslProbe | undefined {
     else if (key === 'mount' && /^\/(?:.*\/)?[a-z]\/?$/i.test(value)) probe.mount = value.replace(/[a-z]\/?$/i, '');
     else if (key.startsWith('env:') && value) probe.env[key.slice(4)] = value;
     else if (key === 'command') probe.commands.push(value);
+    else if (key.startsWith('version:') && value) probe.versions[key.slice('version:'.length)] = value;
     else if (key === 'interop') probe.interop = true;
   }
   return probe.home.startsWith('/') ? probe : undefined;
@@ -114,6 +124,7 @@ export function wslContext(host: AgentContext, distribution: string, probe: WslP
     socketPath: host.socketPath,
     hostPath,
     agentPath: path => wslAgentPath(distribution, probe, path),
+    commandVersions: probe.versions,
   };
 }
 

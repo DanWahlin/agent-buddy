@@ -13,6 +13,8 @@ namespace copilot {
 namespace board {
 using TouchController = TouchDrvCST92xx;
 constexpr uint8_t kTouchPointCapacity = 2;
+// The touch sweep also reads the controller when idle (see TouchInput.cpp).
+constexpr bool kTouchIdleSweep = true;
 static_assert(kTouchI2cAddress == CST92XX_SLAVE_ADDRESS, "Touch address differs from the driver.");
 static_assert(kImuI2cAddress == QMI8658_L_SLAVE_ADDRESS, "IMU address differs from the driver.");
 static_assert(kAudioCodecI2cAddress == ES8311_ADDRESS_0, "Codec address differs from the driver.");

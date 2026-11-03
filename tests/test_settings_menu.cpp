@@ -1,6 +1,34 @@
 #include "../firmware/AgentCompanion/src/SettingsMenu.h"
 #include <cassert>
+#include <cstddef>
+#include <cstring>
 #include <iostream>
+
+namespace {
+// The firmware's font is 6 x 8 pixels at text size 1 (textWidth() in AgentCompanion.ino), and
+// drawSettingsButton() keeps a label at least 10 pixels from the button's left edge.
+constexpr int kGlyphWidth = 6;
+constexpr int kGlyphHeight = 8;
+constexpr int kLabelMargin = 10;
+
+// A layout draws its state buttons alike: one text size, and each label inside its button.
+template <size_t N>
+void checkStateButtons(const copilot::LabeledButton (&buttons)[N]) {
+  for (const copilot::LabeledButton& button : buttons) {
+    assert(button.textSize == buttons[0].textSize);
+    const int width = static_cast<int>(std::strlen(button.label)) * kGlyphWidth * button.textSize;
+    assert(width + 2 * kLabelMargin <= button.rect.width);
+    assert(kGlyphHeight * button.textSize <= button.rect.height);
+  }
+}
+
+template <size_t N>
+const char* labelFor(const copilot::LabeledButton (&buttons)[N], copilot::SettingsAction action) {
+  for (const copilot::LabeledButton& button : buttons)
+    if (button.action == action) return button.label;
+  return nullptr;
+}
+}
 
 int main() {
   using copilot::SettingsAction;
@@ -87,6 +115,18 @@ int main() {
   compact.close();
   compact.open();
   assert(!compact.statesPage());
+
+  // Every board names the character states the same way: the full layout (AMOLED boards) and the
+  // compact layout (LCD-1.54) use the same labels.
+  checkStateButtons(copilot::settings_layout::kModeButtons);
+  checkStateButtons(copilot::compact_layout::kModeButtons);
+  for (SettingsAction action : {SettingsAction::Idle, SettingsAction::Working, SettingsAction::Complete,
+                                SettingsAction::Attention, SettingsAction::Surprise}) {
+    const char* full = labelFor(copilot::settings_layout::kModeButtons, action);
+    const char* small = labelFor(copilot::compact_layout::kModeButtons, action);
+    assert(full && small && std::strcmp(full, small) == 0);
+  }
   std::cout << "PASS: settings geometry, brightness, sound, Wi-Fi, modes and close action\n";
   std::cout << "PASS: compact settings pages, steppers, state buttons and back\n";
+  std::cout << "PASS: every layout's state buttons share labels and a text size, and each label fits\n";
 }

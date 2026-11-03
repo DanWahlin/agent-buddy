@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-from tools import character_pack, firmware_artifacts, flash_release, package_release
+from tools import boards, character_pack, firmware_artifacts, flash_release, package_release
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILT_IN = json.loads((ROOT / "characters/built-in.json").read_text())
@@ -344,6 +344,7 @@ class ReleaseBundleTests(unittest.TestCase):
     def test_flash_command_confirmation_and_no_erase(self):
         extracted, _, _ = self.bundle()
         with mock.patch.object(flash_release, "require_dependencies"), \
+                mock.patch.object(flash_release, "reported_board", return_value=None), \
                 mock.patch.object(flash_release.subprocess, "run") as run, \
                 mock.patch("builtins.input", return_value="FLASH") as confirm:
             self.assertEqual(self.invoke(extracted, ["--port", "COM7"]), 0)
@@ -390,8 +391,52 @@ class ReleaseBundleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "5.3.0 is required"):
                 flash_release.require_dependencies()
         with mock.patch.object(flash_release, "require_dependencies"), \
+                mock.patch.object(flash_release, "reported_board", return_value=None), \
                 mock.patch.object(flash_release.subprocess, "run", side_effect=subprocess.CalledProcessError(2, "esptool")):
             self.assertEqual(self.invoke(extracted, ["--yes", "--port", "COM7"]), 1)
+
+    def test_flash_refuses_a_device_that_reports_another_board(self):
+        extracted, _, _ = self.bundle()
+        board = flash_release.verify_bundle(extracted)["board"]
+        other = next(entry for entry in boards.load()["boards"] if entry != board)
+        with mock.patch.object(flash_release, "require_dependencies"), \
+                mock.patch.object(flash_release.subprocess, "run") as run, \
+                mock.patch("builtins.input", return_value="FLASH") as confirm:
+            # A device that names another board is refused, also with --yes.
+            with mock.patch.object(flash_release, "reported_board", return_value=other):
+                self.assertEqual(self.invoke(extracted, ["--port", "COM7", "--yes"]), 1)
+                self.assertEqual(self.invoke(extracted, ["--port", "COM7"]), 1)
+            run.assert_not_called()
+            confirm.assert_not_called()
+            # A device that names this board, or that does not say, still needs the confirmation.
+            for reported in (board, None):
+                with self.subTest(reported=reported), \
+                        mock.patch.object(flash_release, "reported_board", return_value=reported):
+                    self.assertEqual(self.invoke(extracted, ["--port", "COM7"]), 0)
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(confirm.call_count, 2)
+
+    def test_reads_the_board_line_of_the_info_reply(self):
+        class Device:
+            def __init__(self, lines):
+                self.lines = [line.encode() for line in lines]
+                self.written = b""
+
+            def reset_input_buffer(self):
+                pass
+
+            def write(self, data):
+                self.written += data
+
+            def readline(self):
+                return self.lines.pop(0) if self.lines else b""
+
+        device = Device(["READY: character=copilot\n", "INFO protocol=12 character=copilot\n",
+                         "BOARD id=waveshare-amoled-206 variant=standard\n"])
+        self.assertEqual(flash_release.read_board(device, 1), "waveshare-amoled-206")
+        self.assertEqual(device.written, b"i")
+        self.assertIsNone(flash_release.read_board(Device(["INFO protocol=8 character=copilot\n"]), 0.05))
+        self.assertIsNone(flash_release.read_board(Device(["BOARD id=Bad_Board\n"]), 0.05))
 
     def test_old_python_gets_a_clear_upgrade_message(self):
         extracted, _, _ = self.bundle()

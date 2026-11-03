@@ -45,6 +45,14 @@ class ScreenOrientation {
         .panelToContent(panelX, panelY, contentX, contentY);
   }
 
+  // A panelWidth x panelHeight panel that shows the content at shownSize (see ScreenTransform.h).
+  static bool panelToContent(float angle, int panelWidth, int panelHeight, int contentSize,
+                             int shownSize, int16_t panelX, int16_t panelY, int16_t& contentX,
+                             int16_t& contentY) {
+    return ScreenTransform(panelWidth, panelHeight, contentSize, shownSize, angle)
+        .panelToContent(panelX, panelY, contentX, contentY);
+  }
+
   static float shortestAngle(float angle) {
     while (angle > kOrientationPi) angle -= 2.0f * kOrientationPi;
     while (angle < -kOrientationPi) angle += 2.0f * kOrientationPi;

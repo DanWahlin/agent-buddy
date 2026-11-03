@@ -16,28 +16,38 @@ struct ScreenPixels {
 };
 
 // Display scanout and touch use the same inverse, pixel-centered transform.
-// Content is drawn at contentSize; the panel shows it at panelSize. A smaller panel (down to half the
-// content size) shows the whole content scaled down, and each panel pixel averages a 2x2 content block.
+// Content is drawn at contentSize x contentSize. The panel is panelWidth x panelHeight, and it shows
+// the content at shownSize x shownSize around its center. At full size (shownSize == contentSize), a
+// panel narrower or shorter than the content shows its middle, and black fills the rest of a larger
+// one. A smaller shownSize (down to half the content size) scales the content down, and each panel
+// pixel averages a 2x2 content block.
 class ScreenTransform {
  public:
   ScreenTransform(int size, float angle) : ScreenTransform(size, size, angle) {}
 
+  // A square panel that shows all of the content.
   ScreenTransform(int panelSize, int contentSize, float angle)
-      : panel_(panelSize), content_(contentSize) {
-    valid_ = panelSize > 0 && contentSize >= panelSize && contentSize <= 2 * panelSize
-             && contentSize <= INT16_MAX / 2 && std::isfinite(angle);
+      : ScreenTransform(panelSize, panelSize, contentSize, panelSize, angle) {}
+
+  ScreenTransform(int panelWidth, int panelHeight, int contentSize, int shownSize, float angle)
+      : width_(panelWidth), height_(panelHeight), content_(contentSize) {
+    valid_ = panelWidth > 0 && panelHeight > 0 && panelWidth <= INT16_MAX / 2
+             && panelHeight <= INT16_MAX / 2 && shownSize > 0 && contentSize >= shownSize
+             && contentSize <= 2 * shownSize && contentSize <= INT16_MAX / 2 && std::isfinite(angle);
     if (!valid_) return;
-    panelCenter_ = (panelSize - 1) * kHalf;
+    panelCenterX_ = (panelWidth - 1) * kHalf;
+    panelCenterY_ = (panelHeight - 1) * kHalf;
     contentCenter_ = (contentSize - 1) * kHalf;
-    // The scale is exactly 1 when the sizes match, so those steps equal the unscaled ones.
-    const float scale = static_cast<float>(contentSize) / static_cast<float>(panelSize);
+    box_ = contentSize > shownSize;
+    // The scale is exactly 1 when the content shows at full size, so those steps equal the unscaled ones.
+    const float scale = static_cast<float>(contentSize) / static_cast<float>(shownSize);
     cosine_ = static_cast<int32_t>(std::lround(std::cos(angle) * scale * kOne));
     sine_ = static_cast<int32_t>(std::lround(std::sin(angle) * scale * kOne));
   }
 
   bool panelToContent(int16_t panelX, int16_t panelY,
                       int16_t& contentX, int16_t& contentY) const {
-    if (!valid_ || panelX < 0 || panelY < 0 || panelX >= panel_ || panelY >= panel_)
+    if (!valid_ || panelX < 0 || panelY < 0 || panelX >= width_ || panelY >= height_)
       return false;
     int32_t x, y;
     inverse(panelX, panelY, x, y);
@@ -55,14 +65,13 @@ class ScreenTransform {
         || source.width <= 0 || source.height <= 0
         || source.x >= content_ || source.y >= content_
         || source.width > content_ - source.x || source.height > content_ - source.y
-        || firstRow < 0 || firstRow >= panel_ || rows <= 0 || rows > panel_ - firstRow
-        || capacity < static_cast<size_t>(panel_) * rows) return false;
-    const bool box = content_ > panel_;
+        || firstRow < 0 || firstRow >= height_ || rows <= 0 || rows > height_ - firstRow
+        || capacity < static_cast<size_t>(width_) * rows) return false;
     if (source.order == Rgb565Order::Display) {
-      if (box) render<true, true>(source, firstRow, rows, output);
+      if (box_) render<true, true>(source, firstRow, rows, output);
       else render<true, false>(source, firstRow, rows, output);
     } else {
-      if (box) render<false, true>(source, firstRow, rows, output);
+      if (box_) render<false, true>(source, firstRow, rows, output);
       else render<false, false>(source, firstRow, rows, output);
     }
     return true;
@@ -75,8 +84,8 @@ class ScreenTransform {
   static constexpr uint32_t kSpreadMask = 0x07E0F81Fu;
 
   void inverse(int x, int y, int32_t& sourceX, int32_t& sourceY) const {
-    const int32_t dx = x * kOne - panelCenter_;
-    const int32_t dy = y * kOne - panelCenter_;
+    const int32_t dx = x * kOne - panelCenterX_;
+    const int32_t dy = y * kOne - panelCenterY_;
     sourceX = contentCenter_ + static_cast<int32_t>(
         (static_cast<int64_t>(cosine_) * dx + static_cast<int64_t>(sine_) * dy) >> 16);
     sourceY = contentCenter_ + static_cast<int32_t>(
@@ -145,14 +154,23 @@ class ScreenTransform {
 #endif
   void render(const ScreenPixels& source, int firstRow, int rows, uint16_t* output) const {
     if (!Box && cosine_ == kOne && sine_ == 0) {
-      for (int row = firstRow; row < firstRow + rows; ++row, output += panel_) {
-        std::fill(output, output + panel_, 0);
-        if (row < source.y || row >= source.y + source.height) continue;
-        const uint16_t* input = source.pixels + (row - source.y) * source.width;
+      // Upright at full size: each panel pixel shows the content pixel a whole number of pixels away,
+      // as the general path below rounds it.
+      const int shiftX = (contentCenter_ - panelCenterX_ + kHalf) >> 16;
+      const int shiftY = (contentCenter_ - panelCenterY_ + kHalf) >> 16;
+      // The source's columns on the panel, clipped to it.
+      const int first = std::max(source.x - shiftX, 0);
+      const int last = std::min(source.x + source.width - shiftX, width_);
+      for (int row = firstRow; row < firstRow + rows; ++row, output += width_) {
+        std::fill(output, output + width_, 0);
+        const int contentRow = row + shiftY;
+        if (first >= last || contentRow < source.y || contentRow >= source.y + source.height) continue;
+        const uint16_t* input = source.pixels + (contentRow - source.y) * source.width
+                                + (first + shiftX - source.x);
         if constexpr (DisplayOrder) {
-          std::memcpy(output + source.x, input, source.width * sizeof(uint16_t));
+          std::memcpy(output + first, input, (last - first) * sizeof(uint16_t));
         } else {
-          for (int x = 0; x < source.width; ++x) output[source.x + x] = encode<false>(input[x]);
+          for (int x = 0; x < last - first; ++x) output[first + x] = encode<false>(input[x]);
         }
       }
       return;
@@ -173,25 +191,25 @@ class ScreenTransform {
         inverse(0, row + y, rowX[y], rowY[y]);
         rowX[y] += kRound - source.x * kOne;
         rowY[y] += kRound - source.y * kOne;
-        int begin = 0, end = panel_;
+        int begin = 0, end = width_;
         clipSpan(rowX[y], cosine_, (width - kReach) * kOne, begin, end);
         clipSpan(rowY[y], -sine_, (height - kReach) * kOne, begin, end);
         first[y] = begin < end ? begin : 0;
         last[y] = begin < end ? end : 0;
         rowX[y] += first[y] * cosine_;
         rowY[y] -= first[y] * sine_;
-        uint16_t* destination = output + (row + y - firstRow) * panel_;
+        uint16_t* destination = output + (row + y - firstRow) * width_;
         std::fill(destination, destination + first[y], 0);
-        std::fill(destination + last[y], destination + panel_, 0);
+        std::fill(destination + last[y], destination + width_, 0);
       }
-      for (int column = 0; column < panel_; column += kTileColumns) {
-        const int columns = std::min(kTileColumns, panel_ - column);
+      for (int column = 0; column < width_; column += kTileColumns) {
+        const int columns = std::min(kTileColumns, width_ - column);
         for (int y = 0; y < tileRows; ++y) {
           const int begin = std::max(column, first[y]);
           const int end = std::min(column + columns, last[y]);
           if (begin >= end) continue;
           int32_t sourceX = rowX[y], sourceY = rowY[y];
-          uint16_t* destination = output + (row + y - firstRow) * panel_ + begin;
+          uint16_t* destination = output + (row + y - firstRow) * width_ + begin;
           for (int x = begin; x < end; ++x) {
             const uint16_t* pixel = pixels + (sourceY >> 16) * width + (sourceX >> 16);
             if constexpr (Box)
@@ -208,8 +226,8 @@ class ScreenTransform {
     }
   }
 
-  int panel_, content_;
-  int32_t panelCenter_ = 0, contentCenter_ = 0, cosine_ = 0, sine_ = 0;
-  bool valid_ = false;
+  int width_, height_, content_;
+  int32_t panelCenterX_ = 0, panelCenterY_ = 0, contentCenter_ = 0, cosine_ = 0, sine_ = 0;
+  bool box_ = false, valid_ = false;
 };
 }

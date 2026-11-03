@@ -85,9 +85,83 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('fact-address').textContent, 'cu.usbmodem7');
   // Device connection says how the device is reached, and Detect device says why it is not.
   assert.equal(element('device-connection-state').textContent, 'USB connected');
-  assert.equal(element('device-connection-hint').textContent, 'Connected over USB on /dev/cu.usbmodem7.');
+  assert.equal(element('device-connection-hint').textContent, 'The device is connected over USB on /dev/cu.usbmodem7.');
   assert.equal(element('device-detect').disabled, false);
-  const views = JSON.parse(runInContext(`JSON.stringify(['no-device', 'wifi-mode', 'usb-unavailable', 'usb-not-answering']
+  // Settings shows the device: its board, connection, firmware, character, MAC address, and protocol.
+  runInContext('status.firmware = {board: "waveshare-lcd-154", device: "cccccccccccccccc", built: null, usb: {release: "0.9.0", '
+    + 'releaseId: "cccccccccccccccc", boards: [{id: "waveshare-lcd-154", name: "Waveshare ESP32-S3-Touch-LCD-1.54", '
+    + 'models: "Waveshare ESP32-S3-Touch-LCD-1.54", releaseId: "cccccccccccccccc"}]}}; '
+    + 'status.device = {variant: "standard", macAddress: "B8:1F:3F:D8:37:98", protocol: 12, choices: [], '
+    + 'waiting: [], silentPorts: []}; renderStatus()', context);
+  assert.equal(element('device-connection-hint').textContent,
+               'Waveshare ESP32-S3-Touch-LCD-1.54 is connected over USB on /dev/cu.usbmodem7.');
+  assert.equal(element('device-facts').hidden, false);
+  assert.deepEqual(element('device-facts').children, [
+    ':Board', ':Waveshare ESP32-S3-Touch-LCD-1.54 (waveshare-lcd-154, variant standard)',
+    ':Connection', ':USB, /dev/cu.usbmodem7', ':Firmware', ':Release v0.9.0 (cccccccccccccccc)',
+    ':Character', ':copilot', ':MAC address', ':B8:1F:3F:D8:37:98', ':Protocol', ':12']);
+  assert.equal(element('device-choices').hidden, true);
+  assert.equal(element('fact-board').textContent, 'Waveshare ESP32-S3-Touch-LCD-1.54 (waveshare-lcd-154, variant standard)');
+  assert.equal(element('fact-firmware').textContent, 'Release v0.9.0 (cccccccccccccccc)');
+  assert.equal(element('fact-mac').textContent, 'B8:1F:3F:D8:37:98');
+  assert.ok(element('fact-connection').children.includes('fact-detail:Waveshare ESP32-S3-Touch-LCD-1.54'));
+  // A device that does not report its board, or one that this app version doesn't know, says so.
+  runInContext('status.firmware.board = null; renderStatus()', context);
+  assert.match(element('fact-board').textContent, /^Not reported\. The device runs older firmware/);
+  runInContext('status.firmware.board = "waveshare-future"; status.device.variant = null; renderStatus()', context);
+  assert.equal(element('fact-board').textContent,
+               'waveshare-future. This version of the app has no firmware for this board.');
+  // Several devices that answer on USB: none is used, and the person chooses one.
+  runInContext('status.connected = false; status.device.choices = [{path: "/dev/cu.usbmodem1", pid: 4097, '
+    + 'serialNumber: "AA:BB:CC:DD:EE:01", board: "waveshare-lcd-154", variant: "standard", character: "copilot", '
+    + 'firmware: "cccccccccccccccc"}, {path: "/dev/cu.usbmodem2", pid: 4097, serialNumber: "AA:BB:CC:DD:EE:02", '
+    + 'board: null, variant: null, character: null, firmware: null}]; renderStatus()', context);
+  assert.equal(element('device-connection-state').textContent, 'Choose a device');
+  assert.match(element('device-connection-hint').textContent, /uses none of them until you choose one/);
+  assert.equal(element('device-facts').hidden, true);
+  assert.equal(element('device-choices').hidden, false);
+  runInContext('status.firmware.usb.flasher = true; renderUsbFirmware()', context);
+  assert.equal(element('usb-firmware-state').textContent, 'Choose a device');
+  assert.match(element('usb-firmware-hint').textContent, /uses no device until you choose one under Device connection/);
+  assert.deepEqual(element('device-choices').children, [
+    'device-choice:Waveshare ESP32-S3-Touch-LCD-1.54 · on /dev/cu.usbmodem1 · USB serial number AA:BB:CC:DD:EE:01 · copilot',
+    'secondary:Use this device',
+    'device-choice:Board not reported · on /dev/cu.usbmodem2 · USB serial number AA:BB:CC:DD:EE:02',
+    'secondary:Use this device']);
+  // A device that answers on the selected port reports its board, also while the person chooses.
+  runInContext('$("usb-firmware-port").value = "/dev/cu.usbmodem1"', context);
+  assert.equal(runInContext('reportedUsbBoard()', context), 'waveshare-lcd-154');
+  runInContext('$("usb-firmware-port").value = "/dev/cu.usbmodem2"', context);
+  assert.equal(runInContext('reportedUsbBoard()', context), null);
+  runInContext('$("usb-firmware-port").value = ""', context);
+  // One device answers, and another that answered before is silent now: the person still chooses.
+  runInContext('status.device.choices = status.device.choices.slice(0, 1); status.device.waiting = '
+    + '[{path: "/dev/cu.usbmodem3", pid: 4097, serialNumber: "AA:BB:CC:DD:EE:03"}]; renderStatus()', context);
+  assert.equal(element('device-connection-state').textContent, 'Choose a device');
+  assert.match(element('device-connection-hint').textContent,
+               /^The Agent Buddy device on \/dev\/cu\.usbmodem3 \(USB serial number AA:BB:CC:DD:EE:03\) does not answer now\./);
+  assert.equal(element('device-choices').children.length, 2);
+  // Without choices, a silent device and other ESP32 devices are named.
+  runInContext('status.device.choices = []; status.device.silentPorts = ["/dev/cu.usbmodem4"]; renderStatus()', context);
+  assert.equal(element('device-connection-state').textContent, 'Not connected');
+  assert.match(element('device-connection-hint').textContent,
+               /usbmodem3.*does not answer now.*ESP32 device on \/dev\/cu\.usbmodem4 does not answer as Agent Buddy/);
+  runInContext('status.device.waiting = []; status.device.silentPorts = []; status.device.choices = ['
+    + '{path: "/dev/cu.usbmodem1", pid: 4097, serialNumber: "AA:BB:CC:DD:EE:01", board: "waveshare-lcd-154", '
+    + 'variant: "standard", character: "copilot", firmware: "cccccccccccccccc"}, {path: "/dev/cu.usbmodem2", pid: 4097, '
+    + 'serialNumber: "AA:BB:CC:DD:EE:02", board: null, variant: null, character: null, firmware: null}]; renderStatus()',
+  context);
+  const chosen: unknown[] = [];
+  context.chosen = chosen;
+  context.apiBefore = runInContext('api', context);
+  runInContext('api = async (path, options) => { chosen.push({path, body: JSON.parse(options.body)}); return {}; }; '
+    + 'refreshStatus = async () => undefined; toastBefore = toast; toast = () => undefined', context);
+  await runInContext('chooseDevice("/dev/cu.usbmodem2")', context);
+  assert.deepEqual(JSON.parse(JSON.stringify(chosen)), [{path: '/api/devices/choose', body: {path: '/dev/cu.usbmodem2'}}]);
+  runInContext('api = apiBefore; toast = toastBefore; status.device.choices = []; status.connected = true; '
+    + 'status.firmware = {}; renderStatus()', context);
+  const views = JSON.parse(runInContext(`JSON.stringify(['no-device', 'wifi-mode', 'usb-unavailable', 'usb-not-answering',
+    'several-devices']
     .map(result => detectionView({result, ports: ['COM3'], mode: 'auto', wifiPaired: true, error: 'Access denied'})))`,
   context)) as Array<{pill: string; hint: string}>;
   assert.equal(views[0]!.pill, 'Not found');
@@ -96,6 +170,8 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(views[2]!.pill, 'USB port in use');
   assert.match(views[2]!.hint, /COM3 could not be opened \(Access denied\)\. Close other programs/);
   assert.match(views[3]!.hint, /COM3.*does not answer as Agent Buddy.*USB release install or recovery/);
+  assert.equal(views[4]!.pill, 'Choose a device');
+  assert.match(views[4]!.hint, /Several Agent Buddy devices answer on USB \(COM3\).*remembers your choice/);
   runInContext('detection = {found: {result: "usb-not-answering", ports: ["COM3"]}, key: connectionKey()}; '
     + 'renderDeviceConnection()', context);
   assert.equal(element('device-connection-state').textContent, 'Not answering');
@@ -114,8 +190,15 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext('status.installing = {}; renderOrientation()', context);
   assert.equal(element('orientation-offset').disabled, true);
   runInContext('status.installing = null; status.firmware = {device: "abc", built: "abc", canUpdate: false, '
-    + 'usb: {release: "0.9.0", flasher: true, port: "/dev/test"}}; renderFirmware()', context);
+    + 'board: "waveshare-amoled-175", usb: {release: "0.9.0", releaseBoard: "waveshare-amoled-175", flasher: true, '
+    + 'port: "/dev/test"}}; renderFirmware()', context);
   assert.equal(element('firmware-update').hidden, true);
+  assert.equal(element('firmware-state').textContent, 'Current build installed');
+  // The build from this computer is the default board's: a device of another board is not offered it.
+  runInContext('status.firmware.board = "waveshare-amoled-206"; status.firmware.device = "def"; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Installed');
+  assert.doesNotMatch(element('firmware-hint').textContent, /built firmware/);
+  runInContext('status.firmware.board = "waveshare-amoled-175"; status.firmware.device = "abc"; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Current build installed');
   assert.equal(element('usb-firmware-recovery').open, false);
   assert.equal(element('usb-firmware-install').textContent, 'Replace with v0.9.0');
@@ -131,7 +214,8 @@ test('web alignment controls initialize once and send confirmed settings', async
   assert.equal(element('usb-firmware-install').textContent, 'Install v0.9.0');
   // The desktop app has no build of its own; it offers its release firmware as an update over USB.
   runInContext('status.connected = true; status.firmware = {device: "aaaaaaaaaaaaaaaa", built: null, canUpdate: false, '
-    + 'usb: {release: "0.9.0", releaseId: "bbbbbbbbbbbbbbbb", flasher: true, port: "/dev/test"}}; renderFirmware()', context);
+    + 'board: "waveshare-amoled-175", usb: {release: "0.9.0", releaseId: "bbbbbbbbbbbbbbbb", flasher: true, '
+    + 'port: "/dev/test"}}; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Update available');
   assert.equal(element('device-update-badge').hidden, false);
   assert.equal(element('firmware-update').hidden, false);
@@ -188,7 +272,7 @@ test('web alignment controls initialize once and send confirmed settings', async
   // A board that releases have no firmware for keeps its own firmware: neither row offers one.
   runInContext('status.firmware.board = "custom-board"; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Other board');
-  assert.match(element('firmware-hint').textContent, /custom-board board, and releases have no firmware.*BOARD=custom-board/);
+  assert.match(element('firmware-hint').textContent, /reports that it is a custom-board board, and releases of this version of the app have no firmware.*BOARD=custom-board/);
   assert.equal(element('device-update-badge').hidden, true);
   assert.equal(element('firmware-update').hidden, true);
   assert.equal(element('usb-firmware-state').textContent, 'Other board');
@@ -196,9 +280,14 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext('status.firmware.board = "waveshare-amoled-175"; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Update available');
   assert.equal(element('usb-firmware-install').disabled, false);
+  // A device that does not report its board is not compared with any board's release firmware.
   runInContext('status.firmware.board = null; renderFirmware()', context);
-  assert.equal(element('firmware-state').textContent, 'Update available');
-  runInContext('status.firmware.usb.installing = {stage: "writing", percent: 5}; renderFirmware()', context);
+  assert.equal(element('firmware-state').textContent, 'Board not reported');
+  assert.match(element('firmware-hint').textContent, /does not say which board it is.*select the board/);
+  assert.equal(element('firmware-update').textContent, 'Update to v0.9.0');
+  assert.equal(element('usb-firmware-state').textContent, 'Board not reported');
+  runInContext('status.firmware.board = "waveshare-amoled-175"; '
+    + 'status.firmware.usb.installing = {stage: "writing", percent: 5}; renderFirmware()', context);
   assert.equal(element('firmware-state').textContent, 'Writing 5%');
   assert.match(element('firmware-hint').textContent, /Keep the USB cable connected/);
   assert.equal(element('firmware-bar').hidden, false);

@@ -6,7 +6,7 @@ import {isNamedPipe, serviceStoppedPath, socketPath, statePath} from './paths.js
 import {StateCoordinator} from './state-coordinator.js';
 import {StateStore} from './state-store.js';
 import {DeviceTransport} from './device-transport.js';
-import {isConnectionMode, loadConnectionMode} from './connection-mode.js';
+import {isConnectionMode, loadConnectionMode, loadUsbDeviceChoice} from './connection-mode.js';
 import {CompanionService} from './companion-service.js';
 import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
@@ -77,7 +77,8 @@ export async function runDaemon(options: {onShutdown?: () => Promise<void>} = {}
   const connectionMode = await loadConnectionMode();
   const setup = service.onboardingStatus();
   const preparingUsb = !setup.completed && setup.port && setup.display !== 'desktop' && !setup.deviceDeferred;
-  await transport.start(preparingUsb ? 'auto' : connectionMode, service.deviceEnabled, preparingUsb ? setup.port : null);
+  await transport.start(preparingUsb ? 'auto' : connectionMode, service.deviceEnabled, preparingUsb ? setup.port : null,
+                        await loadUsbDeviceChoice());
   console.log(`[daemon] listening ${path}`);
   settingsUrl = await startSettingsServer(companion);
 
@@ -206,12 +207,14 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
         // Installs take about a minute, so progress streams as JSON lines until the result.
         socket.setTimeout(0);
         let shown = -1;
-        reply(service.installCharacter(request.character, (sent, total) => {
+        const character = request.character;
+        // Settings may be scanning for Wi-Fi networks, which takes a few seconds.
+        reply(service.wifiScanEnded().then(() => service.installCharacter(character, (sent, total) => {
           const percent = Math.floor(sent * 100 / total);
           if (percent === shown || socket.destroyed) return;
           shown = percent;
           socket.write(`${JSON.stringify({progress: percent})}\n`);
-        }));
+        })));
       } else {
         throw new Error('Unknown daemon request.');
       }

@@ -39,6 +39,8 @@ export type SerialPortClass = typeof SerialPort | typeof SerialPortMock;
 export interface UsbTransportOptions {
   serial?: SerialPortClass;
   requestTimeoutMs?: number;
+  // How often a connection to another device than the chosen one looks for the chosen device.
+  chosenCheckMs?: number;
 }
 
 class AcknowledgementTimeout extends Error {
@@ -85,11 +87,32 @@ export class UsbTransport {
   // Firmware without the line can't say: firmware from before boards, and LCD-1.54 builds from
   // before the line, so the person chooses the board before a firmware install.
   #board: string | null = null;
+  // The hardware variant on the BOARD line (for example the 1.75's standard or c); null without one.
+  #variant: string | null = null;
   #network: DeviceNetwork | null = null;
   #orientation: DeviceOrientation | null = null;
-  // The ESP32 port the last scan chose, and how many handshakes in a row it failed.
+  // The ESP32 port the last scan chose (the connected device's port once it answers), and how many
+  // handshakes in a row it failed.
   #seen: UsbPort | null = null;
   #failures = 0;
+  // The device the person chose when several Agent Buddy devices answered on USB.
+  #chosen: UsbDeviceChoice | null = null;
+  // Agent Buddy devices that answered in the last check when using one of them would be a guess, so
+  // nothing connects: the person chooses one.
+  #choices: UsbDeviceSummary[] = [];
+  // Agent Buddy devices that did not answer in the last check: the chosen device, or one that
+  // answered before (busy for a moment, for example while it installs a character over Wi-Fi).
+  #waiting: UsbPort[] = [];
+  // Other Espressif ports that did not answer in the last check of several ports.
+  #silent: UsbPort[] = [];
+  // Devices (see deviceKey) that answered as an Agent Buddy since the service started.
+  readonly #answeredDevices = new Set<string>();
+  // Each stop() ends the scans that run then: they connect nothing after it.
+  #runs = 0;
+  #nextChosenCheck = 0;
+  // A switch to the chosen device waits in the command queue (see #checkChosen).
+  #switchPending = false;
+  readonly #chosenCheckMs: number;
   #timeouts = 0;
   readonly #serial: SerialPortClass;
   readonly #requestTimeoutMs: number;
@@ -103,6 +126,7 @@ export class UsbTransport {
     this.#button = button;
     this.#serial = options.serial ?? SerialPort;
     this.#requestTimeoutMs = options.requestTimeoutMs ?? 5000;
+    this.#chosenCheckMs = options.chosenCheckMs ?? 10_000;
   }
 
   get character(): string | null {
@@ -117,6 +141,48 @@ export class UsbTransport {
 
   get board(): string | null {
     return this.connected ? this.#board : null;
+  }
+
+  get variant(): string | null {
+    return this.connected ? this.#variant : null;
+  }
+
+  // The connected device's USB serial number; the ESP32-S3 uses its MAC address.
+  get serialNumber(): string | null {
+    return this.connected ? this.#seen?.serialNumber ?? null : null;
+  }
+
+  get protocol(): number | null {
+    return this.connected ? this.#protocol : null;
+  }
+
+  // Agent Buddy devices to choose from, because using one of them would be a guess.
+  get choices(): UsbDeviceSummary[] {
+    return this.connected ? [] : this.#choices;
+  }
+
+  // Agent Buddy devices on USB that do not answer now: the chosen one, or one that answered before.
+  get waiting(): UsbPort[] {
+    return this.connected ? [] : this.#waiting;
+  }
+
+  // Other Espressif ports that did not answer in the last check of several ports.
+  get silentPorts(): UsbPort[] {
+    return this.connected ? [] : this.#silent;
+  }
+
+  // The person's choice among the devices that answer. A scan uses it now and whenever several answer.
+  async chooseDevice(choice: UsbDeviceChoice): Promise<void> {
+    this.#chosen = choice;
+    this.#choices = [];
+    this.#waiting = [];
+    this.#changed();
+    await this.scanNow();
+  }
+
+  // The saved choice, before the transport starts.
+  setChosenDevice(choice: UsbDeviceChoice | null): void {
+    this.#chosen = choice;
   }
 
   get adaptivePatchRam(): boolean {
@@ -191,6 +257,7 @@ export class UsbTransport {
   }
 
   async stop(): Promise<void> {
+    this.#runs++;
     if (this.#scanTimer) clearInterval(this.#scanTimer);
     if (this.#networkTimer) clearInterval(this.#networkTimer);
     this.#scanTimer = undefined;
@@ -255,41 +322,207 @@ export class UsbTransport {
   }
 
   async #scan(): Promise<void> {
-    if (!this.#enabled || this.#scanActive || this.connected) return;
+    if (!this.#enabled || this.#scanActive) return;
+    // While connected, only a chosen device that is not the connected one needs a look.
+    if (this.connected && !this.#chosenCheckDue()) return;
     this.#scanActive = true;
-    const before = JSON.stringify(this.unanswered);
+    const run = this.#runs;
+    const before = this.#scanSignature();
     try {
       const ports = await this.#serial.list();
-      const candidates = candidatePorts(ports, this.#preferredPort);
-      const candidate = this.#selectedPort
-        ? selectedUsbCandidate(candidates, this.#selectedPort, this.#selectedSerial)
-        : pickPort(ports, this.#preferredPort);
-      if (candidate?.path !== this.#seen?.path) this.#failures = 0;
-      this.#seen = candidate;
-      if (!candidate) {
-        this.#lastError = null;
+      if (this.connected) {
+        await this.#checkChosen(espressifPorts(ports), run);
         return;
       }
-      if (!this.#selectedSerial && this.#selectedPort === candidate.path)
-        this.#selectedSerial = candidate.serialNumber ?? null;
-      try {
-        await this.#open(candidate.path);
-        this.#failures = 0;
-        this.#lastError = null;
-      } catch (error) {
-        if (this.#enabled) this.#failures++;
-        throw error;
+      const candidates = candidatePorts(ports, this.#preferredPort);
+      const espressif = espressifPorts(ports);
+      const preferred = this.#preferredPort ? normalizedPortPath(this.#preferredPort) : null;
+      if (this.#selectedPort) {
+        // Setup or an install selected this device: use only it.
+        const candidate = selectedUsbCandidate(candidates, this.#selectedPort, this.#selectedSerial);
+        if (candidate && !this.#selectedSerial && this.#selectedPort === candidate.path)
+          this.#selectedSerial = candidate.serialNumber ?? null;
+        this.#clearChoices();
+        await this.#tryPort(candidate, run);
+      } else if (preferred) {
+        // AGENT_COMPANION_PORT names the only port to use.
+        this.#clearChoices();
+        await this.#tryPort(candidates.find(port => port.path === preferred) ?? null, run);
+      } else if (espressif.length < 2) {
+        // One device to try: the only ESP32 port.
+        this.#clearChoices();
+        await this.#tryPort(pickPort(ports), run);
+      } else {
+        await this.#checkEach(espressif, run);
       }
     } catch (error) {
       this.#lastError = this.#message(error);
       console.error(`[usb] discovery failed: ${this.#message(error)}`);
     } finally {
       this.#scanActive = false;
-      if (JSON.stringify(this.unanswered) !== before) this.#changed();
+      if (this.#scanSignature() !== before) this.#changed();
     }
   }
 
-  async #open(path: string): Promise<void> {
+  #clearChoices(): void {
+    this.#choices = [];
+    this.#waiting = [];
+    this.#silent = [];
+  }
+
+  // Opens the device on `candidate` as the connection. A failure counts toward `unanswered`.
+  async #tryPort(candidate: UsbPort | null, run: number): Promise<void> {
+    if (candidate?.path !== this.#seen?.path) this.#failures = 0;
+    this.#seen = candidate;
+    if (!candidate) {
+      this.#lastError = null;
+      return;
+    }
+    try {
+      await this.#open(candidate.path, run);
+      if (this.connected) this.#answeredDevices.add(deviceKey(candidate));
+      this.#failures = 0;
+      this.#lastError = null;
+    } catch (error) {
+      if (this.#enabled && run === this.#runs) this.#failures++;
+      throw error;
+    }
+  }
+
+  // Several Espressif ports: asks each device what it is. The chosen device, or one that answered
+  // before, is still an Agent Buddy while it is busy for a moment, so it counts also when it is silent.
+  // Uses the chosen device when it is there and answers, else the only Agent Buddy device. Anything
+  // else would be a guess: nothing connects, and the person chooses (see choices and waiting).
+  async #checkEach(ports: readonly UsbPort[], run: number): Promise<void> {
+    const answered: UsbDeviceSummary[] = [];
+    const silent: UsbPort[] = [];
+    let lastError: string | null = null;
+    for (const port of ports) {
+      if (!this.#enabled || run !== this.#runs) return;
+      try {
+        answered.push({...port, ...await this.#probe(port.path)});
+      } catch (error) {
+        silent.push(port);
+        lastError = `${port.path}: ${this.#message(error)}`;
+      }
+    }
+    if (!this.#enabled || run !== this.#runs) return;
+    for (const device of answered) this.#answeredDevices.add(deviceKey(device));
+    const chosen = ports.find(port => this.#isChosen(port)) ?? null;
+    const waiting = silent.filter(port => port === chosen || this.#answeredDevices.has(deviceKey(port)));
+    const target = chosen ? answered.find(device => device.path === chosen.path) ?? null
+      : answered.length === 1 && waiting.length === 0 ? answered[0]! : null;
+    this.#silent = silent.filter(port => !waiting.includes(port));
+    this.#waiting = target ? [] : waiting;
+    if (target) {
+      this.#choices = [];
+      await this.#tryPort(plainPort(target), run);
+      return;
+    }
+    if (answered.length > 0) {
+      this.#choices = answered;
+      this.#seen = null;
+      this.#failures = 0;
+      this.#lastError = waiting.length
+        ? `An Agent Buddy device does not answer now on ${waiting.map(port => port.path).join(', ')}. `
+          + 'Choose the device to use in Settings.'
+        : 'Several Agent Buddy devices answer on USB. Choose the one to use in Settings.';
+      return;
+    }
+    // None answered: the round counts against the first port, as one port's handshake does.
+    this.#choices = [];
+    const first = silent[0] ?? null;
+    if (first?.path !== this.#seen?.path) this.#failures = 0;
+    this.#seen = first;
+    this.#failures++;
+    this.#lastError = lastError;
+  }
+
+  // Connected to another device than the chosen one, on a port that no selection (setup or an
+  // install) and no AGENT_COMPANION_PORT fixes, with no switch waiting: time to look for the chosen one.
+  #chosenCheckDue(): boolean {
+    return this.#chosen !== null && !this.#selectedPort && !this.#preferredPort && !this.#switchPending
+      && !this.#isChosen(this.#seen) && Date.now() >= this.#nextChosenCheck;
+  }
+
+  // Connected to another device than the chosen one, which was not there or not answering then:
+  // when the chosen device answers, switch to it, because the person chose it. The switch waits for
+  // the command that runs on the connected device, such as a character upload, to finish.
+  async #checkChosen(ports: readonly UsbPort[], run: number): Promise<void> {
+    this.#nextChosenCheck = Date.now() + this.#chosenCheckMs;
+    const chosen = ports.find(port => this.#isChosen(port) && port.path !== this.#path);
+    if (!chosen) return;
+    try {
+      await this.#probe(chosen.path);
+    } catch {
+      return;
+    }
+    const port = this.#port;
+    if (run !== this.#runs || !this.connected || !port) return;
+    this.#answeredDevices.add(deviceKey(chosen));
+    this.#switchPending = true;
+    this.#commands = this.#commands.then(async () => {
+      if (run !== this.#runs || this.#port !== port || !port.isOpen) return;
+      console.log(`[usb] the chosen device answers on ${chosen.path}; switching to it from ${this.#path}`);
+      await new Promise<void>(resolve => port.close(() => resolve()));
+    }).catch(error => console.error(`[usb] ${this.#message(error)}`))
+      .finally(() => { this.#switchPending = false; });
+  }
+
+  #isChosen(port: UsbPort | null): boolean {
+    const chosen = this.#chosen;
+    if (!chosen || !port) return false;
+    return chosen.serialNumber ? port.serialNumber === chosen.serialNumber : port.path === chosen.path;
+  }
+
+  // Asks the device on `path` what it is, without connecting, then closes the port. Throws when it
+  // does not answer as an Agent Buddy.
+  async #probe(path: string): Promise<Omit<UsbDeviceSummary, keyof UsbPort>> {
+    const port = new this.#serial({path, baudRate: 115200, autoOpen: false, hupcl: false});
+    port.on('error', error => console.error(`[usb] ${path}: ${error.message}`));
+    await new Promise<void>((resolve, reject) => port.open(error => error ? reject(error) : resolve()));
+    try {
+      const {info, board} = await new Promise<{info: string; board: string | null}>((resolve, reject) => {
+        let buffer = '';
+        let info: string | null = null;
+        let settle: NodeJS.Timeout | undefined;
+        const finish = (result: {info: string; board: string | null} | Error) => {
+          clearTimeout(timer);
+          clearTimeout(settle);
+          port.off('data', onData);
+          if (result instanceof Error) reject(result);
+          else resolve(result);
+        };
+        const onData = (data: Buffer) => {
+          buffer += data.toString('utf8');
+          if (buffer.length > 65536) return finish(new Error('The device sent an oversized response.'));
+          for (let newline = buffer.indexOf('\n'); newline >= 0; newline = buffer.indexOf('\n')) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            if (line.startsWith('INFO protocol=')) {
+              info = line;
+              // Firmware from before the BOARD line sends none after INFO.
+              settle = setTimeout(() => finish({info: line, board: null}), 250);
+            } else if (info !== null && parseBoardLine(line) !== null) {
+              return finish({info, board: line});
+            }
+          }
+        };
+        const timer = setTimeout(() => finish(new AcknowledgementTimeout()), this.#requestTimeoutMs);
+        port.on('data', onData);
+        port.write('i', error => { if (error) finish(error); });
+      });
+      return deviceSummary(info, board);
+    } finally {
+      await new Promise<void>(resolve => port.isOpen ? port.close(() => resolve()) : resolve());
+    }
+  }
+
+  #scanSignature(): string {
+    return JSON.stringify([this.unanswered, this.#choices, this.#waiting, this.#silent]);
+  }
+
+  async #open(path: string, run: number): Promise<void> {
     const port = new this.#serial({
       path,
       baudRate: 115200,
@@ -312,7 +545,7 @@ export class UsbTransport {
     await new Promise<void>((resolve, reject) => {
       port.open(error => error ? reject(error) : resolve());
     });
-    if (!this.#enabled) {
+    if (!this.#enabled || run !== this.#runs) {
       await new Promise<void>(resolve => port.close(() => resolve()));
       return;
     }
@@ -321,6 +554,7 @@ export class UsbTransport {
     this.#timeouts = 0;
     // The BOARD line, when the firmware sends one, follows the INFO reply below.
     this.#board = null;
+    this.#variant = null;
     try {
       const info = await this.#request('i', line => line.startsWith('INFO protocol='));
       this.#applyInfo(info);
@@ -593,8 +827,10 @@ export class UsbTransport {
       if (line.startsWith('READY:')) this.#rebooted(line);
       const board = parseBoardLine(line);
       if (board !== null) {
-        if (board !== this.#board) {
+        const variant = boardVariant(line);
+        if (board !== this.#board || variant !== this.#variant) {
           this.#board = board;
+          this.#variant = variant;
           if (this.#answered) this.#changed();
         }
         continue;
@@ -616,6 +852,7 @@ export class UsbTransport {
     this.#character = /\bcharacter=([a-z0-9-]+)\b/.exec(line)?.[1] ?? null;
     // A restart can bring firmware for another board; the INFO reply below names it again.
     this.#board = null;
+    this.#variant = null;
     this.#iconSignature = '';
     this.#activeSignature = '';
     this.#usageSignature = null;
@@ -678,31 +915,82 @@ export interface UsbPort {
   serialNumber?: string;
 }
 
+// A device on a USB port that answered as an Agent Buddy.
+export interface UsbDeviceSummary extends UsbPort {
+  board: string | null;
+  variant: string | null;
+  character: string | null;
+  firmware: string | null;
+}
+
+// The device the person chose among several that answer: its USB serial number, or its port when
+// the system gives no serial number.
+export interface UsbDeviceChoice {
+  serialNumber: string | null;
+  path: string;
+}
+
+// One device across scans: its USB serial number, or its port when the system gives none.
+export function deviceKey(port: UsbPort): string {
+  return port.serialNumber ? `serial:${port.serialNumber}` : `path:${port.path}`;
+}
+
+function plainPort(port: UsbPort): UsbPort {
+  return {path: port.path, pid: port.pid, ...(port.serialNumber ? {serialNumber: port.serialNumber} : {})};
+}
+
+// What a device's INFO reply and BOARD line (null when it sends none) say about it.
+export function deviceSummary(info: string, boardLine: string | null): Omit<UsbDeviceSummary, keyof UsbPort> {
+  return {
+    board: boardLine === null ? null : parseBoardLine(boardLine),
+    variant: boardLine === null ? null : boardVariant(boardLine),
+    character: /\bcharacter=([a-z0-9-]+)\b/.exec(info)?.[1] ?? null,
+    firmware: /\bfirmware=([0-9a-f]{16})\b/.exec(info)?.[1] ?? null,
+  };
+}
+
+// The variant on a `BOARD id=<board> variant=<variant>` line, or null.
+export function boardVariant(line: string): string | null {
+  return /^BOARD id=[a-z0-9-]+ (?:\S+ )*variant=([a-z0-9-]{1,32})(?: |$)/.exec(line)?.[1] ?? null;
+}
+
 export function selectedUsbCandidate(ports: readonly UsbPort[], path: string, serial: string | null): UsbPort | null {
   if (!serial) return ports.find(port => port.path === path) ?? null;
   const matches = ports.filter(port => port.serialNumber === serial);
   return matches.find(port => port.path === path) ?? (matches.length === 1 ? matches[0]! : null);
 }
 
+// macOS lists each USB serial port twice, as /dev/tty.* and /dev/cu.*; the service uses /dev/cu.*.
+export function normalizedPortPath(path: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'darwin' ? path.replace(/^\/dev\/tty\./, '/dev/cu.') : path;
+}
+
 export function candidatePorts(ports: readonly PortInfo[], preferred?: string,
                                platform: NodeJS.Platform = process.platform): UsbPort[] {
-  const candidates = ports.filter(port => port.path === preferred
+  const wanted = preferred === undefined ? undefined : normalizedPortPath(preferred, platform);
+  const candidates = ports.filter(port => normalizedPortPath(port.path, platform) === wanted
     || (isLikelyEsp32Port(port.path, platform) && (platform !== 'win32' || Boolean(port.vendorId))));
   const normalized = candidates.map(port => pickPort([port], port.path, platform)!);
   return [...new Map(normalized.map(port => [port.path, port])).values()];
 }
 
+// The ports of Espressif USB devices (vendor 303a), such as the ESP32-S3 of every supported board.
+export function espressifPorts(ports: readonly PortInfo[], platform: NodeJS.Platform = process.platform): UsbPort[] {
+  return candidatePorts(ports.filter(port => port.vendorId?.toLowerCase() === '303a'), undefined, platform);
+}
+
 // The preferred port, else an Espressif one, else any port that looks like an ESP32 board.
 export function pickPort(ports: readonly PortInfo[], preferred?: string,
                          platform: NodeJS.Platform = process.platform): UsbPort | null {
-  const candidate = ports.find(port => port.path === preferred)
+  const wanted = preferred === undefined ? undefined : normalizedPortPath(preferred, platform);
+  const candidate = ports.find(port => normalizedPortPath(port.path, platform) === wanted)
     ?? ports.find(port => port.vendorId?.toLowerCase() === '303a' && isLikelyEsp32Port(port.path, platform))
     // Windows lists Bluetooth links as COM ports too; only a USB port has a vendor ID.
     ?? ports.find(port => isLikelyEsp32Port(port.path, platform) && (platform !== 'win32' || Boolean(port.vendorId)));
   if (!candidate) return null;
   const pid = Number.parseInt(candidate.productId ?? '', 16);
   return {
-    path: platform === 'darwin' ? candidate.path.replace(/^\/dev\/tty\./, '/dev/cu.') : candidate.path,
+    path: normalizedPortPath(candidate.path, platform),
     pid: Number.isFinite(pid) ? pid : null,
     ...(candidate.serialNumber ? {serialNumber: candidate.serialNumber} : {}),
   };

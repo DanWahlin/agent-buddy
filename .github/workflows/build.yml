@@ -137,6 +137,8 @@ jobs:
       matrix:
         os: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.os }}
+    # A run takes 2 to 5 minutes, so a hang fails here, not after the 6-hour default.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: daemon
@@ -153,6 +155,8 @@ jobs:
           cache-dependency-path: daemon/package-lock.json
       - run: npm ci
       - name: Test companion daemon
+        # The build and tests take less than a minute.
+        timeout-minutes: 5
         run: npm test
       - name: Build and load the fixed serialport binding
         working-directory: .
@@ -356,6 +360,8 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+      # Starts the website deploy after the release is published.
+      actions: write
     steps:
       - name: Checkout full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -419,8 +425,8 @@ jobs:
             no clone of the repository and no Node.js. If a service from a clone runs, the app follows that one.
 
             > [!TIP]
-            > With [GitHub Copilot CLI](https://github.com/features/copilot/cli/), one prompt installs it:
-            > `copilot -p "Install the latest Agent Buddy desktop app for my OS from https://github.com/${{ github.repository }}/releases"`
+            > A coding agent can install it for you. Paste [this prompt](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md#install-with-a-coding-agent)
+            > into any coding agent that can run commands on your computer.
             > The Windows app is code-signed. The macOS and Linux apps aren't, so you may still need the step for your OS below.
 
             #### 🍎 macOS (Apple Silicon and Intel)
@@ -481,3 +487,9 @@ jobs:
             ${{ steps.changelog.outputs.content }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy the website with the new character packs
+        # The live demo downloads the character packs from the latest release. A release that this
+        # job's token publishes starts no workflow by itself, so this starts the website deploy.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main

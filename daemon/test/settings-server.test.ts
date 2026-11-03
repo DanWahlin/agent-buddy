@@ -23,6 +23,9 @@ function freePort(): Promise<number> {
 class FakeService extends EventEmitter {
   connected = true;
   installBusy = false;
+  // A task that the real service would report as running.
+  task: string | null = null;
+  wifiScan: Promise<void> = Promise.resolve();
   installs: string[] = [];
   wifi: Array<[string, string]> = [];
   modes: string[] = [];
@@ -44,6 +47,12 @@ class FakeService extends EventEmitter {
   setupBusy = false;
   hookStatus: HookStatus = 'installed';
   hookApprovals: AgentId[][] = [];
+  get busyTask() {
+    return this.task ?? (this.setupBusy || this.installBusy ? 'the current change' : null);
+  }
+  async wifiScanEnded() {
+    await this.wifiScan;
+  }
   status() {
     return {state: 'idle', transport: 'usb', connected: this.connected, port: '/dev/test', character: 'copilot',
             mode: 'auto', sessions: 0, wifiPaired: false, firmware: this.firmware,
@@ -173,6 +182,10 @@ class FakeService extends EventEmitter {
   }
   async detectUsbDevices() {
     return {ports: [{path: '/dev/test', pid: 0x1001}], connected: this.connected ? '/dev/test' : null};
+  }
+  chosenDevices: string[] = [];
+  async chooseUsbDevice(path: string) {
+    this.chosenDevices.push(path);
   }
   async applyOnboardingDisplay() {
     this.setupActions.push('display');
@@ -590,6 +603,33 @@ test('validates and performs actions', async () => {
   });
 });
 
+test('an install waits for the Wi-Fi scan that Settings starts, and other tasks are named when they block it', async () => {
+  await withServer(async (call, service) => {
+    let finishScan!: () => void;
+    service.wifiScan = new Promise(resolve => { finishScan = resolve; });
+    service.task = 'the Wi-Fi scan';
+    const install = call('/api/characters/openclaw/install', {method: 'POST'});
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual(service.installs, []);
+    service.task = null;
+    finishScan();
+    assert.equal((await install).status, 202);
+    assert.deepEqual(service.installs, ['openclaw']);
+
+    service.task = 'the firmware update';
+    const json = {'Content-Type': 'application/json'};
+    for (const [path, options] of [['/api/characters/openclaw/install', {}],
+      ['/api/firmware/update', {}], ['/api/firmware/usb', {headers: json, body: '{"confirmed":true}'}]] as const) {
+      const response = await call(path, {method: 'POST', ...options});
+      assert.equal(response.status, 409, path);
+      assert.equal(JSON.parse(response.body).error, 'Wait for the firmware update to finish, then try again.');
+    }
+    assert.deepEqual(service.installs, ['openclaw']);
+    assert.equal(service.firmwareUpdates, 0);
+    assert.equal(service.usbInstalls, 0);
+  });
+});
+
 test('onboarding APIs require authentication, valid choices, and explicit install approval', async () => {
   await withServer(async (call, service) => {
     const post = (path: string, body: unknown, authenticated = true) =>
@@ -613,6 +653,12 @@ test('onboarding APIs require authentication, valid choices, and explicit instal
     assert.deepEqual(JSON.parse((await call('/api/devices')).body).ports, [{path: '/dev/test', pid: 0x1001}]);
     assert.equal((await post('/api/devices/detect', {}, false)).status, 401);
     assert.equal(JSON.parse((await post('/api/devices/detect', {})).body).result, 'no-device');
+    // Choosing one of several devices that answer needs the token and a port.
+    assert.equal((await post('/api/devices/choose', {path: '/dev/test'}, false)).status, 401);
+    assert.equal((await post('/api/devices/choose', {})).status, 400);
+    assert.equal((await post('/api/devices/choose', {path: 7})).status, 400);
+    assert.equal((await post('/api/devices/choose', {path: '/dev/test'})).status, 200);
+    assert.deepEqual(service.chosenDevices, ['/dev/test']);
     assert.equal((await post('/api/onboarding/device', {flash: true})).status, 400);
     assert.equal((await post('/api/onboarding/device', {flash: 'true', confirmed: true})).status, 400);
     service.setupBusy = true;

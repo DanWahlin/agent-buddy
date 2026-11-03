@@ -1252,7 +1252,7 @@ void setup() {
   if (!psramFound()) fatal("8 MB OPI PSRAM not detected.");
   logMessage("\nAgent Companion character shell / %s (%s)\nPanel: %s %dx%d (content %dx%d), touch: %s\n"
              "PSRAM: %u bytes\n",
-             board::kName, board::kId, board::kDisplayPanelName, kPanelSize, kPanelSize,
+             board::kName, board::kId, board::kDisplayPanelName, kPanelWidth, kPanelHeight,
              kDisplaySize, kDisplaySize, board::kTouchControllerName, ESP.getPsramSize());
   if (!display.begin(kSpiFrequency)) fatal(display.error());
   display.setBrightness(0);
