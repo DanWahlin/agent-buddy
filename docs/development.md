@@ -75,7 +75,8 @@ For unattended validation, use `aspire start --non-interactive`, `aspire wait
 companion`, and `aspire wait character-lab`. `aspire stop` stops the graph;
 Ctrl+C stops an interactive `aspire run`. Neither leaves an OS service installed.
 Do not run two AppHosts against the same checkout simultaneously; use separate
-worktrees for parallel development.
+worktrees for parallel development. Each AppHost gets free dashboard ports, and
+`aspire ps` lists every running dashboard.
 
 The Character Lab uses Aspire's checkout-local `.venv`; it needs no Python
 packages beyond the standard library. The separate art-export dependencies
