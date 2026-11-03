@@ -62,6 +62,22 @@ only restored if enough of the window would land on a monitor that exists
 *now*. Unplug the screen it was living on and it opens where it can be seen
 instead of somewhere nobody can reach.
 
+**Character size.** Settings' **Character size** (`desktopSize`: `small`,
+`medium`, `large` or `extra-large`, Medium by default) scales the whole window
+from its configured 280x280 (0.8, 1, 1.25 or 1.5 times; `placement::SIZES`), so
+the device, the character and its effects stay together. The page follows the
+window's size as it always has: the case is redrawn at the new size, the
+engine's frame stays at its own resolution and the GPU scales it smoothly, and
+the page reports the new head and button areas for click-through. The shell
+keeps the middle of the window's bottom edge, where the character stands, in
+place, and keeps a growing window from sticking out past the work area any
+further than it already did (`placement::anchored`). A window is never made
+bigger than the work area. The size is saved with the position in
+`placement.json`, so the saved corner means the same place on the next start;
+a file without one is Medium. A hidden window changes size when it shows again.
+On Hyprland, the new size is set and the window is moved over Hyprland's IPC,
+and the window is given the chosen size whenever it is settled.
+
 ## Changing character
 
 With a device connected, the character is the one installed on it: change it

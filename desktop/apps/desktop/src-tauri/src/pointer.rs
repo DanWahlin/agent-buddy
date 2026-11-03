@@ -233,7 +233,11 @@ impl Pointer {
                         if (now.x, now.y) != (before.x, before.y) {
                             crate::placement::remember(
                                 &window,
-                                crate::placement::Placement { x: now.x as i32, y: now.y as i32 },
+                                crate::placement::Placement {
+                                    x: now.x as i32,
+                                    y: now.y as i32,
+                                    scale: crate::current_scale(&window),
+                                },
                             );
                         }
                     }

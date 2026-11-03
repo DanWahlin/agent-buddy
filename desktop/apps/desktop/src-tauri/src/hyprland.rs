@@ -137,13 +137,25 @@ pub fn settle_commands(client: &Client, at: Option<(i32, i32)>) -> Vec<(String, 
         format!("setprop {window} alpha 1 lock"),
     ));
     if let Some((x, y)) = at {
-        commands.push((
-            lua("move", &format!(", x = {x}, y = {y}, relative = false")),
-            format!("movewindowpixel exact {x} {y},{window}"),
-        ));
+        commands.push(move_command(client, x, y));
     }
     commands.push((lua("alter_zorder", ", mode = \"top\""), format!("alterzorder top,{window}")));
     commands
+}
+
+/// The dispatch that puts the window's top-left corner at `x`, `y` on the layout.
+pub fn move_command(client: &Client, x: i32, y: i32) -> (String, String) {
+    let window = format!("address:{}", client.address);
+    (
+        format!("hl.dsp.window.move({{ window = \"{window}\", x = {x}, y = {y}, relative = false }})"),
+        format!("movewindowpixel exact {x} {y},{window}"),
+    )
+}
+
+/// Move the window, as when the character size changes. Whether Hyprland did.
+pub fn move_to(client: &Client, x: i32, y: i32) -> bool {
+    let (lua, classic) = move_command(client, x, y);
+    dispatch(&lua, &classic)
 }
 
 /// Make this window a pet: wait for Hyprland to map it, then float, pin and

@@ -54,7 +54,7 @@ import {
   type AgentBadgeStatusIcon,
 } from './agent-badges.js';
 import {
-  loadDisplaySettingsSync, saveDisplaySettings, type DesktopBackdrop, type DisplaySettings,
+  loadDisplaySettingsSync, saveDisplaySettings, type DesktopBackdrop, type DesktopSize, type DisplaySettings,
 } from './display-settings.js';
 import {
   defaultDataDirectory, deviceHistoryPath, serviceInfo, serviceStoppedPath, socketPath, type ServiceInfo,
@@ -192,6 +192,8 @@ export interface CompanionStatus extends DaemonStatus {
   desktop: {
     visible: boolean;
     backdrop: DesktopBackdrop;
+    // How big the desktop app draws the character; the whole window scales.
+    size: DesktopSize;
     // Whether the desktop app plays sounds; the device keeps its own volume.
     sounds: boolean;
     // The desktop app's sound volume, 0 to 100.
@@ -246,6 +248,7 @@ async function saveDeviceUsed(path = deviceHistoryPath()): Promise<void> {
 export interface DesktopChange {
   visible?: boolean;
   backdrop?: DesktopBackdrop;
+  size?: DesktopSize;
   sounds?: boolean;
   volume?: number;
   character?: string;
@@ -440,6 +443,7 @@ export class CompanionService extends EventEmitter {
       desktop: {
         visible: this.#display.showDesktopCompanion,
         backdrop: this.#display.desktopBackdrop,
+        size: this.#display.desktopSize,
         sounds: this.#display.desktopSounds,
         volume: this.#display.desktopVolume,
         character: this.desktopCharacter(),
@@ -630,12 +634,13 @@ export class CompanionService extends EventEmitter {
       // This choice is newer than the last install, so the desktop shows it now.
       this.#installedCharacter = null;
     }
-    if (change.visible !== undefined || change.backdrop !== undefined || change.sounds !== undefined
-      || change.volume !== undefined) {
+    if (change.visible !== undefined || change.backdrop !== undefined || change.size !== undefined
+      || change.sounds !== undefined || change.volume !== undefined) {
       this.#display = {
         ...this.#display,
         ...(change.visible === undefined ? {} : {showDesktopCompanion: change.visible}),
         ...(change.backdrop === undefined ? {} : {desktopBackdrop: change.backdrop}),
+        ...(change.size === undefined ? {} : {desktopSize: change.size}),
         ...(change.sounds === undefined ? {} : {desktopSounds: change.sounds}),
         ...(change.volume === undefined ? {} : {desktopVolume: change.volume}),
       };

@@ -355,6 +355,11 @@ function renderStatus() {
     if (!desktopPending) frameToggle.checked = desktop.backdrop !== 'none';
     frameToggle.disabled = desktop.visible === false;
   }
+  const size = $('desktop-size');
+  if (size) {
+    if (!desktopPending) size.value = desktopSizeNames[desktop.size] ? desktop.size : 'medium';
+    size.disabled = desktop.visible === false;
+  }
   const soundsToggle = $('desktop-sounds-toggle');
   if (soundsToggle) {
     if (!desktopPending) soundsToggle.checked = desktop.sounds === true;
@@ -944,6 +949,13 @@ $('device-frame-toggle')?.addEventListener('change', event => {
   const framed = event.target.checked;
   void updateDesktop({backdrop: framed ? 'device' : 'none'},
     framed ? 'The device is shown around the character.' : 'Only the character is shown.');
+});
+
+const desktopSizeNames = {small: 'Small', medium: 'Medium', large: 'Large', 'extra-large': 'Extra large'};
+
+$('desktop-size')?.addEventListener('change', event => {
+  const size = event.target.value;
+  void updateDesktop({size}, `The desktop character is ${desktopSizeNames[size]?.toLowerCase() ?? size}.`);
 });
 
 $('desktop-sounds-toggle')?.addEventListener('change', event => {

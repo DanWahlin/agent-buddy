@@ -55,6 +55,9 @@ pub struct Snapshot {
     pub pack: Option<PathBuf>,
     pub visible: bool,
     pub backdrop: String,
+    /// The character size from Settings: "small", "medium", "large" or
+    /// "extra-large". The shell scales the whole window; the page follows it.
+    pub size: String,
     /// Whether the page plays the device's sound cues. Off unless turned on.
     pub sounds: bool,
     /// How loud the cues play, 0 to 100.
@@ -260,6 +263,12 @@ pub fn parse(status: &Value) -> Option<Snapshot> {
             .and_then(Value::as_str)
             .unwrap_or("device")
             .to_string(),
+        size: desktop
+            .and_then(|it| it.get("size"))
+            .and_then(Value::as_str)
+            .filter(|size| crate::placement::SIZES.iter().any(|(name, _)| name == size))
+            .unwrap_or("medium")
+            .to_string(),
         sounds: desktop.and_then(|it| it.get("sounds")).and_then(Value::as_bool) == Some(true),
         volume: desktop
             .and_then(|it| it.get("volume"))
@@ -459,9 +468,10 @@ mod tests {
                 ],
                 "icons": [{ "id": "copilot", "name": "x", "color": "#8F9BFF", "mask": "AAAA" }, { "id": "broken" }]
             },
-            "desktop": { "visible": false, "backdrop": "device", "sounds": true, "volume": 30, "character": "claude", "pack": "/p/claude.acpk" }
+            "desktop": { "visible": false, "backdrop": "device", "size": "large", "sounds": true, "volume": 30, "character": "claude", "pack": "/p/claude.acpk" }
         });
         let snapshot = parse(&status).unwrap();
+        assert_eq!(snapshot.size, "large");
         assert!(snapshot.sounds);
         assert_eq!(snapshot.for_page()["sounds"], true);
         assert_eq!(snapshot.volume, 30);
@@ -541,6 +551,9 @@ mod tests {
         assert!(!snapshot.sounds);
         assert_eq!(snapshot.volume, DEFAULT_VOLUME);
         assert_eq!(snapshot.backdrop, "device");
+        assert_eq!(snapshot.size, "medium");
+        let huge = parse(&json!({ "state": "idle", "desktop": { "size": "huge" } })).unwrap();
+        assert_eq!(huge.size, "medium");
         let loud = parse(&json!({ "state": "idle", "desktop": { "volume": 400 } })).unwrap();
         assert_eq!(loud.volume, DEFAULT_VOLUME);
         assert_eq!(parse(&json!({ "state": "idle", "character": "none" })).unwrap().character, None);

@@ -33,7 +33,8 @@ class FakeService extends EventEmitter {
   orientationChanges: number[] = [];
   agentActions: string[] = [];
   badges: boolean[] = [];
-  desktop: Array<{visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}> = [];
+  desktop: Array<{visible?: boolean; backdrop?: string; size?: string; sounds?: boolean; volume?: number;
+    character?: string}> = [];
   usage: Array<{enabled?: boolean; window?: string}> = [];
   usbFirmware = {release: '0.7.0', releaseId: null, flasher: true, port: '/dev/test', unanswered: false,
                  installing: null, last: null};
@@ -59,7 +60,8 @@ class FakeService extends EventEmitter {
             orientation: this.orientation, installing: null, lastInstall: null,
             drivingAgents: [], agents: this.agentStatuses(),
             badges: {enabled: true, active: [], icons: [{id: 'copilot', name: 'GitHub Copilot', color: '#6F7CFF', mask: Buffer.alloc(72).toString('base64')}]},
-            desktop: {visible: true, backdrop: 'device', sounds: false, volume: 30, character: 'copilot', pack: null},
+            desktop: {visible: true, backdrop: 'device', size: 'medium', sounds: false, volume: 30, character: 'copilot',
+                      pack: null},
             usage: {enabled: true, window: 'today', aic: 902, tokens: null, lines: ['AIC: 902'], summary: ['AIC: 902']}} as never;
   }
   agentStatuses() {
@@ -111,7 +113,8 @@ class FakeService extends EventEmitter {
   async setAgentBadgesEnabled(enabled: boolean) {
     this.badges.push(enabled);
   }
-  async setDesktop(change: {visible?: boolean; backdrop?: string; sounds?: boolean; volume?: number; character?: string}) {
+  async setDesktop(change: {visible?: boolean; backdrop?: string; size?: string; sounds?: boolean; volume?: number;
+    character?: string}) {
     if (change.character === 'missing') throw new Error('Unknown character.');
     this.desktop.push(change);
   }
@@ -506,6 +509,9 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"neon"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"visible":false}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"backdrop":"device"}'})).status, 200);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"size":"huge"}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"size":1.5}'})).status, 400);
+    assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"size":"large"}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"sounds":"on"}'})).status, 400);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"sounds":true}'})).status, 200);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"volume":101}'})).status, 400);
@@ -515,11 +521,12 @@ test('validates and performs actions', async () => {
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"missing"}'})).status, 409);
     assert.equal((await call('/api/desktop', {method: 'POST', headers: json, body: '{"character":"claude"}'})).status, 200);
     assert.deepEqual(service.desktop, [
-      {visible: false, backdrop: undefined, sounds: undefined, volume: undefined, character: undefined},
-      {visible: undefined, backdrop: 'device', sounds: undefined, volume: undefined, character: undefined},
-      {visible: undefined, backdrop: undefined, sounds: true, volume: undefined, character: undefined},
-      {visible: undefined, backdrop: undefined, sounds: undefined, volume: 30, character: undefined},
-      {visible: undefined, backdrop: undefined, sounds: undefined, volume: undefined, character: 'claude'},
+      {visible: false, backdrop: undefined, size: undefined, sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: 'device', size: undefined, sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, size: 'large', sounds: undefined, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, size: undefined, sounds: true, volume: undefined, character: undefined},
+      {visible: undefined, backdrop: undefined, size: undefined, sounds: undefined, volume: 30, character: undefined},
+      {visible: undefined, backdrop: undefined, size: undefined, sounds: undefined, volume: undefined, character: 'claude'},
     ]);
     assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{}'})).status, 400);
     assert.equal((await call('/api/usage', {method: 'POST', headers: json, body: '{"enabled":"yes"}'})).status, 400);

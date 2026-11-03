@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {isCharacterName, maxPackBytes, readCharacterPack, readCharacterThumbnail} from './character-pack.js';
 import type {CompanionService} from './companion-service.js';
 import {isConnectionMode} from './connection-mode.js';
-import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
+import {desktopBackdrops, desktopSizes, isDesktopBackdrop, isDesktopSize, isDesktopVolume} from './display-settings.js';
 import {settingsInfoPath} from './paths.js';
 import {isFirmwareBoard} from './firmware-release.js';
 import {isAgentId} from './agents/types.js';
@@ -340,8 +340,8 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
       return json(response, 200, {ok: true, enabled: body.enabled});
     }
     if (method === 'POST' && segments.length === 1 && segments[0] === 'desktop') {
-      const body = await readJson(request) as {visible?: unknown; backdrop?: unknown; sounds?: unknown; volume?: unknown;
-        character?: unknown; deviceEnabled?: unknown};
+      const body = await readJson(request) as {visible?: unknown; backdrop?: unknown; size?: unknown; sounds?: unknown;
+        volume?: unknown; character?: unknown; deviceEnabled?: unknown};
       if (body.visible !== undefined && typeof body.visible !== 'boolean')
         throw new HttpError(400, 'Desktop visibility must be true or false.');
       if (body.sounds !== undefined && typeof body.sounds !== 'boolean')
@@ -350,18 +350,21 @@ export function createSettingsServer(options: SettingsServerOptions): Server {
         throw new HttpError(400, 'Desktop volume must be a whole number from 0 to 100.');
       if (body.backdrop !== undefined && !isDesktopBackdrop(body.backdrop))
         throw new HttpError(400, `Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
+      if (body.size !== undefined && !isDesktopSize(body.size))
+        throw new HttpError(400, `Desktop size must be one of: ${desktopSizes.join(', ')}.`);
       if (body.character !== undefined && (typeof body.character !== 'string' || !isCharacterName(body.character)))
         throw new HttpError(400, 'Desktop character must be a character id.');
       if (body.deviceEnabled !== undefined && typeof body.deviceEnabled !== 'boolean')
         throw new HttpError(400, 'Device use must be on (true) or off (false).');
       if (body.deviceEnabled !== undefined && service.onboardingStatus().busy)
         throw new HttpError(409, 'Wait for device setup to finish.');
-      if (body.visible === undefined && body.backdrop === undefined && body.sounds === undefined
-        && body.volume === undefined && body.character === undefined && body.deviceEnabled === undefined)
+      if (body.visible === undefined && body.backdrop === undefined && body.size === undefined
+        && body.sounds === undefined && body.volume === undefined && body.character === undefined
+        && body.deviceEnabled === undefined)
         throw new HttpError(400, 'Nothing to change.');
       try {
-        await service.setDesktop({visible: body.visible, backdrop: body.backdrop, sounds: body.sounds,
-                                  volume: body.volume, character: body.character,
+        await service.setDesktop({visible: body.visible, backdrop: body.backdrop, size: body.size,
+                                  sounds: body.sounds, volume: body.volume, character: body.character,
                                   ...(body.deviceEnabled === undefined ? {} : {deviceEnabled: body.deviceEnabled})});
       } catch (error) {
         throw new HttpError(409, error instanceof Error ? error.message : String(error));

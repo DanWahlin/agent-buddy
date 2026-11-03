@@ -60,6 +60,34 @@ struct App {
     /// The address the Settings window loaded. The lock also stops two quick
     /// clicks from making two windows.
     settings: Mutex<Option<String>>,
+    /// The character size the window has, as a scale of its configured size.
+    scale: Mutex<f64>,
+}
+
+/// The character size the window has now, for saving its position with it.
+fn current_scale(window: &WebviewWindow) -> f64 {
+    window.try_state::<Arc<App>>().map_or(1.0, |app| *app.scale.lock().unwrap())
+}
+
+/// Follow the character size in Settings. Only while the window shows: a
+/// hidden or minimized window has no place to keep, so it changes size when
+/// it shows again.
+fn follow_size(app: &Arc<App>, window: &WebviewWindow) {
+    let Some(wanted) = app.daemon.lock().unwrap().as_ref().map(|it| placement::scale_of(&it.size)) else {
+        return;
+    };
+    if !app.visible.load(Ordering::Relaxed) {
+        return;
+    }
+    {
+        let mut scale = app.scale.lock().unwrap();
+        if (*scale - wanted).abs() < 1e-6 {
+            return;
+        }
+        *scale = wanted;
+    }
+    placement::rescale(window, wanted);
+    app.pointer.refresh(window);
 }
 
 impl App {
@@ -175,6 +203,7 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
         // Settings has it off: showing it from here would be overruled.
         let _ = item.set_enabled(wanted);
     }
+    follow_size(app, window);
     // Shown again, the window is new to the compositor, and tiled again.
     if visible && !was_visible {
         settle_on_hyprland(window);
@@ -596,6 +625,7 @@ fn main() {
         visibility: Mutex::new(None),
         bundled: AtomicBool::new(false),
         settings: Mutex::new(None),
+        scale: Mutex::new(1.0),
     });
 
     let setup = app.clone();
@@ -696,7 +726,7 @@ fn main() {
             // it drew, the desktop stays usable rather than this swallowing
             // every click on the screen.
             let _ = window.set_ignore_cursor_events(true);
-            placement::restore(&window);
+            *setup.scale.lock().unwrap() = placement::restore(&window);
             build_tray(handle.handle(), &window, &setup)?;
 
             // Remember where it is put. Tauri reports every step of a drag, so
@@ -722,7 +752,7 @@ fn main() {
                     }
                 }
                 WindowEvent::Moved(at) => {
-                    placement::remember(&moving, Placement { x: at.x, y: at.y });
+                    placement::remember(&moving, Placement { x: at.x, y: at.y, scale: current_scale(&moving) });
                     tracking.refresh(&moving);
                 }
                 WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
@@ -873,11 +903,9 @@ fn settle_on_hyprland(window: &WebviewWindow) {
         return;
     }
     let at = placement::saved(window).map(|it| (it.x, it.y));
-    let Some(configured) = window.app_handle().config().app.windows.iter().find(|it| it.label == window.label()) else {
-        eprintln!("[hyprland] the character window has no configured size");
-        return;
-    };
-    let size = tauri::LogicalSize::new(configured.width, configured.height);
+    // The size Settings chose, not the configured one.
+    let (width, height) = placement::scaled_size(placement::base_size(window), current_scale(window), None);
+    let size = tauri::LogicalSize::new(width, height);
     let resized = window.clone();
     std::thread::spawn(move || {
         if hyprland::settle(at).is_none() {
@@ -885,7 +913,7 @@ fn settle_on_hyprland(window: &WebviewWindow) {
             return;
         }
         if let Err(error) = resized.set_size(size) {
-            eprintln!("[hyprland] could not restore the configured character size: {error}");
+            eprintln!("[hyprland] could not restore the character size: {error}");
         }
     });
 }

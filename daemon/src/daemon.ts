@@ -12,7 +12,7 @@ import {startSettingsServer} from './settings-server.js';
 import {isAgentId} from './agents/types.js';
 import {defaultAgentContext, normalizeAgentHook, otherAgentLocations} from './agents/index.js';
 import {loadAgentBadgeIcons} from './agent-badges.js';
-import {desktopBackdrops, isDesktopBackdrop, isDesktopVolume} from './display-settings.js';
+import {desktopBackdrops, desktopSizes, isDesktopBackdrop, isDesktopSize, isDesktopVolume} from './display-settings.js';
 import {isUsageWindow, usageWindows} from './usage-tracker.js';
 
 const autoInstallRetryMs = 5 * 60 * 1000;
@@ -177,6 +177,8 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
           throw new Error('Desktop visibility must be true or false.');
         if (request.backdrop !== undefined && !isDesktopBackdrop(request.backdrop))
           throw new Error(`Desktop backdrop must be one of: ${desktopBackdrops.join(', ')}.`);
+        if (request.size !== undefined && !isDesktopSize(request.size))
+          throw new Error(`Desktop size must be one of: ${desktopSizes.join(', ')}.`);
         if (request.sounds !== undefined && typeof request.sounds !== 'boolean')
           throw new Error('Desktop sounds must be on (true) or off (false).');
         if (request.volume !== undefined && !isDesktopVolume(request.volume))
@@ -185,8 +187,9 @@ export function handleSocket(socket: Socket, coordinator: StateCoordinator, tran
           throw new Error('Desktop character must be a character id.');
         if (request.deviceEnabled !== undefined && typeof request.deviceEnabled !== 'boolean')
           throw new Error('Device use must be on (true) or off (false).');
-        const change = {visible: request.visible, backdrop: request.backdrop, sounds: request.sounds,
-                        volume: request.volume, character: request.character, deviceEnabled: request.deviceEnabled};
+        const change = {visible: request.visible, backdrop: request.backdrop, size: request.size,
+                        sounds: request.sounds, volume: request.volume, character: request.character,
+                        deviceEnabled: request.deviceEnabled};
         reply(service.setDesktop(change).then(() => ({ok: true, desktop: service.status().desktop})));
       } else if (request.type === 'usage') {
         if (request.enabled !== undefined && typeof request.enabled !== 'boolean')

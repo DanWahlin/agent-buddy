@@ -7,6 +7,9 @@ import {isUsageWindow, type UsageWindow} from './usage-tracker.js';
 // How the desktop character is framed: as the device itself, or on its own.
 export const desktopBackdrops = ['device', 'none'] as const;
 export type DesktopBackdrop = typeof desktopBackdrops[number];
+// How big the desktop app draws the character, device and effects; medium is the original size.
+export const desktopSizes = ['small', 'medium', 'large', 'extra-large'] as const;
+export type DesktopSize = typeof desktopSizes[number];
 
 export interface DisplaySettings {
   showAgentBadges: boolean;
@@ -14,6 +17,7 @@ export interface DisplaySettings {
   showDesktopCompanion: boolean;
   useDevice: boolean;
   desktopBackdrop: DesktopBackdrop;
+  desktopSize: DesktopSize;
   // Whether the desktop app plays the device's sound cues; off until turned on.
   desktopSounds: boolean;
   // The desktop app's sound volume, 0 to 100; the device keeps its own.
@@ -28,6 +32,7 @@ export const defaultDisplaySettings: DisplaySettings = {
   showDesktopCompanion: true,
   useDevice: true,
   desktopBackdrop: 'device',
+  desktopSize: 'medium',
   desktopSounds: false,
   desktopVolume: 30,
   showUsage: true,
@@ -42,6 +47,10 @@ export function isDesktopBackdrop(value: unknown): value is DesktopBackdrop {
   return typeof value === 'string' && (desktopBackdrops as readonly string[]).includes(value);
 }
 
+export function isDesktopSize(value: unknown): value is DesktopSize {
+  return typeof value === 'string' && (desktopSizes as readonly string[]).includes(value);
+}
+
 export function loadDisplaySettingsSync(path = displaySettingsPath()): DisplaySettings {
   if (!existsSync(path)) return {...defaultDisplaySettings};
   try {
@@ -52,6 +61,7 @@ export function loadDisplaySettingsSync(path = displaySettingsPath()): DisplaySe
       useDevice: parsed.useDevice !== false,
       desktopBackdrop: isDesktopBackdrop(parsed.desktopBackdrop)
         ? parsed.desktopBackdrop : defaultDisplaySettings.desktopBackdrop,
+      desktopSize: isDesktopSize(parsed.desktopSize) ? parsed.desktopSize : defaultDisplaySettings.desktopSize,
       desktopSounds: parsed.desktopSounds === true,
       desktopVolume: isDesktopVolume(parsed.desktopVolume) ? parsed.desktopVolume : defaultDisplaySettings.desktopVolume,
       showUsage: parsed.showUsage !== false,

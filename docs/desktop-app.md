@@ -56,6 +56,14 @@ The window has no frame and is always on top.
   the case's buttons.
 - **Click the character** to poke it, as you tap the device. **Drag it** to move
   it. It remembers where you put it.
+- **Make it bigger or smaller** with **Character size** on the **Desktop** tab
+  in Settings: **Small**, **Medium** (the default), **Large**, or
+  **Extra large**. The whole window changes size, so the character, its effects,
+  and the device around it stay together. The change shows at once, and the
+  character keeps standing in the same place: the middle of the window's bottom
+  edge stays where it was. A bigger window doesn't grow off the screen, and it
+  is never bigger than the screen. The app remembers the size with the position.
+  This setting is for the desktop app only. The device's screen doesn't change.
 - **Click the upper button on the device's case** to open Settings. Pressing the
   BOOT button on the real device does the same.
 - **Click the lower button on the device's case** to turn sounds on or off. A

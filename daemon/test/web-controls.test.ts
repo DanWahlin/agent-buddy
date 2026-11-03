@@ -22,8 +22,10 @@ test('web alignment controls initialize once and send confirmed settings', async
       },
       classList: {toggle() {}, add() {}, remove() {}},
       listeners: new Map<string, number>(),
-      addEventListener(type: string) {
+      handlers: new Map<string, (event: unknown) => unknown>(),
+      addEventListener(type: string, handler: (event: unknown) => unknown) {
         this.listeners.set(type, (this.listeners.get(type) ?? 0) + 1);
+        this.handlers.set(type, handler);
       },
       querySelector() { return {disabled: false, setAttribute() {}}; },
       firstElementChild: {style: {} as Record<string, string>},
@@ -325,6 +327,24 @@ test('web alignment controls initialize once and send confirmed settings', async
   runInContext('renderStatus()', context);
   assert.equal(element('fact-connection').textContent, 'Not connected');
   assert.equal(element('fact-connection').className, '');
+  // The desktop size follows the service, falls back to Medium, and is sent as chosen.
+  assert.equal(element('desktop-size').listeners.get('change'), 1);
+  runInContext('status.desktop = {visible: true, backdrop: "device", size: "large"}; renderStatus()', context);
+  assert.equal(element('desktop-size').value, 'large');
+  assert.equal(element('desktop-size').disabled, false);
+  runInContext('status.desktop = {visible: false, size: "huge"}; renderStatus()', context);
+  assert.equal(element('desktop-size').value, 'medium');
+  assert.equal(element('desktop-size').disabled, true);
+  runInContext('status.desktop = {visible: true, backdrop: "device", size: "medium"}; renderStatus()', context);
+  const desktopChanges: unknown[] = [];
+  context.desktopChanges = desktopChanges;
+  runInContext('api = async (path, options) => { const change = JSON.parse(options.body); '
+    + 'desktopChanges.push({path, change}); return {ok: true, desktop: {...status.desktop, ...change}}; }', context);
+  await element('desktop-size').handlers.get('change')!({target: {value: 'extra-large'}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(JSON.parse(JSON.stringify(desktopChanges)), [{path: '/api/desktop', change: {size: 'extra-large'}}]);
+  assert.equal(prompts.at(-1), 'toast: The desktop character is extra large.');
+  assert.equal(element('desktop-size').value, 'extra-large');
   runInContext('status.deviceEnabled = false; status.connected = false; renderStatus()', context);
   assert.equal(element('fact-connection').textContent, 'Desktop only');
   assert.equal(element('fact-connection').className, '');

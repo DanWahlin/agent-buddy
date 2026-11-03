@@ -8,6 +8,7 @@ import {DeviceTransport} from '../src/device-transport.js';
 import {loadUsbDeviceChoice} from '../src/connection-mode.js';
 import type {UsbDeviceChoice, UsbDeviceSummary} from '../src/usb-transport.js';
 import {DesktopApp} from '../src/desktop-app.js';
+import {loadDisplaySettingsSync} from '../src/display-settings.js';
 import {defaultAgentContext, type AgentId, type AgentStatus} from '../src/agents/index.js';
 import {OnboardingStore} from '../src/onboarding.js';
 import {parseCharacterPackHeader} from '../src/character-pack.js';
@@ -1028,6 +1029,21 @@ test('a character chosen for the desktop replaces the one that the last install 
     // A connected device decides again.
     device.active = true;
     assert.equal(service.desktopCharacter(), 'claude');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('the desktop size is reported to the app and saved with the display settings', async () => {
+  const parts = await fixture();
+  const {cleanup} = parts;
+  try {
+    const service = await realService(parts);
+    assert.equal(service.status().desktop.size, 'medium');
+    await service.setDesktop({size: 'large'});
+    assert.equal(service.status().desktop.size, 'large');
+    assert.equal(service.status().desktop.backdrop, 'device');
+    assert.equal(loadDisplaySettingsSync().desktopSize, 'large');
   } finally {
     await cleanup();
   }

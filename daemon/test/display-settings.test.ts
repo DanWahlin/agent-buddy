@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
-  defaultDisplaySettings, isDesktopBackdrop, isDesktopVolume, loadDisplaySettingsSync, saveDisplaySettings,
+  defaultDisplaySettings, isDesktopBackdrop, isDesktopSize, isDesktopVolume, loadDisplaySettingsSync, saveDisplaySettings,
 } from '../src/display-settings.js';
 
 test('display settings default to badges on, desktop shown and muted, device look', async () => {
@@ -12,7 +12,7 @@ test('display settings default to badges on, desktop shown and muted, device loo
   try {
     assert.deepEqual(loadDisplaySettingsSync(join(directory, 'missing.json')), defaultDisplaySettings);
     assert.deepEqual(defaultDisplaySettings, {showAgentBadges: true, showDesktopCompanion: true, useDevice: true, desktopBackdrop: 'device',
-                                              desktopSounds: false, desktopVolume: 30, showUsage: true,
+                                              desktopSize: 'medium', desktopSounds: false, desktopVolume: 30, showUsage: true,
                                               usageWindow: 'today'});
   } finally {
     await rm(directory, {recursive: true, force: true});
@@ -25,13 +25,13 @@ test('older settings files gain the desktop defaults, and bad values fall back',
   try {
     await writeFile(path, JSON.stringify({showAgentBadges: false}));
     assert.deepEqual(loadDisplaySettingsSync(path),
-      {showAgentBadges: false, showDesktopCompanion: true, useDevice: true, desktopBackdrop: 'device', desktopSounds: false,
-       desktopVolume: 30, showUsage: true, usageWindow: 'today'});
-    await writeFile(path, JSON.stringify({showDesktopCompanion: false, desktopBackdrop: 'orb', desktopSounds: 'yes',
+      {showAgentBadges: false, showDesktopCompanion: true, useDevice: true, desktopBackdrop: 'device', desktopSize: 'medium',
+       desktopSounds: false, desktopVolume: 30, showUsage: true, usageWindow: 'today'});
+    await writeFile(path, JSON.stringify({showDesktopCompanion: false, desktopBackdrop: 'orb', desktopSize: 'huge', desktopSounds: 'yes',
                                           desktopVolume: 150, showUsage: false, usageWindow: 'year'}));
     assert.deepEqual(loadDisplaySettingsSync(path),
-      {showAgentBadges: true, showDesktopCompanion: false, useDevice: true, desktopBackdrop: 'device', desktopSounds: false,
-       desktopVolume: 30, showUsage: false, usageWindow: 'today'});
+      {showAgentBadges: true, showDesktopCompanion: false, useDevice: true, desktopBackdrop: 'device', desktopSize: 'medium',
+       desktopSounds: false, desktopVolume: 30, showUsage: false, usageWindow: 'today'});
     await writeFile(path, 'not json');
     assert.deepEqual(loadDisplaySettingsSync(path), defaultDisplaySettings);
   } finally {
@@ -44,11 +44,14 @@ test('desktop settings round-trip', async () => {
   const path = join(directory, 'nested', 'display.json');
   try {
     const settings = {showAgentBadges: true, showDesktopCompanion: false, useDevice: false, desktopBackdrop: 'none',
-                      desktopSounds: true, desktopVolume: 20, showUsage: true, usageWindow: 'month'} as const;
+                      desktopSize: 'extra-large', desktopSounds: true, desktopVolume: 20, showUsage: true, usageWindow: 'month'} as const;
     await saveDisplaySettings(settings, path);
     assert.deepEqual(loadDisplaySettingsSync(path), settings);
     assert.equal(isDesktopBackdrop('none'), true);
     assert.equal(isDesktopBackdrop('orb'), false);
+    for (const size of ['small', 'medium', 'large', 'extra-large']) assert.equal(isDesktopSize(size), true);
+    assert.equal(isDesktopSize('huge'), false);
+    assert.equal(isDesktopSize(1.5), false);
     assert.equal(isDesktopVolume(0), true);
     assert.equal(isDesktopVolume(100), true);
     assert.equal(isDesktopVolume(101), false);
