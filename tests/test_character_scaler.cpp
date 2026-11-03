@@ -105,9 +105,6 @@ void placements() {
     const CharacterPlacement copilot = fitCharacter(32, 23, 348, 304);
     assert(std::fabs(copilot.scale - 205.0 / 174) < 1e-4);
   }
-  // Identity mapping for effects.
-  const CharacterPlacement identity;
-  for (int y = -80; y < 420; ++y) assert(identity.artY(y) == y && identity.artX(y) == y);
 }
 
 void identityScale() {
@@ -264,25 +261,25 @@ int main() {
     incremental(placement);
     withRenderer(placement);
   }
-  // Effects follow the placement: the attention and complete badges move with the art.
-  const CharacterPlacement santa{1.2889f, -12};
-  for (CharacterMode mode : {CharacterMode::Attention, CharacterMode::Complete}) {
-    const AgentBadgeRole role = mode == CharacterMode::Attention ? AgentBadgeRole::Attention : AgentBadgeRole::Complete;
-    const AgentBadgePoint plain = CharacterEffects::badgeAnchor(mode, role, 1, 3, 2);
-    const AgentBadgePoint placed = CharacterEffects::badgeAnchor(mode, role, 1, 3, 2, santa);
-    assert(placed.visible && placed.x == plain.x && placed.y == santa.artY(plain.y));
+  // Effects and badges keep their places; only the art grows. Whole badges (19 pixels from their
+  // centers; 22 with the attention ring) stay on a panel that shows the content at full size.
+  if (kShownContentSize == kDisplaySize)
+  for (CharacterMode mode : {CharacterMode::Working, CharacterMode::Attention, CharacterMode::Complete}) {
+    const AgentBadgeRole role = mode == CharacterMode::Attention ? AgentBadgeRole::Attention
+        : mode == CharacterMode::Complete ? AgentBadgeRole::Complete : AgentBadgeRole::Working;
+    for (int count = 1; count <= 4; ++count) {
+      for (int index = 0; index < count; ++index) {
+        for (int step = 0; step < 1200; step += 7) {
+          const AgentBadgePoint point = CharacterEffects::badgeAnchor(mode, role, index, count, step / 100.0);
+          assert(point.visible);
+          const int x = point.x + kCharacterFrameX + kCharacterArtX, y = point.y + kFrameY;
+          const int reach = role == AgentBadgeRole::Attention ? 22 : 19;
+          assert(x - reach >= kVisibleLeft && x + reach <= kVisibleRight);
+          assert(y - reach >= std::max(-kPanelContentY, 0) && y + reach <= std::min(kPanelHeight - kPanelContentY, kDisplaySize));
+        }
+      }
+    }
   }
-  // The working orbit grows taller with the art but keeps whole badges in the frame.
-  int highest = INT32_MAX, lowest = INT32_MIN;
-  for (int step = 0; step < 1200; ++step) {
-    const AgentBadgePoint point = CharacterEffects::badgeAnchor(
-        CharacterMode::Working, AgentBadgeRole::Working, 0, 1, step / 100.0, santa);
-    highest = std::min(highest, point.y);
-    lowest = std::max(lowest, point.y);
-  }
-  assert(highest + kFrameY >= CharacterEffects::kOverlayReach);
-  assert(lowest + kFrameY + CharacterEffects::kOverlayReach < kCharacterFrameHeight);
-  assert(lowest - highest > 2 * 186 + 10);
   std::cout << "PASS: character placement, identity, exact solids and black, incremental areas, "
-               "renderer path, and effects that follow the art\n";
+               "renderer path, and badges on the panel\n";
 }

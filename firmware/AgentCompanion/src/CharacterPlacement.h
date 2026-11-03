@@ -6,21 +6,12 @@
 namespace copilot {
 // Where the character art is drawn. A board with room around the character (kCharacterMaxScale
 // above 1 in its BoardConfig.h) draws the art bigger than the pack has it: scaled around the
-// content's center, then moved up or down by offsetY content rows. Effects move with it
-// (CharacterEffects::place), and CharacterScaler draws the art. The pack itself doesn't change.
+// content's center, then moved up or down by offsetY content rows. CharacterScaler draws it; the
+// pack, the effects, and the badges don't change.
 struct CharacterPlacement {
   float scale = 1;
   int offsetY = 0;
   bool scaled() const { return scale != 1 || offsetY != 0; }
-  // The placed row of an art row (kFrameWidth x kFrameHeight art coordinates, as effects use).
-  int artY(double y) const {
-    return static_cast<int>(std::lround(kFrameHeight / 2.0 + scale * (y - kFrameHeight / 2.0))) + offsetY;
-  }
-  // The placed column of an art column. Effects keep most columns: the panel has no room beside
-  // the bigger character.
-  int artX(double x) const {
-    return static_cast<int>(std::lround(kFrameWidth / 2.0 + scale * (x - kFrameWidth / 2.0)));
-  }
 };
 
 // The scaled art stays between these content rows: under the top of the content, and above the

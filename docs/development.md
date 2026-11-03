@@ -211,10 +211,10 @@ than one frame. So a frame that is behind the art catches up before a new pose
 is inflated, and a frame that inflates a new pose scales it on its next turn when
 it wouldn't be ready in time; it keeps the art that the frame on screen shows,
 so the picture never goes back. The display keeps 30 frames per second; a new
-pose can show a frame later. Effects move with the art: the working orbit gets
-taller, and the bits, Zs, attention ring, fireworks, confetti, and badges move
-up or down with it, but keep their size; the usage lines stay where they are.
-The tap test reads the frame, so it matches the bigger art.
+pose can show a frame later. Only the art grows: the effects, the badges, and the
+usage lines keep their places and sizes, and they draw behind the bigger art
+where they meet it (badges draw over it). The tap test reads the frame, so it
+matches the bigger art.
 
 A board's `accelerometer()` gives `begin()` (returns `nullptr` or the failure
 reason) and `read(x, y, z)` (returns `false` when no new sample is ready). The

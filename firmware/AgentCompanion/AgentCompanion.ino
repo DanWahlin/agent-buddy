@@ -53,10 +53,11 @@ SpriteRowChange* artRowChanges = nullptr;
 bool artInflated = false;
 // What characterArt shows.
 CharacterState artState;
-// Measured on the AMOLED-2.06: scaling takes up to 0.13 us for each frame pixel, and the effects
-// and the queue need up to 6 ms after it.
+// Scaling took about 0.13 us for each frame pixel on the AMOLED-2.06; the render task then learns
+// what a changed art pixel costs with the installed character. After scaling, a frame needs time
+// for its effects (as long as they took lately) and 2 ms for the queue.
 constexpr float kScaleUsPerFramePixel = .13f;
-constexpr int64_t kRenderMarginUs = 6000;
+constexpr int64_t kRenderMarginUs = 2000;
 float scaleUsPerArtPixel = 0;
 CharacterEffects* effects;
 AgentBadges agentBadges;
@@ -208,6 +209,7 @@ void animate(void*) {
   // A copy: an install unmaps the pack while this task may still step.
   const PackHeader pack = characterPack()->header;
   int64_t previous = esp_timer_get_time();
+  int64_t effectsReserveUs = 4000;
   for (;;) {
     Frame* frame;
     xQueueReceive(freeFrames, &frame, portMAX_DELAY);
@@ -236,7 +238,7 @@ void animate(void*) {
     // is no time left, and keeps the art that the frame on screen shows, so nothing goes back.
     const int index = static_cast<int>(frame - frames);
     const int64_t deadline = frame->presentedUs
-        ? frame->presentedUs + 2 * (1000000 / kTargetFps) - kRenderMarginUs : INT64_MAX;
+        ? frame->presentedUs + 2 * (1000000 / kTargetFps) - kRenderMarginUs - effectsReserveUs : INT64_MAX;
     const bool upToDate = !characterScaler || characterScaler->upToDate(index);
     CharacterState drawn = frame->state;
     if (!upToDate) drawn = artState;
@@ -247,14 +249,19 @@ void animate(void*) {
     renderActive = false;
     portEXIT_CRITICAL(&renderLock);
     if (!rendered) fatal(sprite.error());
-    const bool wait = artInflated && characterScaler && esp_timer_get_time()
-        + static_cast<int64_t>(characterScaler->pendingPixels(index) * scaleUsPerArtPixel) > deadline;
+    const size_t pendingPixels = characterScaler ? characterScaler->pendingPixels(index) : 0;
+    const bool wait = artInflated
+        && esp_timer_get_time() + static_cast<int64_t>(pendingPixels * scaleUsPerArtPixel) > deadline;
     const int64_t scaleStart = esp_timer_get_time();
     scaleCharacter(*frame, wait);
     frame->scaleUs = esp_timer_get_time() - scaleStart;
+    // The costliest recent pixel, from scales big enough that it isn't their fixed cost.
+    if (!wait && pendingPixels >= 4096)
+      scaleUsPerArtPixel = std::max(static_cast<float>(frame->scaleUs) / pendingPixels, scaleUsPerArtPixel * .98f);
     const int64_t effectStart = esp_timer_get_time();
     if (!effects->render(frame->state, frame->pixels)) fatal(effects->error());
     frame->effectsUs = restoreUs + esp_timer_get_time() - effectStart;
+    effectsReserveUs = std::max<int64_t>(frame->effectsUs, effectsReserveUs * 15 / 16);
     frame->renderUs = esp_timer_get_time() - start;
     frame->decodeUs = fullFrame ? 0 : patchRenderer->decodeUs;
     frame->compositeUs = fullFrame ? 0 : patchRenderer->compositeUs;
@@ -1326,7 +1333,6 @@ void startCharacter() {
       CharacterEffects::kOverlayScratchPixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM,
       "Badge overlay allocation failed."));
   effects = new (effectMemory) CharacterEffects(frames[0].pixels, frames[1].pixels, &agentBadges, badgeOverlay);
-  if (characterScaler) effects->place(placement);
   // Warm both frame caches before starting the presentation clock and brightness fade.
   CharacterSprite sprite(patchRenderer, fullFrameRenderer);
   for (auto& frame : frames) {
