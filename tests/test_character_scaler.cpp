@@ -10,7 +10,8 @@
 #include <random>
 #include <vector>
 
-extern "C" const uint8_t kCopilotPack[], kCopilotPackEnd[];
+extern "C" const uint8_t kCopilotPack[], kCopilotPackEnd[], kClaudePack[], kClaudePackEnd[], kGrokPack[],
+    kGrokPackEnd[];
 
 using namespace copilot;
 namespace {
@@ -84,6 +85,32 @@ void placements() {
       assert(!placement.scaled());
       continue;
     }
+    if (kRoundPanel) {
+      // Round: the grown superellipse outline stays inside the circle, the rows above the usage
+      // lines, and the scale stops at the largest that fits (or the board's limit).
+      assert(placement.scale > 1 && placement.scale <= kCharacterMaxScale);
+      const double top = placedY(placement, pack.y - .5), bottom = placedY(placement, pack.y + pack.height - .5);
+      assert(top > kCharacterTop - 1 && bottom <= kCharacterBottom + 1e-3);
+      const CharacterPlacement bigger{placement.scale + .005f, placement.offsetY};
+      bool outside = false;
+      for (int i = 0; i < 360; ++i) {
+        const double angle = i * 3.14159265358979 / 180, c = std::cos(angle), s = std::sin(angle);
+        const double radius = kRoundOutlineGrowth / std::sqrt(std::sqrt(c * c * c * c + s * s * s * s));
+        const double u = std::clamp(radius * c, -1.0, 1.0), v = std::clamp(radius * s, -1.0, 1.0);
+        const double artX = pack.x + pack.width / 2.0 * (1 + u) - .5, artY = pack.y + pack.height / 2.0 * (1 + v) - .5;
+        for (const CharacterPlacement& tried : {placement, bigger}) {
+          const double x = placedX(tried, artX) + kCharacterFrameX - kDisplaySize / 2.0;
+          const double y = placedY(tried, artY) - kDisplaySize / 2.0;
+          const bool inside = x * x + y * y <= (kRoundArtRadius + .5) * (kRoundArtRadius + .5);
+          if (&tried == &placement) assert(inside);
+          else outside = outside || !inside;
+        }
+      }
+      const double biggerBottom = placedY(bigger, pack.y + pack.height - .5);
+      assert(placement.scale == kCharacterMaxScale || outside || biggerBottom > kCharacterBottom);
+      std::cout << "  " << pack.name << ": scale " << placement.scale << ", offset " << placement.offsetY << '\n';
+      continue;
+    }
     assert(placement.scale > 1 && placement.scale <= kCharacterMaxScale);
     // The scaled bounds stay on the panel and above the usage lines (to under a pixel).
     const double left = placedX(placement, pack.x - .5) + kCharacterFrameX;
@@ -97,7 +124,13 @@ void placements() {
     assert(limited);
     std::cout << "  " << pack.name << ": scale " << placement.scale << ", offset " << placement.offsetY << '\n';
   }
-  if (kCharacterMaxScale > 1) {
+  if (kRoundPanel) {
+    const CharacterPlacement santa = fitCharacter(80, 4, 277, 315);
+    assert(std::fabs(santa.scale - 1.131) < .005 && std::abs(santa.offsetY - 11) <= 2);
+    // A small character grows as much as the board allows, and stays where it is.
+    const CharacterPlacement small = fitCharacter(180, 150, 40, 40);
+    assert(small.scale == kCharacterMaxScale && small.offsetY == 0);
+  } else if (kCharacterMaxScale > 1) {
     // Santa grows about 1.29 times, as tall as fits above the usage lines.
     const CharacterPlacement santa = fitCharacter(80, 4, 277, 315);
     assert(std::fabs(santa.scale - 406.0 / 315) < 1e-4 && santa.offsetY == -12);
@@ -105,6 +138,46 @@ void placements() {
     const CharacterPlacement copilot = fitCharacter(32, 23, 348, 304);
     assert(std::fabs(copilot.scale - 205.0 / 174) < 1e-4);
   }
+}
+
+// On a round panel every pixel that any pose of a built-in pack draws lands inside the circle.
+void roundSilhouettes() {
+  if (!kRoundPanel || kCharacterMaxScale == 1) return;
+  struct Pack {
+    const uint8_t *begin, *end;
+  };
+  for (const Pack& source : {Pack{kCopilotPack, kCopilotPackEnd}, Pack{kClaudePack, kClaudePackEnd},
+                             Pack{kGrokPack, kGrokPackEnd}}) {
+    assert(loadCharacterPack(source.begin, source.end - source.begin) && initializeSpriteStorage());
+    const CharacterPack& pack = *characterPack();
+    const PackHeader& header = pack.header;
+    const CharacterPlacement placement = fitCharacter(header.baseX, header.baseY, header.baseWidth, header.baseHeight);
+    assert(placement.scale > 1);
+    std::vector<uint16_t> base(size_t(header.baseWidth) * header.baseHeight);
+    std::vector<bool> drawn(base.size());
+    for (unsigned frame = 0; frame < header.frameCount; ++frame) {
+      const SpriteBlock& block = pack.frames[frame].base;
+      assert(inflateSpriteHost(reinterpret_cast<uint8_t*>(base.data()), base.size() * 2, pack.data + block.offset,
+                               block.size, header.baseWidth, header.baseWidth));
+      for (size_t i = 0; i < base.size(); ++i) drawn[i] = drawn[i] || base[i];
+    }
+    double farthest = 0;
+    for (size_t i = 0; i < drawn.size(); ++i) {
+      if (!drawn[i]) continue;
+      // The pixel's corners, where the scaled pixel reaches farthest.
+      for (double dx : {-.5, .5})
+        for (double dy : {-.5, .5}) {
+          const double x = placedX(placement, header.baseX + double(i % header.baseWidth) + dx)
+              + kCharacterFrameX - kDisplaySize / 2.0;
+          const double y = placedY(placement, header.baseY + double(i / header.baseWidth) + dy) - kDisplaySize / 2.0;
+          farthest = std::max(farthest, std::sqrt(x * x + y * y));
+        }
+    }
+    std::cout << "  " << header.id << ": scale " << placement.scale << ", offset " << placement.offsetY
+              << ", farthest pixel " << farthest << " of " << kDisplaySize / 2 << '\n';
+    assert(farthest <= kDisplaySize / 2.0);
+  }
+  assert(loadCharacterPack(kCopilotPack, kCopilotPackEnd - kCopilotPack) && initializeSpriteStorage());
 }
 
 void identityScale() {
@@ -251,6 +324,7 @@ int main() {
   assert(initializeSpriteStorage());
   std::cout << "Board " << board::kId << " (largest character scale " << kCharacterMaxScale << ")\n";
   placements();
+  roundSilhouettes();
   identityScale();
   const CharacterPack& pack = *characterPack();
   const CharacterPlacement copilot = fitCharacter(pack.header.baseX, pack.header.baseY,

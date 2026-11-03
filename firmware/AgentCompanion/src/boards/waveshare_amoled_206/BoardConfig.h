@@ -30,6 +30,7 @@ constexpr int kShownContentSize = kDisplaySize;
 // At its pack's size the character leaves much of this panel empty, so the firmware draws the
 // character art up to 1.3 times bigger: as big as fits the panel's 410 columns and the rows above
 // the usage lines (see CharacterPlacement.h). Effects, badges, and text keep their size.
+constexpr bool kRoundPanel = false;
 constexpr float kCharacterMaxScale = 1.3f;
 constexpr int kDisplayCsPin = 12;
 constexpr int kDisplaySckPin = 11;

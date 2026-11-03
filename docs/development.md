@@ -175,7 +175,7 @@ a small board layer holds the parts that change from one model to a different mo
 | File | Contents |
 | --- | --- |
 | `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` builds without `BOARD` and that releases package. CI builds every board. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, the largest character scale (`kCharacterMaxScale`), and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size and shape (`kRoundPanel`), the largest character scale (`kCharacterMaxScale`), and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver, `configureTouch()`, and `kTouchIdleSweep` (whether the firmware also reads touch every 250 ms between touches), `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
 | `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, Espressif's ES8311 driver, and `Ft3168Touch.h` (the FT3168 touch controller, which SensorLib doesn't support). They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
@@ -193,14 +193,21 @@ the compact settings layout (`compact_layout` in `SettingsMenu.h`) and one size
 larger text on the other screens (`kCompactUi`).
 
 A board with room around the character can draw the character art bigger than
-its pack has it, up to `kCharacterMaxScale` (1 on most boards; 1.3 on the
-AMOLED-2.06). The pack doesn't change. At start, `fitCharacter`
-(`CharacterPlacement.h`) takes the pack's art bounds (a base/patch pack's base
-bounds in its header) and picks the largest scale that keeps them inside the
-panel's columns and between the top of the content and the usage lines (row
-406), then moves the art up or down as little as that needs. A full-frame pack
-has no bounds in its header, and its art can fill its frame, so it keeps its
-size. When the art grows, `SpriteRenderer` draws into one art buffer instead of
+its pack has it, up to `kCharacterMaxScale` (1 on the LCD-1.54, 1.15 on the
+AMOLED-1.75, 1.3 on the AMOLED-2.06). The pack doesn't change. At start,
+`fitCharacter` (`CharacterPlacement.h`) takes the pack's art bounds (a
+base/patch pack's base bounds in its header) and picks the largest scale that
+keeps them inside the panel's columns and between the top of the content and the
+usage lines (row 406), then moves the art up or down as little as that needs. On
+a round panel (`kRoundPanel`) the bounds' corners are empty, so the fit uses an
+outline instead: the superellipse |u|^4 + |v|^4 = 1 that fills the bounds, grown
+by 8% and cut by the bounds. Every built-in and Christmas pack's art, all poses
+together, stays inside that superellipse to within 7%. The outline must stay 4
+pixels inside the circle; the scale is the largest that allows it at any offset,
+and the offset the smallest. On the 1.75 that is Copilot 1.09, Claude 1.08,
+Grok 1.12, Santa 1.13, and 1.15 for most Christmas packs. A host test checks that
+every pixel of every built-in pose stays inside the circle. A full-frame pack has
+no bounds in its header, and its art can fill its frame, so it keeps its size. When the art grows, `SpriteRenderer` draws into one art buffer instead of
 the two frames, and `CharacterScaler` scales it into each frame with bilinear
 filtering. Only what changed is scaled again: the inflater leaves the pixels
 that a new base image doesn't change and reports each row's changed columns

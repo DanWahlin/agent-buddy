@@ -23,8 +23,11 @@ constexpr int kDisplaySize = 466;
 constexpr int kPanelWidth = kDisplaySize;
 constexpr int kPanelHeight = kDisplaySize;
 constexpr int kShownContentSize = kDisplaySize;
-// The character art is drawn at its pack's size (see CharacterPlacement.h).
-constexpr float kCharacterMaxScale = 1;
+// The panel is round: it shows the content inside the circle that fills it. The character art is
+// drawn up to 1.15 times its pack's size, as big as stays inside that circle and above the usage
+// lines (see CharacterPlacement.h). Effects, badges, and text keep their size and place.
+constexpr bool kRoundPanel = true;
+constexpr float kCharacterMaxScale = 1.15f;
 constexpr int kDisplayCsPin = 12;
 constexpr int kDisplaySckPin = 38;
 constexpr int kDisplayD0Pin = 4;
