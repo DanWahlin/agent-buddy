@@ -1,4 +1,5 @@
 #include "SpriteRenderer.h"
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #ifdef ARDUINO_ARCH_ESP32
@@ -10,6 +11,13 @@ static_assert(kSpriteWidth == kCharacterFrameWidth && kSpriteHeight == kFrameHei
               "Character packs must match the display frame.");
 static_assert(kSpriteWidth <= kDisplaySize, "Character packs must fit the display.");
 namespace {
+SpriteArea unite(const SpriteArea& first, const SpriteArea& second) {
+  if (first.empty()) return second;
+  if (second.empty()) return first;
+  const int left = std::min(first.x, second.x), top = std::min(first.y, second.y);
+  return {left, top, std::max(first.x + first.width, second.x + second.width) - left,
+          std::max(first.y + first.height, second.y + second.height) - top};
+}
 uint64_t microsNow() {
 #ifdef ARDUINO_ARCH_ESP32
   return esp_timer_get_time();
@@ -42,13 +50,14 @@ bool SpriteRenderer::decode(const SpriteBlock& block, uint16_t* output, size_t p
 bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
   error_ = nullptr;
   decodeUs = compositeUs = eyesUs = 0;
+  changed = eyes = {};
   const CharacterPack* pack = characterPack();
   if (!pack || pack->header.layout != PackLayout::BasePatch) {
     error_ = "Installed character pack does not use the base/patch layout.";
     return false;
   }
   const PackHeader& header = pack->header;
-  if (!openPatches_[0] || !openPatches_[1] || !patch_ || !outputs_[0] || !outputs_[1]
+  if (!openPatches_[0] || !openPatches_[1] || !patch_ || !outputs_[0]
       || outputs_[0] == outputs_[1] || openPatches_[0] == openPatches_[1]
       || patch_ == openPatches_[0] || patch_ == openPatches_[1] || !inflate_ || !frame) {
     error_ = "Sprite renderer requires distinct persistent buffers.";
@@ -81,6 +90,7 @@ bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
   const int top = (outputHeight_ - kSpriteHeight) / 2;
   uint16_t* art = frame + top * outputWidth_;
   const size_t patchPixels = static_cast<size_t>(entry.patchWidth) * entry.patchHeight;
+  const SpriteArea patchArea{entry.patchX, top + entry.patchY, entry.patchWidth, entry.patchHeight};
   if ((entry.patchWidth == 0) != (entry.patchHeight == 0)
       || entry.patchX > kSpriteWidth || entry.patchY > kSpriteHeight
       || entry.patchWidth > kSpriteWidth - entry.patchX
@@ -105,6 +115,8 @@ bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
     uint64_t started = microsNow();
     if (!decode(entry.base, art + header.baseY * outputWidth_ + header.baseX,
                 header.baseWidth * header.baseHeight, header.baseWidth, outputWidth_)) return false;
+    changed = initializePadding ? SpriteArea{0, 0, outputWidth_, outputHeight_}
+        : unite({header.baseX, top + header.baseY, header.baseWidth, header.baseHeight}, patchArea);
     decodeUs = microsNow() - started;
     started = microsNow();
     if (initializePadding) {
@@ -126,6 +138,8 @@ bool SpriteRenderer::render(const SpritePose& pose, uint16_t* frame) {
     compositeUs = microsNow() - started;
   }
   baseKeys_[outputIndex] = index;
+  if (sameBase) changed = patchArea;
+  eyes = patchArea;
 
   const uint64_t started = microsNow();
   if (patchPixels) {

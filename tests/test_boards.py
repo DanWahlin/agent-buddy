@@ -27,7 +27,7 @@ class BoardTargetTests(unittest.TestCase):
 
     def test_board_config_defines_the_shared_contract(self):
         names = ("kId", "kName", "kDisplayPanelName", "kTouchControllerName", "kDisplaySize", "kPanelWidth",
-                 "kPanelHeight", "kShownContentSize", "kDisplayCsPin", "kBrightness", "kSpiFrequency",
+                 "kPanelHeight", "kShownContentSize", "kCharacterMaxScale", "kDisplayCsPin", "kBrightness", "kSpiFrequency",
                  "kAudioMclkPin", "kAudioAmplifierPin", "kAudioCodecI2cAddress", "kAudioMinimumCodecVolume",
                  "kAudioMaximumCodecVolume", "kTouchSda", "kTouchScl", "kTouchInterrupt", "kTouchReset",
                  "kTouchI2cAddress", "kTouchMirrorX", "kTouchMirrorY", "kI2cFrequency", "kImuI2cAddress", "kImuName",

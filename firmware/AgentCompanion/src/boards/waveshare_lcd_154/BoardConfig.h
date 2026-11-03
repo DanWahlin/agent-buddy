@@ -26,6 +26,8 @@ constexpr int kDisplaySize = 466;
 constexpr int kPanelWidth = 240;
 constexpr int kPanelHeight = 240;
 constexpr int kShownContentSize = 240;
+// The character art is drawn at its pack's size (see CharacterPlacement.h).
+constexpr float kCharacterMaxScale = 1;
 constexpr int kDisplayCsPin = 21;
 constexpr int kDisplayDcPin = 45;
 constexpr int kDisplaySckPin = 38;

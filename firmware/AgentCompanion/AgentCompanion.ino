@@ -22,6 +22,7 @@
 #include "src/AgentBadges.h"
 #include "src/CharacterEffects.h"
 #include "src/CharacterFrame.h"
+#include "src/CharacterScaler.h"
 #include "src/Deadline.h"
 #include "src/DeviceCommands.h"
 #include "src/TouchInput.h"
@@ -43,6 +44,20 @@ QueueHandle_t freeFrames, readyFrames, commands;
 TaskHandle_t renderTask;
 SpriteRenderer* patchRenderer = nullptr;
 FullFrameRenderer* fullFrameRenderer = nullptr;
+// Only while the character is drawn bigger (CharacterPlacement.h): the patch renderer draws into
+// characterArt, and the scaler draws that into the frames.
+CharacterScaler* characterScaler = nullptr;
+uint16_t* characterArt = nullptr;
+SpriteRowChange* artRowChanges = nullptr;
+// Set when a new base image was inflated into characterArt.
+bool artInflated = false;
+// What characterArt shows.
+CharacterState artState;
+// Measured on the AMOLED-2.06: scaling takes up to 0.13 us for each frame pixel, and the effects
+// and the queue need up to 6 ms after it.
+constexpr float kScaleUsPerFramePixel = .13f;
+constexpr int64_t kRenderMarginUs = 6000;
+float scaleUsPerArtPixel = 0;
 CharacterEffects* effects;
 AgentBadges agentBadges;
 tinfl_decompressor inflater;
@@ -107,11 +122,26 @@ bool updateOrientation() {
 
 struct Frame {
   uint16_t* pixels = nullptr;
+  int64_t presentedUs = 0;
   uint32_t renderUs = 0, motionUs = 0, decodeUs = 0, compositeUs = 0, eyesUs = 0, effectsUs = 0,
-      inflateUs = 0, predictUs = 0;
+      inflateUs = 0, predictUs = 0, scaleUs = 0;
   CharacterState state;
 };
 Frame frames[2];
+
+// Where the character renderer draws a frame's pose.
+uint16_t* characterTarget(Frame& frame) {
+  return characterScaler ? characterArt : frame.pixels;
+}
+
+// After a render into characterArt, scales what changed into the frame. A new base image told the
+// scaler its changed rows as it was inflated (inflatePose); the eyes come after it. With `wait`,
+// the frame keeps what it shows and catches up next time.
+void scaleCharacter(Frame& frame, bool wait = false) {
+  if (!characterScaler) return;
+  characterScaler->changed(patchRenderer->eyes);
+  if (!wait) characterScaler->draw(characterArt, frame.pixels, static_cast<int>(&frame - frames));
+}
 
 [[noreturn]] void fatal(const char* message) {
   for (;;) {
@@ -131,8 +161,8 @@ void* allocate(size_t bytes, uint32_t capabilities, const char* error) {
   return result;
 }
 
-bool inflatePose(uint8_t* output, size_t outputSize, const uint8_t* input, size_t inputSize, size_t width, size_t stride) {
-  if (!spritePredictor.reset(output, outputSize, width, stride)) return false;
+// Inflates a block through spritePredictor, which the caller has reset for its output.
+bool inflateBlock(const uint8_t* input, size_t inputSize) {
   tinfl_init(&inflater);
   size_t consumed = 0;
   for (;;) {
@@ -149,6 +179,25 @@ bool inflatePose(uint8_t* output, size_t outputSize, const uint8_t* input, size_
     if (status == TINFL_STATUS_DONE) return consumed == inputSize && spritePredictor.complete();
     if (status != TINFL_STATUS_HAS_MORE_OUTPUT || outBytes != sizeof(inflateHistory)) return false;
   }
+}
+
+bool inflatePose(uint8_t* output, size_t outputSize, const uint8_t* input, size_t inputSize, size_t width, size_t stride) {
+  // The art of a character drawn bigger keeps the pixels that a new image doesn't change, and the
+  // scaler hears which ones did, so it scales only those again.
+  const auto* art = reinterpret_cast<const uint8_t*>(characterArt);
+  const bool skipUnchanged = art && output >= art
+      && output < art + CharacterScaler::kArtPixels * sizeof(uint16_t);
+  if (!spritePredictor.reset(output, outputSize, width, stride, skipUnchanged ? artRowChanges : nullptr)
+      || !inflateBlock(input, inputSize)) return false;
+  if (skipUnchanged) {
+    const int offset = static_cast<int>((output - art) / sizeof(uint16_t));
+    const int x = offset % CharacterScaler::kArtWidth, y = offset / CharacterScaler::kArtWidth;
+    const int rows = static_cast<int>(outputSize / sizeof(uint16_t) / width);
+    for (int row = 0; row < rows; ++row)
+      characterScaler->changed(y + row, x + artRowChanges[row].begin, x + artRowChanges[row].end);
+    artInflated = true;
+  }
+  return true;
 }
 
 void animate(void*) {
@@ -181,11 +230,28 @@ void animate(void*) {
     portEXIT_CRITICAL(&renderLock);
     // Installation erases the mapped pack and always restarts the device afterwards.
     if (paused) vTaskSuspend(nullptr);
-    const bool rendered = sprite.render(frame->state, frame->pixels);
+    // A character drawn bigger can't always inflate a new pose and scale it before the frame is shown
+    // (on screen two frames after it was last shown). A frame that is behind the art catches up
+    // first, and a new pose waits; a frame that inflates a new pose scales it next time when there
+    // is no time left, and keeps the art that the frame on screen shows, so nothing goes back.
+    const int index = static_cast<int>(frame - frames);
+    const int64_t deadline = frame->presentedUs
+        ? frame->presentedUs + 2 * (1000000 / kTargetFps) - kRenderMarginUs : INT64_MAX;
+    const bool upToDate = !characterScaler || characterScaler->upToDate(index);
+    CharacterState drawn = frame->state;
+    if (!upToDate) drawn = artState;
+    artInflated = false;
+    const bool rendered = sprite.render(drawn, characterTarget(*frame));
+    artState = drawn;
     portENTER_CRITICAL(&renderLock);
     renderActive = false;
     portEXIT_CRITICAL(&renderLock);
     if (!rendered) fatal(sprite.error());
+    const bool wait = artInflated && characterScaler && esp_timer_get_time()
+        + static_cast<int64_t>(characterScaler->pendingPixels(index) * scaleUsPerArtPixel) > deadline;
+    const int64_t scaleStart = esp_timer_get_time();
+    scaleCharacter(*frame, wait);
+    frame->scaleUs = esp_timer_get_time() - scaleStart;
     const int64_t effectStart = esp_timer_get_time();
     if (!effects->render(frame->state, frame->pixels)) fatal(effects->error());
     frame->effectsUs = restoreUs + esp_timer_get_time() - effectStart;
@@ -1187,19 +1253,28 @@ void processSerialCommands(const Frame* frame, unsigned maxBytes) {
 // Wi-Fi and TCP/IP allocate internal RAM after the character starts, and again whenever Wi-Fi is set
 // up later. Blink buffers use internal RAM only while kPatchInternalReserveBytes stays free for them,
 // so a pack with large blink patches can't starve the network. The rest go to PSRAM.
-void* allocatePatchBuffer(size_t bytes, const char* error) {
+void* allocateRenderBuffer(size_t bytes, const char* error, unsigned* internalCount = nullptr) {
   constexpr uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
   if (heap_caps_get_free_size(caps) >= bytes + kPatchInternalReserveBytes) {
     if (void* result = heap_caps_malloc(bytes, caps)) {
-      ++patchBuffersInternal;
+      if (internalCount) ++*internalCount;
       return result;
     }
   }
   return allocate(bytes, MALLOC_CAP_SPIRAM, error);
 }
 
+void* allocatePatchBuffer(size_t bytes, const char* error) {
+  return allocateRenderBuffer(bytes, error, &patchBuffersInternal);
+}
+
 void startCharacter() {
   const PackHeader& pack = characterPack()->header;
+  // A base/patch pack's header bounds all of its art; a full-frame pack's art can fill its frame.
+  const CharacterPlacement placement = pack.layout == PackLayout::BasePatch
+      ? fitCharacter(pack.baseX, pack.baseY, pack.baseWidth, pack.baseHeight)
+      : fitCharacter(0, 0, kCharacterFrameWidth, kFrameHeight);
+  logMessage("CHARACTER_PLACEMENT scale=%.3f offset_y=%d\n", placement.scale, placement.offsetY);
   for (auto& frame : frames) {
     frame.pixels = static_cast<uint16_t*>(allocate(kCharacterFrameWidth * kCharacterFrameHeight * 2,
         MALLOC_CAP_SPIRAM, "Framebuffer PSRAM allocation failed."));
@@ -1217,6 +1292,18 @@ void startCharacter() {
     fullFrameRenderer = new (allocate(sizeof(FullFrameRenderer), MALLOC_CAP_INTERNAL,
         "Renderer allocation failed.")) FullFrameRenderer(scratch, cached, inflatePose);
   } else {
+    if (placement.scaled()) {
+      // One art buffer is enough: the frames that the display reads are the scaler's. The scaler
+      // goes first, so its tables and lines get internal RAM before the blink buffers.
+      characterArt = static_cast<uint16_t*>(allocate(CharacterScaler::kArtPixels * sizeof(uint16_t),
+          MALLOC_CAP_SPIRAM, "Character art allocation failed."));
+      std::memset(characterArt, 0, CharacterScaler::kArtPixels * sizeof(uint16_t));
+      characterScaler = new (allocateRenderBuffer(sizeof(CharacterScaler),
+          "Character scaler allocation failed.")) CharacterScaler(placement);
+      scaleUsPerArtPixel = kScaleUsPerFramePixel * placement.scale * placement.scale;
+      artRowChanges = static_cast<SpriteRowChange*>(allocateRenderBuffer(
+          CharacterScaler::kArtHeight * sizeof(SpriteRowChange), "Character art rows allocation failed."));
+    }
     const size_t patchPixels = std::max<size_t>(1, pack.maxPatchPixels);
     const size_t patchBytes = patchPixels * sizeof(uint16_t);
     startupFreeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -1228,8 +1315,10 @@ void startCharacter() {
         patchBytes, "Blink patch allocation failed."));
     patchRenderer = new (allocate(sizeof(SpriteRenderer), MALLOC_CAP_INTERNAL,
         "Renderer allocation failed.")) SpriteRenderer(
-            firstOpenPatch, secondOpenPatch, patch, patchPixels, frames[0].pixels,
-            frames[1].pixels, inflatePose, kCharacterFrameWidth, kCharacterFrameHeight);
+            firstOpenPatch, secondOpenPatch, patch, patchPixels,
+            characterScaler ? characterArt : frames[0].pixels,
+            characterScaler ? nullptr : frames[1].pixels, inflatePose, kCharacterFrameWidth,
+            characterScaler ? CharacterScaler::kArtHeight : kCharacterFrameHeight);
   }
   // Leave internal RAM for Wi-Fi bursts; restoration records do not require DMA.
   void* effectMemory = allocate(sizeof(CharacterEffects), MALLOC_CAP_SPIRAM, "Effects allocation failed.");
@@ -1237,10 +1326,12 @@ void startCharacter() {
       CharacterEffects::kOverlayScratchPixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM,
       "Badge overlay allocation failed."));
   effects = new (effectMemory) CharacterEffects(frames[0].pixels, frames[1].pixels, &agentBadges, badgeOverlay);
+  if (characterScaler) effects->place(placement);
   // Warm both frame caches before starting the presentation clock and brightness fade.
   CharacterSprite sprite(patchRenderer, fullFrameRenderer);
   for (auto& frame : frames) {
-    if (!sprite.render(CharacterState{}, frame.pixels)) fatal(sprite.error());
+    if (!sprite.render(CharacterState{}, characterTarget(frame))) fatal(sprite.error());
+    scaleCharacter(frame);
   }
   if (xTaskCreatePinnedToCore(animate, "copilot-render", 16384, nullptr, 1,
                               &renderTask, 0) != pdPASS) fatal("Render task creation failed.");
@@ -1392,6 +1483,7 @@ void loop() {
   waitUntil(nextPresentation);
   const int64_t start = esp_timer_get_time();
   nextPresentation = start + 1000000 / kTargetFps;
+  frame->presentedUs = start;
   if (previousPresentation) {
     const uint32_t gap = start - previousPresentation;
     minGap = std::min(minGap, gap);
@@ -1448,9 +1540,10 @@ void loop() {
                     orientationSensor.accelerometerX(), orientationSensor.accelerometerY(),
                     orientationSensor.accelerometerZ());
       logMessage("SCANOUT compose=%uus spi_wait=%uus\n", display.composeUs(), display.writeUs());
-      logMessage("STAGES motion=%uus decode=%uus composite=%uus eyes=%uus effects=%uus inflate=%uus predict=%uus\n",
+      logMessage("STAGES motion=%uus decode=%uus composite=%uus eyes=%uus effects=%uus inflate=%uus predict=%uus "
+                    "scale=%uus\n",
                     timing.motionUs, timing.decodeUs, timing.compositeUs, timing.eyesUs, timing.effectsUs,
-                    timing.inflateUs, timing.predictUs);
+                    timing.inflateUs, timing.predictUs, timing.scaleUs);
       logMessage("PACING min_gap_us=%u max_gap_us=%u\n",
                     minGap == UINT32_MAX ? 0 : minGap, maxGap);
       constexpr uint32_t internalCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;

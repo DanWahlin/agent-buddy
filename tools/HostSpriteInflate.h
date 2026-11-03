@@ -4,11 +4,13 @@
 #include <limits>
 #include <zlib.h>
 
-inline bool inflateSpriteHost(uint8_t* output, size_t outputSize,
-                              const uint8_t* input, size_t inputSize, size_t width, size_t stride) {
+// With `changes`, pixels that the output already holds aren't written again (see SpritePredictor).
+inline bool inflateSpriteHostChanges(uint8_t* output, size_t outputSize, const uint8_t* input,
+                                     size_t inputSize, size_t width, size_t stride,
+                                     copilot::SpriteRowChange* changes) {
   copilot::SpritePredictor predictor;
   if (!input || inputSize > std::numeric_limits<uInt>::max()
-      || !predictor.reset(output, outputSize, width, stride)) return false;
+      || !predictor.reset(output, outputSize, width, stride, changes)) return false;
   z_stream stream{};
   stream.next_in = const_cast<Bytef*>(input);
   stream.avail_in = static_cast<uInt>(inputSize);
@@ -28,4 +30,9 @@ inline bool inflateSpriteHost(uint8_t* output, size_t outputSize,
     if (status == Z_STREAM_END) return !stream.avail_in && predictor.complete();
     if (!bytes && stream.avail_in == before) return false;
   }
+}
+
+inline bool inflateSpriteHost(uint8_t* output, size_t outputSize,
+                              const uint8_t* input, size_t inputSize, size_t width, size_t stride) {
+  return inflateSpriteHostChanges(output, outputSize, input, inputSize, width, stride, nullptr);
 }

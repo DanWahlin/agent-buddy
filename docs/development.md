@@ -175,7 +175,7 @@ a small board layer holds the parts that change from one model to a different mo
 | File | Contents |
 | --- | --- |
 | `firmware/boards.json` | One build target for each board: ID, compiler define, Arduino FQBN, chip, flash size, and the pinned vendor libraries. The `default` board is the one that `tools/arduino.sh` builds without `BOARD` and that releases package. CI builds every board. |
-| `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
+| `firmware/AgentCompanion/src/boards/<board>/BoardConfig.h` | Pins, panel size, the largest character scale (`kCharacterMaxScale`), and chip addresses. Plain constants only, because the native tests include it without the vendor libraries. |
 | `firmware/AgentCompanion/src/boards/<board>/BoardDrivers.h` | `beginBoard()` (runs first in `setup()`), the display bus and panel, `displayScanout()` (how DMA sends pixels to the panel), `setDisplayBrightness()`, the touch driver, `configureTouch()`, and `kTouchIdleSweep` (whether the firmware also reads touch every 250 ms between touches), `accelerometer()`, `audioOutput()`, and `variant()` (the hardware variant, with `variantName()`). Only the device build includes it. |
 | `firmware/AgentCompanion/src/boards/BoardConfig.h`, `BoardDrivers.h` | Selectors: they include the board folder for the `AGENT_BOARD_*` define. |
 | `firmware/AgentCompanion/src/boards/drivers/` | Chip drivers that boards can share: `Qmi8658Accelerometer.h`, `Es8311AudioOutput.h`, Espressif's ES8311 driver, and `Ft3168Touch.h` (the FT3168 touch controller, which SensorLib doesn't support). They are header-only, so a board builds only the drivers that its `BoardDrivers.h` includes. |
@@ -191,6 +191,30 @@ averages 2 x 2 blocks of content pixels while it rotates. Touch maps back
 through the same transform. A board that shows the content smaller also uses
 the compact settings layout (`compact_layout` in `SettingsMenu.h`) and one size
 larger text on the other screens (`kCompactUi`).
+
+A board with room around the character can draw the character art bigger than
+its pack has it, up to `kCharacterMaxScale` (1 on most boards; 1.3 on the
+AMOLED-2.06). The pack doesn't change. At start, `fitCharacter`
+(`CharacterPlacement.h`) takes the pack's art bounds (a base/patch pack's base
+bounds in its header) and picks the largest scale that keeps them inside the
+panel's columns and between the top of the content and the usage lines (row
+406), then moves the art up or down as little as that needs. A full-frame pack
+has no bounds in its header, and its art can fill its frame, so it keeps its
+size. When the art grows, `SpriteRenderer` draws into one art buffer instead of
+the two frames, and `CharacterScaler` scales it into each frame with bilinear
+filtering. Only what changed is scaled again: the inflater leaves the pixels
+that a new base image doesn't change and reports each row's changed columns
+(`SpriteRowChange`), the eyes report their patch, and each frame remembers its
+rows' art spans, so black that a frame already shows isn't written again. A
+pose change still costs about 27 ms to inflate and up to 17 ms to scale, more
+than one frame. So a frame that is behind the art catches up before a new pose
+is inflated, and a frame that inflates a new pose scales it on its next turn when
+it wouldn't be ready in time; it keeps the art that the frame on screen shows,
+so the picture never goes back. The display keeps 30 frames per second; a new
+pose can show a frame later. Effects move with the art: the working orbit gets
+taller, and the bits, Zs, attention ring, fireworks, confetti, and badges move
+up or down with it, but keep their size; the usage lines stay where they are.
+The tap test reads the frame, so it matches the bigger art.
 
 A board's `accelerometer()` gives `begin()` (returns `nullptr` or the failure
 reason) and `read(x, y, z)` (returns `false` when no new sample is ready). The
@@ -360,6 +384,11 @@ Notes for this board:
   middle 410 columns, with 18 black rows above and below them. The character
   and the settings pages fit; the edges of some effects are cut off at the far
   left and right.
+- The character is drawn up to 1.3 times its pack's size (`kCharacterMaxScale`,
+  see [Boards](#boards)): Santa 1.29, Copilot 1.18 (its widest poses fill the
+  panel's width), Claude 1.22, Grok 1.27. OpenClaw, a full-frame pack, keeps its
+  size. Turned a quarter, the panel shows only the middle 410 rows, so the top of
+  a jump can be cut off.
 - SensorLib's FT6X36 driver doesn't accept the FT3168, so the board uses
   `drivers/Ft3168Touch.h`. It resets the controller and sets active mode.
 - About 10 s after the last touch, the FT3168 goes to monitor mode by itself.

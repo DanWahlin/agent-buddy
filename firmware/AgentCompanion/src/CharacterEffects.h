@@ -1,6 +1,7 @@
 #pragma once
 #include "AgentBadges.h"
 #include "CharacterMotion.h"
+#include "CharacterPlacement.h"
 #include "Config.h"
 #include <cstddef>
 
@@ -23,7 +24,10 @@ class CharacterEffects {
   CharacterEffects(uint16_t* firstOutput, uint16_t* secondOutput, const AgentBadges* badges = nullptr,
                    uint16_t* overlayScratch = nullptr);
   static AgentBadgePoint badgeAnchor(
-      CharacterMode mode, AgentBadgeRole role, int index, int count, double seconds);
+      CharacterMode mode, AgentBadgeRole role, int index, int count, double seconds,
+      const CharacterPlacement& placement = {});
+  // Moves the effects with character art that is drawn bigger (see CharacterPlacement.h).
+  void place(const CharacterPlacement& placement);
   // Restore before SpriteRenderer::render; overlay only after its successful render.
   bool restore(uint16_t* frame);
   bool render(const CharacterState& state, uint16_t* frame);
@@ -60,6 +64,9 @@ class CharacterEffects {
   OverlayRegion regions_[2][kOverlayBadges] = {};
   uint8_t regionCounts_[2] = {};
   int active_ = 0;
+  CharacterPlacement placement_;
+  // Vertical radius of the ellipse that protects black facial interiors.
+  int protectRadiusY_ = 135;
   const char* error_ = nullptr;
 };
 }

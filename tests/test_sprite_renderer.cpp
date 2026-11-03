@@ -58,6 +58,26 @@ int main() {
   SpriteRenderer expanded(canvasOpen.data(), otherOpen.data(), canvasPatch.data(),
                           patchPixels, canvasFrame, otherCanvas.data(), inflate,
                           kCharacterFrameWidth, kCharacterFrameHeight);
+  // One output, as CharacterScaler uses it: `changed` must cover every pixel that a render rewrites.
+  std::vector<uint16_t> singleOutput(outputPixels + 2, 0xa55a), singleBefore(outputPixels);
+  std::vector<uint16_t> singleOpen(guardedPatch), unusedOpen(guardedPatch), singlePatch(guardedPatch);
+  uint16_t* singleFrame = singleOutput.data() + 1;
+  SpriteRenderer single(singleOpen.data(), unusedOpen.data(), singlePatch.data(), patchPixels,
+                        singleFrame, nullptr, inflate);
+  auto checkChanged = [&](const SpritePose& pose) {
+    std::copy_n(singleFrame, outputPixels, singleBefore.begin());
+    assert(single.render(pose, singleFrame));
+    const SpriteArea area = single.changed;
+    for (size_t i = 0; i < outputPixels; ++i) {
+      if (singleFrame[i] == singleBefore[i]) continue;
+      const int x = static_cast<int>(i % kSpriteWidth), y = static_cast<int>(i / kSpriteWidth);
+      assert(x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height);
+    }
+    assert(area.empty() || (area.x >= 0 && area.y >= 0 && area.x + area.width <= kSpriteWidth
+                            && area.y + area.height <= kSpriteHeight));
+    assert(single.render(pose, singleFrame) && single.changed.empty());
+    assert(singleOutput.front() == 0xa55a && singleOutput.back() == 0xa55a);
+  };
   std::ofstream hashes("build/sprite-renderer-pixels.fnv");
   for (int index = 0; index < kSpriteFrameCount; ++index) {
     const auto& metadata = kSpriteFrames[index];
@@ -91,6 +111,8 @@ int main() {
       }
       if (visit++ < kSpriteBlinkLevels) hashes << index << " " << level << " " << hash << "\n";
       assert(std::memcmp(frame, expected.data(), outputPixels * 2) == 0);
+      checkChanged(pose);
+      assert(std::memcmp(singleFrame, expected.data(), outputPixels * 2) == 0);
       for (int y = 0; y < kSpriteHeight; ++y)
         std::copy_n(expected.data() + y * kSpriteWidth, kSpriteWidth,
                     expectedCanvas.data() + (y + kFrameY) * kCharacterFrameWidth);
@@ -147,6 +169,11 @@ int main() {
   failInflate = false;
   assert(renderer.render({4, 12, 0}, frame) && !renderer.error());
   assert(std::equal(open.begin(), open.end(), frame));
+  // A single output takes only its own buffer.
+  assert(!single.render({0, 0, 0}, frame) && single.error());
+  SpriteRenderer noOutput(singleOpen.data(), unusedOpen.data(), singlePatch.data(), patchPixels,
+                          nullptr, frame, inflate);
+  assert(!noOutput.render({0, 0, 0}, frame) && noOutput.error());
   SpriteRenderer aliased(firstOpen.data() + 1, firstOpen.data() + 1, patch.data() + 1,
                          patchPixels, frame, second.data(), inflate);
   SpriteRenderer undersized(firstOpen.data() + 1, secondOpen.data() + 1, patch.data() + 1,
@@ -178,5 +205,6 @@ int main() {
   assert(image.good());
   assert(hashes.good());
   std::cout << "PASS: all " << kSpriteFrameCount * kSpriteBlinkLevels
-            << " states, every output pixel, reopening, shared centers, independent caches and recovery\n";
+            << " states, every output pixel, reopening, shared centers, independent caches, changed areas"
+               " and recovery\n";
 }

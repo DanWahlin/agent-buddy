@@ -69,7 +69,54 @@ static void check(size_t width, size_t height) {
   assert(guarded.front() == 0xa55a && guarded.back() == 0xa55a);
 }
 
+// skipUnchanged writes only pixels that differ and reports each row's changed columns.
+static void skipUnchanged(size_t width, size_t height, size_t stride) {
+  const size_t count = width * height;
+  std::vector<uint16_t> first(count), second(count);
+  for (size_t i = 0; i < count; ++i) first[i] = second[i] = static_cast<uint16_t>(i * 977 + 13);
+  // Rows 1 and 5 change in a few columns; row 3 changes at both ends.
+  const std::vector<std::pair<size_t, size_t>> changes = {{1, width / 2}, {5, 0}, {3, 0}, {3, width - 1}};
+  for (const auto& change : changes) second[change.first * width + change.second] ^= 0x0101;
+  auto encode = [&](const std::vector<uint16_t>& pixels) {
+    std::vector<uint8_t> filtered(count * 2);
+    for (size_t i = 0; i < count; ++i) {
+      const uint16_t original = __builtin_bswap16(pixels[i]);
+      const uint16_t above = i >= width ? __builtin_bswap16(pixels[i - width]) : 0;
+      const uint16_t delta = static_cast<uint16_t>(original - above);
+      filtered[i * 2] = delta >> 8;
+      filtered[i * 2 + 1] = delta & 255;
+    }
+    return filtered;
+  };
+  std::vector<uint16_t> output(stride * height + 2, 0xa55a);
+  auto* bytes = reinterpret_cast<uint8_t*>(output.data() + 1);
+  SpritePredictor predictor;
+  std::vector<copilot::SpriteRowChange> rows(height + 1, {7, 7});
+  for (const auto* pixels : {&first, &second}) {
+    const auto filtered = encode(*pixels);
+    assert(predictor.reset(bytes, filtered.size(), width, stride, rows.data()));
+    for (size_t offset = 0; offset < filtered.size(); offset += 46)
+      assert(predictor.consume(filtered.data() + offset, std::min<size_t>(46, filtered.size() - offset)));
+    assert(predictor.complete());
+    for (size_t y = 0; y < height; ++y)
+      for (size_t x = 0; x < width; ++x) assert(output[1 + y * stride + x] == (*pixels)[y * width + x]);
+    assert(output.front() == 0xa55a && output.back() == 0xa55a);
+  }
+  for (size_t y = 0; y < height; ++y) {
+    const size_t begin = rows[y].begin, end = rows[y].end;
+    if (y == 1) assert(begin == width / 2 && end == width / 2 + 1);
+    else if (y == 3) assert(begin == 0 && end == width);
+    else if (y == 5) assert(begin == 0 && end == 1);
+    else assert(begin >= end);
+  }
+  // Only the output's rows are reported.
+  assert(rows[height].begin == 7 && rows[height].end == 7);
+}
+
 int main() {
   for (size_t width : {1u, 2u, 21u, 39u, 412u}) check(width, 352);
-  std::cout << "PASS: word prediction, row/ring boundaries, uint16 wrap, reset, guards and corrupt streams\n";
+  skipUnchanged(277, 9, 412);
+  skipUnchanged(412, 7, 412);
+  std::cout << "PASS: word prediction, row/ring boundaries, uint16 wrap, reset, guards, corrupt streams and "
+               "unchanged rows\n";
 }

@@ -13,7 +13,14 @@ inline int blinkRevealHalfHeight(uint8_t blend, int height) {
   return half > 1 ? half : 1;
 }
 
+// A rectangle of output pixels.
+struct SpriteArea {
+  int x = 0, y = 0, width = 0, height = 0;
+  bool empty() const { return width <= 0 || height <= 0; }
+};
+
 // Renders base/patch packs: one base image per pose plus blink patches around the eyes.
+// secondOutput may be null when one output is enough (CharacterScaler's art buffer).
 class SpriteRenderer {
  public:
   SpriteRenderer(uint16_t* firstOpenPatch, uint16_t* secondOpenPatch, uint16_t* patch,
@@ -24,6 +31,9 @@ class SpriteRenderer {
   void invalidate();
   const char* error() const { return error_; }
   uint32_t decodeUs = 0, compositeUs = 0, eyesUs = 0;
+  // What the last render rewrote in its output: empty when the output already showed the pose.
+  // `eyes` is the blink patch part of it.
+  SpriteArea changed, eyes;
 
  private:
   bool decode(const SpriteBlock& block, uint16_t* output, size_t pixels, size_t width, size_t stride);
