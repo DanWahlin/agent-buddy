@@ -181,9 +181,14 @@ main {
 }
 .character .remove-character svg { width: .9rem; height: .9rem; }
 .character .remove-character:hover:not(:disabled) { background: var(--bad); border-color: transparent; color: white; }
-.character .body { padding: .8rem 1rem 1rem; display: grid; gap: .6rem; }
-.character .name { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .5rem; min-width: 0; }
-.character .name strong { font-size: 1.05rem; min-width: 0; overflow-wrap: anywhere; }
+/* Every card in a row is as tall as the tallest: the button sits at the bottom of each, so the
+   buttons line up across the row even when a long name takes two lines. */
+.character .body { padding: .8rem 1rem 1rem; display: flex; flex-direction: column; gap: .6rem; flex: 1; }
+.character .name { display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem; min-width: 0; }
+.character .name strong { font-size: 1.05rem; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
+.character .name .badge { flex: none; margin-top: .12rem; }
+.character .actions { margin-top: auto; }
+.character .actions button { flex: 1; }
 .badge { font-size: .72rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: .1rem .5rem; white-space: nowrap; }
 .badge.current { color: var(--accent); border-color: var(--accent); }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -267,7 +272,9 @@ button.sized::after { content: attr(data-widest); visibility: hidden; }
 .form { display: grid; grid-template-columns: 1fr 1fr auto; gap: .8rem; align-items: end; }
 .form label, .form .field { display: grid; gap: .35rem; color: var(--muted); font-size: .9rem; }
 .wifi-form { grid-template-columns: 1fr 1fr; }
-.wifi-form > button[type="submit"] { justify-self: start; }
+/* Connect sits under the network name, its left edge on that column. */
+.wifi-form > button[type="submit"] { justify-self: start; min-width: var(--control-width, 11.5rem); }
+.wifi-form .field-row button { flex: none; }
 .firmware-recovery { margin-top: 1rem; }
 .firmware-recovery > summary { cursor: pointer; color: var(--muted); font-weight: 600; }
 .firmware-recovery > .hint { margin-top: .75rem; }
@@ -433,13 +440,27 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 }
 .setting-row + .setting-row { border-top: 1px solid var(--border); }
 .setting-row.static { cursor: default; }
-.setting-row > .row-actions { display: flex; flex: none; gap: .5rem; }
+/* The controls on the right share one column width, so buttons, menus and sliders line up
+   from row to row: two buttons, one menu, or one slider fill the same space. */
+.setting-row { --control-width: 11.5rem; }
+.setting-row > .row-actions { display: flex; flex: none; gap: .5rem; justify-content: flex-end; width: var(--control-width); }
+.setting-row > .row-actions button { flex: 1; min-width: 0; padding-inline: .6rem; }
+.setting-row > select {
+  flex: none; width: var(--control-width);
+  -webkit-appearance: none; appearance: none; cursor: pointer; font-weight: 600;
+  border-radius: 999px; padding: .55rem 2.2rem .55rem 1rem; background-color: var(--panel);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%238b949e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 1rem center; background-size: .7rem;
+}
+.setting-row > select:disabled { cursor: default; opacity: .5; }
 .setting-row button.secondary { background: var(--panel); }
 .setting-row.static .pill { margin-left: .4rem; font-size: .8rem; padding: .2rem .6rem; }
 .setting-row > span { display: grid; gap: .2rem; }
 .setting-row > span:first-child { flex: 1; min-width: 0; }
 .setting-row .hint { margin: 0; }
-.setting-row > .volume-control { display: flex; flex: none; align-items: center; gap: .6rem; }
+.setting-row > .volume-control { display: flex; flex: none; align-items: center; gap: .6rem; width: var(--control-width); }
+/* The trim has two buttons, a slider, its value and Reset in one line. */
+.setting-row > .volume-control.orientation-control { width: auto; gap: .5rem; }
 /* The connected device's details, and the devices to choose from when several answer on USB. */
 .device-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem 1rem; margin: .5rem 0 0;
   font-size: .85rem; }
@@ -451,11 +472,13 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 /* Own track and thumb: the general input padding would keep the thumb off the ends. */
 .volume-control input[type="range"] {
   --fill: .3; --thumb: 18px;
-  -webkit-appearance: none; appearance: none; width: 160px; height: 24px; margin: 0; padding: 0;
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; width: auto; height: 24px; margin: 0; padding: 0;
   border: 0; border-radius: 0; background: transparent; cursor: pointer;
 }
 .volume-control input[type="range"]:disabled { cursor: default; opacity: .5; }
-.orientation-control { flex-wrap: wrap; justify-content: flex-end; }
+.orientation-control { flex-wrap: nowrap; justify-content: flex-end; }
+.orientation-control input[type="range"] { flex: none; width: 7rem; }
+.orientation-control output { min-width: 4.2em; }
 .volume-control input[type="range"]::-webkit-slider-runnable-track {
   height: 6px; border-radius: 999px;
   background: linear-gradient(to right,
