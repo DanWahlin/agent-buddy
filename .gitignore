@@ -11,6 +11,7 @@ __pycache__/
 .env.*
 !.env.example
 .aspire/
+.agents/skills/
 characters/copilot/legacy-atlas/generated/atlas_bytes.h
 firmware/AgentCompanion/generated/sprite_bytes.h
 

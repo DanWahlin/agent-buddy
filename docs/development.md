@@ -88,11 +88,10 @@ non-Aspire instructions below remain supported.
 
 ### Aspire agent guidance
 
-The official Aspire skills are checked in under `.agents/skills/`. To refresh
-the recommended skills using a compatible CLI, run `aspire agent init
---skill-locations standard --non-interactive --mcp=false`. That command can
-also configure Aspire's own agent telemetry hooks; it does not install Agent
-Buddy hooks. Review generated changes before committing.
+The official Aspire skills aren't checked in. To install them locally, run
+`aspire agent init --skill-locations standard --non-interactive --mcp=false`.
+That command can also configure Aspire's own agent telemetry hooks; it does not
+install Agent Buddy hooks. Don't commit the generated skill files.
 
 **Current implementation:** GPT Image-generated sprites, with an ESP32 playback
 engine and a native character review at **http://127.0.0.1:8765/character-preview.html**.
