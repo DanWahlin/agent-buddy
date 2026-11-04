@@ -62,6 +62,10 @@ struct App {
     settings: Mutex<Option<String>>,
     /// The character size the window has, as a scale of its configured size.
     scale: Mutex<f64>,
+    /// Whether Hyprland is mapping and settling the window. Until it has, the
+    /// window has no place on Hyprland's layout to keep, so the settle applies
+    /// the size and a change of size waits for it.
+    settling: AtomicBool,
 }
 
 /// The character size the window has now, for saving its position with it.
@@ -69,14 +73,17 @@ fn current_scale(window: &WebviewWindow) -> f64 {
     window.try_state::<Arc<App>>().map_or(1.0, |app| *app.scale.lock().unwrap())
 }
 
+/// The character size Settings has, as a scale; None without the daemon.
+fn wanted_scale(app: &App) -> Option<f64> {
+    app.daemon.lock().unwrap().as_ref().map(|it| placement::scale_of(&it.size))
+}
+
 /// Follow the character size in Settings. Only while the window shows: a
 /// hidden or minimized window has no place to keep, so it changes size when
-/// it shows again.
+/// it shows again. On Hyprland the settle does that, so a change waits for it.
 fn follow_size(app: &Arc<App>, window: &WebviewWindow) {
-    let Some(wanted) = app.daemon.lock().unwrap().as_ref().map(|it| placement::scale_of(&it.size)) else {
-        return;
-    };
-    if !app.visible.load(Ordering::Relaxed) {
+    let Some(wanted) = wanted_scale(app) else { return };
+    if !app.visible.load(Ordering::Relaxed) || app.settling.load(Ordering::Relaxed) {
         return;
     }
     {
@@ -203,11 +210,12 @@ fn update_visibility(app: &Arc<App>, window: &WebviewWindow) {
         // Settings has it off: showing it from here would be overruled.
         let _ = item.set_enabled(wanted);
     }
-    follow_size(app, window);
-    // Shown again, the window is new to the compositor, and tiled again.
+    // Shown again, the window is new to the compositor, and tiled again. The
+    // settle gives it the size Settings has, so it goes first.
     if visible && !was_visible {
-        settle_on_hyprland(window);
+        settle_on_hyprland(app, window);
     }
+    follow_size(app, window);
 }
 
 /// Put a window in front of every app's windows and give it the keys. A click
@@ -626,6 +634,7 @@ fn main() {
         bundled: AtomicBool::new(false),
         settings: Mutex::new(None),
         scale: Mutex::new(1.0),
+        settling: AtomicBool::new(false),
     });
 
     let setup = app.clone();
@@ -762,7 +771,7 @@ fn main() {
             });
 
             setup.pointer.clone().watch(window.clone());
-            settle_on_hyprland(&window);
+            settle_on_hyprland(&setup, &window);
             if command == Command::Settings {
                 open_settings(handle.handle().clone());
             }
@@ -897,24 +906,36 @@ fn linux_environment() {
 }
 
 /// On Hyprland, float, pin and unclutter the window and put it back where it
-/// was, in the background: Hyprland maps it a moment after it is shown.
-fn settle_on_hyprland(window: &WebviewWindow) {
+/// was, in the background: Hyprland maps it a moment after it is shown. It
+/// gets the size Settings has here too, from where it was saved and the size
+/// it was saved at, so the character stands where it stood. Hyprland may map
+/// it first anywhere on its layout, so a resize before the settle would keep
+/// the wrong place.
+fn settle_on_hyprland(app: &Arc<App>, window: &WebviewWindow) {
     if !hyprland::available() {
         return;
     }
-    let at = placement::saved(window).map(|it| (it.x, it.y));
-    // The size Settings chose, not the configured one.
-    let (width, height) = placement::scaled_size(placement::base_size(window), current_scale(window), None);
-    let size = tauri::LogicalSize::new(width, height);
-    let resized = window.clone();
+    app.settling.store(true, Ordering::Relaxed);
+    let scale = wanted_scale(app).unwrap_or_else(|| *app.scale.lock().unwrap());
+    *app.scale.lock().unwrap() = scale;
+    let base = placement::base_size(window);
+    let saved = placement::saved(window);
+    let to = saved.map(|it| placement::resized_placement(it, base, scale));
+    let size = placement::scaled_size(base, scale, None);
+    let (app, window) = (app.clone(), window.clone());
     std::thread::spawn(move || {
-        if hyprland::settle(at).is_none() {
+        let settled = hyprland::settle(to.map(|it| (it.x, it.y)));
+        placement::set_logical_size(&window, size);
+        if settled.is_none() {
             eprintln!("[hyprland] the window did not appear to Hyprland");
-            return;
+        } else if let Some(to) = to.filter(|_| saved.is_some_and(|it| it.scale != scale)) {
+            // Saved with its new size, so the next start puts it back the same.
+            placement::remember(&window, to);
         }
-        if let Err(error) = resized.set_size(size) {
-            eprintln!("[hyprland] could not restore the character size: {error}");
-        }
+        app.settling.store(false, Ordering::Relaxed);
+        // A size chosen while it settled: the window is mapped now.
+        let following = window.clone();
+        let _ = window.run_on_main_thread(move || follow_size(&app, &following));
     });
 }
 

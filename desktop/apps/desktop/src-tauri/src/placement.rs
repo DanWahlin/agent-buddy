@@ -102,7 +102,7 @@ pub fn anchored(
 /// Give the window a logical size, with its minimum and maximum the same, so
 /// it cannot be resized by hand. The bounds come off first: the new size may
 /// be outside the old ones.
-fn set_logical_size(window: &WebviewWindow, (width, height): (f64, f64)) {
+pub fn set_logical_size(window: &WebviewWindow, (width, height): (f64, f64)) {
     let size = LogicalSize::new(width, height);
     let _ = window.set_min_size(None::<tauri::Size>);
     let _ = window.set_max_size(None::<tauri::Size>);
@@ -113,11 +113,45 @@ fn set_logical_size(window: &WebviewWindow, (width, height): (f64, f64)) {
     let _ = window.set_max_size(Some(size));
 }
 
-/// The work area of the monitor the window is on, in physical pixels.
-fn work_area(window: &WebviewWindow) -> Option<(i32, i32, u32, u32)> {
-    let monitor = window.current_monitor().ok().flatten()?;
-    let work = monitor.work_area();
-    Some((work.position.x, work.position.y, work.size.width, work.size.height))
+/// The screen the window is on: its scale factor, and the work area of its
+/// monitor in physical pixels (x, y, width, height) and in logical pixels.
+struct Screen {
+    factor: f64,
+    area: Option<(i32, i32, u32, u32)>,
+    room: Option<(f64, f64)>,
+}
+
+fn screen(window: &WebviewWindow) -> Screen {
+    let factor = usable_factor(window.scale_factor().ok());
+    let area = window.current_monitor().ok().flatten().map(|monitor| {
+        let work = monitor.work_area();
+        (work.position.x, work.position.y, work.size.width, work.size.height)
+    });
+    Screen { factor, area, room: logical_room(area, factor) }
+}
+
+/// A scale factor to divide by: 1 when the system gives none, or nonsense.
+fn usable_factor(factor: Option<f64>) -> f64 {
+    factor.filter(|it| it.is_finite() && *it > 0.0).unwrap_or(1.0)
+}
+
+/// A work area's width and height in logical pixels.
+fn logical_room(area: Option<(i32, i32, u32, u32)>, factor: f64) -> Option<(f64, f64)> {
+    area.map(|(_, _, width, height)| (width as f64 / factor, height as f64 / factor))
+}
+
+/// Where a window that was saved at one size goes at another: the saved
+/// top-left corner moved so that the middle of the bottom edge stays where it
+/// was. On Hyprland, positions and sizes are both in layout (logical) pixels.
+pub fn resized_placement(saved: Placement, base: (f64, f64), scale: f64) -> Placement {
+    let saved_scale = known_scale(saved.scale);
+    if (saved_scale - scale).abs() < 1e-6 {
+        return Placement { scale, ..saved };
+    }
+    let old = scaled_size(base, saved_scale, None);
+    let new = scaled_size(base, scale, None);
+    let (x, y) = anchored((saved.x, saved.y), (old.0 as u32, old.1 as u32), (new.0 as u32, new.1 as u32), None);
+    Placement { x, y, scale }
 }
 
 /// Change the character size: the window scales, and the character keeps
@@ -128,9 +162,7 @@ pub fn rescale(window: &WebviewWindow, scale: f64) {
         rescale_on_hyprland(window, base, scale);
         return;
     }
-    let factor = window.scale_factor().ok().filter(|it| it.is_finite() && *it > 0.0).unwrap_or(1.0);
-    let area = work_area(window);
-    let room = area.map(|(_, _, width, height)| (width as f64 / factor, height as f64 / factor));
+    let Screen { factor, area, room } = screen(window);
     let logical = scaled_size(base, scale, room);
     let (Ok(at), Ok(old), Ok(inner)) = (window.outer_position(), window.outer_size(), window.inner_size()) else {
         set_logical_size(window, logical);
@@ -150,7 +182,8 @@ pub fn rescale(window: &WebviewWindow, scale: f64) {
 
 /// On Hyprland a window cannot place itself, and only Hyprland knows where it
 /// is, in its own layout coordinates (logical pixels), so it is asked, in the
-/// background: its requests wait for an answer.
+/// background: its requests wait for an answer. The window is mapped: one that
+/// is being shown is settled instead, and gets its size there.
 fn rescale_on_hyprland(window: &WebviewWindow, base: (f64, f64), scale: f64) {
     let logical = scaled_size(base, scale, None);
     let window = window.clone();
@@ -277,8 +310,7 @@ pub fn saved(window: &WebviewWindow) -> Option<Placement> {
 pub fn restore(window: &WebviewWindow) -> f64 {
     let Some(saved) = saved(window) else { return 1.0 };
     let scale = known_scale(saved.scale);
-    let factor = window.scale_factor().ok().filter(|it| it.is_finite() && *it > 0.0).unwrap_or(1.0);
-    let room = work_area(window).map(|(_, _, width, height)| (width as f64 / factor, height as f64 / factor));
+    let Screen { factor, room, .. } = screen(window);
     let logical = scaled_size(base_size(window), scale, room);
     if scale != 1.0 {
         set_logical_size(window, logical);
@@ -463,5 +495,34 @@ mod tests {
     #[test]
     fn a_window_bigger_than_the_screen_keeps_its_top_left_on_it() {
         assert_eq!(anchored((100, 100), (280, 280), (420, 420), Some((0, 0, 400, 300))), (0, 0));
+    }
+
+    #[test]
+    fn the_work_area_is_measured_in_logical_pixels_with_a_sane_factor() {
+        assert_eq!(usable_factor(Some(2.0)), 2.0);
+        assert_eq!(usable_factor(None), 1.0);
+        assert_eq!(usable_factor(Some(0.0)), 1.0);
+        assert_eq!(usable_factor(Some(f64::NAN)), 1.0);
+        assert_eq!(logical_room(Some((0, 50, 3024, 1840)), 2.0), Some((1512.0, 920.0)));
+        assert_eq!(logical_room(None, 2.0), None);
+    }
+
+    /// A window shown again on Hyprland goes to its saved corner, moved so the
+    /// character stands where it stood at the size it was saved with.
+    #[test]
+    fn a_saved_place_at_another_size_keeps_the_bottom_centre() {
+        let base = (280.0, 280.0);
+        let saved = Placement { x: 800, y: 500, scale: 1.0 };
+        let large = resized_placement(saved, base, 1.5);
+        assert_eq!((large.x, large.y, large.scale), (730, 360, 1.5));
+        let back = resized_placement(large, base, 1.0);
+        assert_eq!((back.x, back.y, back.scale), (800, 500, 1.0));
+        let small = resized_placement(saved, base, 0.8);
+        assert_eq!((small.x, small.y, small.scale), (828, 556, 0.8));
+        let same = resized_placement(Placement { x: 1, y: 2, scale: 1.25 }, base, 1.25);
+        assert_eq!((same.x, same.y, same.scale), (1, 2, 1.25));
+        // An unknown saved size counts as Medium.
+        let odd = resized_placement(Placement { x: 800, y: 500, scale: 9.0 }, base, 1.5);
+        assert_eq!((odd.x, odd.y), (730, 360));
     }
 }
