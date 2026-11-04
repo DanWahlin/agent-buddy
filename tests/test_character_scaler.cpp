@@ -299,18 +299,9 @@ void withRenderer(const CharacterPlacement& placement) {
       default: break;
     }
     const uint8_t blend = blink + 1 < kSpriteBlinkLevels && random() % 3 == 0 ? static_cast<uint8_t>(random()) : 0;
-    const std::vector<uint16_t> before = art;
     assert(renderer.render({direction, index, blink, blend}, art.data()));
-    // The renderer's changed area covers every pixel that changed, and the eyes are part of it.
-    const SpriteArea area = renderer.changed, eyes = renderer.eyes;
-    for (size_t i = 0; i < art.size(); ++i) {
-      if (art[i] == before[i]) continue;
-      const int x = int(i % CharacterScaler::kArtWidth), y = int(i / CharacterScaler::kArtWidth);
-      assert(x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height);
-    }
-    assert(eyes.empty() || (eyes.x >= area.x && eyes.y >= area.y && eyes.x + eyes.width <= area.x + area.width
-                            && eyes.y + eyes.height <= area.y + area.height));
-    scaler->changed(eyes);
+    // The inflater reported the base's changed rows; the eyes come after it.
+    scaler->changed(renderer.eyes);
     Guarded& frame = frames[step % 2];
     scaler->draw(art.data(), frame.data(), step % 2);
     assert(frame == reference(placement, art.data()));

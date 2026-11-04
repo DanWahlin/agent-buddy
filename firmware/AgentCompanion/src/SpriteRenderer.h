@@ -31,9 +31,8 @@ class SpriteRenderer {
   void invalidate();
   const char* error() const { return error_; }
   uint32_t decodeUs = 0, compositeUs = 0, eyesUs = 0;
-  // What the last render rewrote in its output: empty when the output already showed the pose.
-  // `eyes` is the blink patch part of it.
-  SpriteArea changed, eyes;
+  // The blink patch that the last render wrote: empty when the output already showed the pose.
+  SpriteArea eyes;
 
  private:
   bool decode(const SpriteBlock& block, uint16_t* output, size_t pixels, size_t width, size_t stride);
