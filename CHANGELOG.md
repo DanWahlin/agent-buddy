@@ -2,6 +2,33 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.18.0]
+
+### Features and improvements
+
+- Add an isolated Aspire contributor development loop (#48)
+
+- Add a character size setting to the desktop app
+
+
+### Other changes
+
+- Characters page: the name first, Free preview under it, and one short line
+
+- Draw the character bigger on the AMOLED-2.06
+
+- Keep effects and badges in place when the AMOLED-2.06 draws the character bigger
+
+- Draw the character bigger on the round AMOLED-1.75
+
+- Line up the buttons and controls in Settings
+
+- Keep the screen alignment trim on screen in narrow Settings windows
+
+- Keep the character in place when its size changes as the window reappears on Hyprland
+
+- Remove SpriteRenderer's unused changed area
+
 ## [v0.17.0]
 
 ### Features and improvements
