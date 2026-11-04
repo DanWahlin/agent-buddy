@@ -458,7 +458,8 @@ button { font: inherit; color: inherit; }
 .pack-card { flex: 0 1 260px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 30px 22px 26px; }
 .pack-card .device { margin: 0 auto 10px; }
 .pack-card :is(h3, h4) { font-size: 24px; margin: 0; }
-.pack-title { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; }
+/* The name, then the Free preview tag under it. */
+.pack-title { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .tag { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; }
 .tag.is-add-on { color: var(--g1); border-color: rgba(143, 243, 255, 0.35); }
 .pack-card .pack-meta { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; }
