@@ -477,7 +477,7 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
 }
 .volume-control input[type="range"]:disabled { cursor: default; opacity: .5; }
 .orientation-control { flex-wrap: nowrap; justify-content: flex-end; }
-.orientation-control input[type="range"] { flex: none; width: 7rem; }
+.orientation-control input[type="range"] { flex: 1 1 7rem; width: auto; max-width: 7rem; min-width: 3rem; }
 .orientation-control output { min-width: 4.2em; }
 .volume-control input[type="range"]::-webkit-slider-runnable-track {
   height: 6px; border-radius: 999px;
@@ -501,6 +501,8 @@ code { background: var(--panel-2); padding: .1rem .35rem; border-radius: 6px; }
   .setting-row.static > span:first-child { flex-basis: 100%; }
   .setting-row.static > select, .setting-row.static > .row-actions,
   .setting-row.static > .volume-control, .setting-row.static > button { margin-left: auto; max-width: 100%; }
+  /* Too narrow for the trim's five controls on one line: they wrap, the slider on its own line. */
+  .setting-row.static > .orientation-control { flex-wrap: wrap; }
 }
 .toggle {
   appearance: none; flex: none; width: 46px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 999px;
