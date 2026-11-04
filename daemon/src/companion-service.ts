@@ -1022,6 +1022,8 @@ export class CompanionService extends EventEmitter {
   }
 
   async startDesktop(): Promise<void> {
+    if (process.env.AGENT_COMPANION_DEV === '1')
+      throw new Error('Start the desktop resource in Aspire so it follows this development instance.');
     await this.#desktopApp.start();
     this.emit('change');
   }
@@ -1035,6 +1037,8 @@ export class CompanionService extends EventEmitter {
   // Removes the agent hooks now. Then, after a short time, closes the desktop app and starts a
   // script that removes the app, this service and (unless keepData) its data, and stops the service.
   async uninstall(keepData: boolean, run: (plan: UninstallPlan) => void = runUninstall): Promise<UninstallResult> {
+    if (process.env.AGENT_COMPANION_DEV === '1')
+      throw new Error('This is a foreground development instance. Stop it in Aspire; no installed service is managed here.');
     this.#checkCanStop();
     const platform = process.platform;
     if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32')
@@ -1105,6 +1109,8 @@ export class CompanionService extends EventEmitter {
 
   // Restarts this service, for Restart in Settings. The desktop app stays open and reconnects.
   restartService(run: (plan: UninstallPlan, exit: () => void) => void = runUninstall): void {
+    if (process.env.AGENT_COMPANION_DEV === '1')
+      throw new Error('Restart this foreground development instance from the Aspire dashboard or CLI.');
     const platform = process.platform;
     if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32')
       throw new Error('Restart from Settings works on macOS, Linux and Windows only.');
@@ -1134,7 +1140,8 @@ export class CompanionService extends EventEmitter {
     while (this.#desktopApp.running && Date.now() < until) await sleep(200);
     const platform = process.platform;
     const exit = () => this.emit('stop');
-    if (platform === 'darwin' || platform === 'linux' || platform === 'win32')
+    if (process.env.AGENT_COMPANION_DEV === '1') exit();
+    else if (platform === 'darwin' || platform === 'linux' || platform === 'win32')
       run(createServiceStopPlan(platform, process.getuid?.() ?? userInfo().uid), exit);
     else exit();
   }

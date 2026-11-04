@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js",
     "start": "node dist/src/cli.js daemon",
+    "dev": "npm run build && node ../tools/dev.mjs daemon",
     "status": "node dist/src/cli.js status",
     "agents": "node dist/src/cli.js agents",
     "setup:wifi": "npm run build && node dist/src/cli.js setup-wifi",
@@ -24,6 +25,12 @@
     "yaml": "2.8.1"
   },
   "devDependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.223.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.223.0",
+    "@opentelemetry/resources": "2.12.0",
+    "@opentelemetry/sdk-metrics": "2.12.0",
+    "@opentelemetry/sdk-trace-node": "2.12.0",
     "@types/node": "24.10.1",
     "node-gyp": "13.1.0",
     "typescript": "7.0.2"

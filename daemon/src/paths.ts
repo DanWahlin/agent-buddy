@@ -157,6 +157,12 @@ export function windowsLocalAppData(home: string, environment: NodeJS.ProcessEnv
 
 export function defaultDataDirectory(
     platform: NodeJS.Platform, home: string, environment: NodeJS.ProcessEnv): string {
+  const override = environment.AGENT_COMPANION_DATA_DIR;
+  if (override) {
+    const path = platform === 'win32' ? win32 : posix;
+    if (!path.isAbsolute(override)) throw new Error('AGENT_COMPANION_DATA_DIR must be an absolute path.');
+    return override;
+  }
   if (platform === 'darwin')
     return posix.join(home, 'Library', 'Application Support', 'ESP32 Agent Companion');
   if (platform === 'win32') return win32.join(windowsLocalAppData(home, environment), 'ESP32 Agent Companion');

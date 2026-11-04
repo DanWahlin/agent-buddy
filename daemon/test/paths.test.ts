@@ -11,8 +11,29 @@ import {
   socketPath,
   statePath,
   wifiConfigPath,
+  agentsConfigPath,
+  userCharacterDirectory,
   windowsPipeName,
 } from '../src/paths.js';
+
+test('isolates shared data paths on each platform without changing the user home', () => {
+  for (const platform of ['darwin', 'linux', 'win32'] as const) {
+    const directory = platform === 'win32' ? 'D:\\dev\\companion' : '/worktree/build/dev/companion';
+    assert.equal(defaultDataDirectory(platform, '/home/user', {AGENT_COMPANION_DATA_DIR: directory}), directory);
+    assert.throws(() => defaultDataDirectory(platform, '/home/user', {AGENT_COMPANION_DATA_DIR: 'relative'}),
+      /absolute path/);
+  }
+  const previous = process.env.AGENT_COMPANION_DATA_DIR;
+  const directory = join(tmpdir(), 'companion-dev-paths');
+  process.env.AGENT_COMPANION_DATA_DIR = directory;
+  try {
+    assert.equal(agentsConfigPath(), join(directory, 'agents.json'));
+    assert.equal(userCharacterDirectory(), join(directory, 'characters'));
+  } finally {
+    if (previous === undefined) delete process.env.AGENT_COMPANION_DATA_DIR;
+    else process.env.AGENT_COMPANION_DATA_DIR = previous;
+  }
+});
 
 test('honors explicit daemon path overrides', () => {
   const previousSocket = process.env.AGENT_COMPANION_SOCKET;

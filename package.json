@@ -17,6 +17,10 @@
     "agents": "node tools/companion.mjs agents",
     "badges": "node tools/companion.mjs badges",
     "desktop": "npm install --prefix desktop --no-audit --no-fund && npm --prefix desktop start",
-    "website": "node website/scripts/build.mjs && node website/scripts/serve.mjs"
+    "website": "node website/scripts/build.mjs && node website/scripts/serve.mjs",
+    "aspire:start": "npm --prefix aspire-apphost run aspire:start",
+    "aspire:build": "npm --prefix aspire-apphost run aspire:build",
+    "aspire:dev": "npm --prefix aspire-apphost run aspire:dev",
+    "test:dev": "node --test tests/dev.test.mjs"
   }
 }

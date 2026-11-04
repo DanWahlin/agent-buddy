@@ -206,7 +206,7 @@ class RendererSessions:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
     parser.add_argument("--skip-build", action="store_true", help="Use explicitly prebuilt native binaries.")
     args = parser.parse_args()
     sessions = RendererSessions(ROOT / "build/live-preview" if args.skip_build else build_renderer())

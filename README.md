@@ -61,6 +61,10 @@ desktop, with or without the device.
 - [Desktop Agent Buddy](#desktop-agent-buddy)
 - [Develop and customize](#develop-and-customize)
 
+**Contributors:** an optional [`aspire run` development loop](docs/development.md#optional-one-command-contributor-loop)
+starts isolated Settings and Character Lab without hardware. Desktop and firmware
+actions are explicit dashboard/CLI commands; normal installation is unchanged.
+
 ## Features
 
 - **Agent-aware states:** Working, Needs attention, and Complete animations driven

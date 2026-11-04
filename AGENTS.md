@@ -17,6 +17,12 @@ architecture, hook formats, and serial protocol are in
 | `tools/` | Build, packaging, flashing, and release scripts |
 | `tests/` | Python and native renderer tests |
 
+## Optional Aspire contributor loop
+
+`aspire run` starts an isolated Settings and Character Lab without hardware; see
+[the development guide](docs/development.md#optional-one-command-contributor-loop).
+Don't use `npm run setup` in its place: that installs hooks and a persistent service.
+
 ## Tests
 
 Run the smallest set that covers a change:

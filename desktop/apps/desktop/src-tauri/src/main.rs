@@ -605,6 +605,13 @@ fn main() {
     let reopened = app.clone();
     #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
+    if let Some(data) = std::env::var_os("AGENT_COMPANION_DATA_DIR") {
+        use std::hash::{Hash, Hasher};
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        data.hash(&mut hash);
+        let identifier = format!("{}.dev{:x}", context.config().identifier, hash.finish());
+        context.config_mut().identifier = identifier;
+    }
     #[cfg(target_os = "linux")]
     if hyprland::available() {
         if let Some(window) = context.config_mut().app.windows.iter_mut().find(|window| window.label == "main") {

@@ -4,6 +4,59 @@ Prebuilt [release bundles](../README.md#step-1-flash-the-firmware) are the simpl
 The source-build scripts support macOS and Linux; Windows users can use a release
 bundle or a suitable Linux/WSL development environment.
 
+## Build from the Aspire dashboard
+
+For the optional contributor path, install the
+[dev-loop prerequisites](development.md#optional-one-command-contributor-loop)
+and start from the repository root:
+
+```bash
+aspire run
+```
+
+Settings and Character Lab start without hardware. The desktop is an explicit
+**Start** action after installing its Rust/Tauri prerequisites.
+Firmware work is opt-in: install Arduino CLI **1.5.1**, then select a
+`companion` action in the dashboard or run its CLI equivalent:
+
+```bash
+# Downloads only: pinned ESP32 core and vendor libraries into this checkout.
+aspire resource companion firmware-setup --board waveshare-amoled-175
+
+# Builds locally; never opens a USB device.
+aspire resource companion firmware-build --board waveshare-amoled-175
+
+# Packages existing build output in build/release; does not publish a release.
+aspire resource companion package --board waveshare-amoled-175
+```
+
+Select `waveshare-lcd-154` instead when building that board. The dashboard offers
+the same board choices from `firmware/boards.json`. Configuration and vendor
+sources use `.deps/arduino/` and `.deps/waveshare/`, so the commands don't depend
+on Dan's Arduino IDE paths. Set `ARDUINO_CLI` before starting Aspire if the
+executable isn't on `PATH`. Toolchain setup downloads dependencies but does not
+install an OS service, change hooks, pair a device, or flash anything.
+
+**Flashing is a separate destructive action.** Check the physical board model
+and selected USB port first. Stop any installed companion service or other app
+using that port. The dev daemon starts with device use disabled. Flashing
+requires all three arguments, including the literal confirmation `FLASH`:
+
+```bash
+aspire resource companion firmware-flash --board waveshare-amoled-175 \
+  --port /dev/cu.usbmodem2101 --confirm FLASH
+```
+
+The dashboard also asks for confirmation. The command refuses an occupied port
+(requires `lsof`) and delegates to the existing complete-upload script, replacing
+both firmware and the default character. No upload ever runs on startup.
+The existing artifact freshness and board checks still apply.
+
+If a prerequisite is missing or a build fails, the command returns a failure and
+its output is in the AppHost console/logs; long downloads and builds are not
+background OS installations. The manual path below remains available without
+Aspire.
+
 ## Prerequisites
 
 - Git and Python 3.10+.
