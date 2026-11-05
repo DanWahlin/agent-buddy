@@ -29,6 +29,8 @@ interface FileRecord {
   session: string;
   offset: number;
   last: number;
+  // Copilot: the AI credits of the calls since its last running total (session.usage_checkpoint).
+  pending?: number;
   entries: Array<[number, number, string?]>;
 }
 
@@ -47,9 +49,9 @@ export interface UsageTrackerOptions {
   now?: () => number;
 }
 
-// A new version reads the transcripts again, once. Version 2 also held Copilot tokens, which
-// are no longer counted; the load removes them, and keeps the rest.
-const CACHE_VERSION = 2;
+// A new version reads the transcripts again, once. Version 3 counts Copilot's per-call usage
+// records, which version 2 skipped; the tokens that version 2 held are removed on load.
+const CACHE_VERSION = 3;
 const CHUNK_BYTES = 4 << 20;
 // Usage lines are a few KB; a line longer than this is a big tool result, not usage.
 const MAX_LINE_BYTES = 16 << 20;
@@ -261,7 +263,7 @@ async function readUsage(path: string, record: FileRecord, size: number): Promis
 }
 
 // Adds one usage line to the record; true when it changed an entry.
-export function applyLine(record: Pick<FileRecord, 'source' | 'last' | 'entries'>, line: string): boolean {
+export function applyLine(record: Pick<FileRecord, 'source' | 'last' | 'pending' | 'entries'>, line: string): boolean {
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(line) as Record<string, unknown>;
@@ -271,10 +273,19 @@ export function applyLine(record: Pick<FileRecord, 'source' | 'last' | 'entries'
   const time = Date.parse(String(event.timestamp ?? ''));
   if (!Number.isFinite(time)) return false;
   if (record.source === 'copilot') {
-    if (event.type !== 'session.usage_checkpoint' && event.type !== 'session.shutdown') return false;
     // Copilot's token counts are not complete (a session that does not stop cleanly loses them),
     // so only its AI credits are counted.
-    return addTotal(record, time, number((event.data as Record<string, unknown> | undefined)?.totalNanoAiu));
+    if (event.type === 'session.usage_record') {
+      // One model call. Copilot 1.0.105 and later write only these, without running totals.
+      const usage = (event.data as Record<string, unknown> | undefined)?.usage as Record<string, unknown> | undefined;
+      const amount = number((usage?.copilotUsage as Record<string, unknown> | undefined)?.totalNanoAiu);
+      if (!(amount > 0)) return false;
+      record.pending = (record.pending ?? 0) + amount;
+      record.entries.push([time, amount]);
+      return true;
+    }
+    if (event.type !== 'session.usage_checkpoint' && event.type !== 'session.shutdown') return false;
+    return addCheckpoint(record, time, number((event.data as Record<string, unknown> | undefined)?.totalNanoAiu));
   }
   if (record.source === 'codex') {
     const payload = event.payload as Record<string, unknown> | undefined;
@@ -304,6 +315,19 @@ export function applyLine(record: Pick<FileRecord, 'source' | 'last' | 'entries'
   }
   if (!amount) return false;
   record.entries.push(id ? [time, amount, id] : [time, amount]);
+  return true;
+}
+
+// A Copilot running total is the session's true count, which can include more than its calls'
+// usage records. The calls since the last total are counted already, so add only the difference.
+function addCheckpoint(record: Pick<FileRecord, 'last' | 'pending' | 'entries'>, time: number, total: number): boolean {
+  if (!(total > 0)) return false;
+  const increase = total >= record.last ? total - record.last : total;
+  record.last = total;
+  const correction = increase - (record.pending ?? 0);
+  record.pending = 0;
+  if (!correction) return false;
+  record.entries.push([time, correction]);
   return true;
 }
 

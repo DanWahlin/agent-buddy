@@ -18,6 +18,12 @@ const lastMonth = new Date(year, month - 1, 28, 9).toISOString();
 
 const copilotLine = (timestamp: string, nanoAiu: number, type = 'session.usage_checkpoint') =>
   JSON.stringify({type, data: {totalNanoAiu: nanoAiu, totalPremiumRequests: 1}, id: 'x', timestamp}) + '\n';
+// One model call, as Copilot 1.0.105 and later write it (no running total).
+const copilotCall = (timestamp: string, nanoAiu: number) =>
+  JSON.stringify({type: 'session.usage_record', id: 'x', timestamp, data: {usage: {
+    model: 'model-a', inputTokens: 1000, outputTokens: 50, aiCreditsStatus: 'complete',
+    copilotUsage: {tokenDetails: [], totalNanoAiu: nanoAiu},
+  }}}) + '\n';
 const copilotStop = (timestamp: string, nanoAiu: number, models: Record<string, [number, number, number]>) =>
   JSON.stringify({type: 'session.shutdown', timestamp, data: {totalNanoAiu: nanoAiu, modelMetrics:
     Object.fromEntries(Object.entries(models).map(([model, [input, cacheRead, output]]) =>
@@ -75,7 +81,48 @@ test('Copilot gives AI credits but no tokens, since its token counts are not com
   });
 });
 
-test('a version 2 cache keeps its AI credits and drops the old Copilot tokens', async () => {
+test('Copilot AI credits come from its usage records when it writes no running totals', async () => {
+  await withHome(async (home, cachePath) => {
+    const dir = join(home, '.copilot', 'session-state', 'session-r');
+    const file = join(dir, 'events.jsonl');
+    await mkdir(dir, {recursive: true});
+    await writeFile(file, copilotCall(earlierThisMonth, 5e9) + copilotCall(today(9), 3e9) + copilotCall(today(10), 4.5e9));
+    const tracker = new UsageTracker({home, cachePath, now: () => now});
+    assert.equal(await tracker.refresh(), true);
+    assert.deepEqual(tracker.totals('today'), {aic: 7.5, tokens: null});
+    assert.deepEqual(tracker.totals('month'), {aic: 12.5, tokens: null});
+    // More calls later are added, also after a restart from the cache.
+    await appendFile(file, copilotCall(today(11), 2e9));
+    const resumed = new UsageTracker({home, cachePath, now: () => now});
+    assert.equal(await resumed.refresh(), true);
+    assert.deepEqual(resumed.totals('today'), {aic: 9.5, tokens: null});
+  });
+});
+
+test('Copilot usage records and running totals together count each credit once', async () => {
+  await withHome(async (home, cachePath) => {
+    const dir = join(home, '.copilot', 'session-state', 'session-m');
+    const file = join(dir, 'events.jsonl');
+    await mkdir(dir, {recursive: true});
+    // Calls, then a running total that also counts more than the calls showed, then calls only.
+    await writeFile(file, copilotCall(today(9), 1e9) + copilotCall(today(9), 2e9) + copilotLine(today(9), 3e9)
+      + copilotCall(today(10), 4e9) + copilotLine(today(10), 10e9));
+    const tracker = new UsageTracker({home, cachePath, now: () => now});
+    await tracker.refresh();
+    assert.deepEqual(tracker.totals('today'), {aic: 10, tokens: null});
+    // The pending calls are kept in the cache, so the next total still counts them once.
+    await appendFile(file, copilotCall(today(11), 2e9));
+    const resumed = new UsageTracker({home, cachePath, now: () => now});
+    await resumed.refresh();
+    assert.deepEqual(resumed.totals('today'), {aic: 12, tokens: null});
+    await appendFile(file, copilotLine(today(11), 12.5e9));
+    const again = new UsageTracker({home, cachePath, now: () => now});
+    await again.refresh();
+    assert.deepEqual(again.totals('today'), {aic: 12.5, tokens: null});
+  });
+});
+
+test('a version 2 cache is read again, so Copilot usage records count', async () => {
   await withHome(async (home, cachePath) => {
     const dir = join(home, '.copilot', 'session-state', 'session-c');
     const file = join(dir, 'events.jsonl');
@@ -87,9 +134,10 @@ test('a version 2 cache keeps its AI credits and drops the old Copilot tokens', 
       source: 'copilot', session: 'session-c', offset: Buffer.byteLength(text), last: 7e9,
       entries: [[Date.parse(today(9)), 7e9]], tokenLast: 900, tokenEntries: [[Date.parse(today(9)), 900]],
     }}}));
+    await appendFile(file, copilotCall(today(10), 2e9));
     const tracker = new UsageTracker({home, cachePath, now: () => now});
-    assert.equal(await tracker.refresh(), false);
-    assert.deepEqual(tracker.totals('today'), {aic: 7, tokens: null});
+    assert.equal(await tracker.refresh(), true);
+    assert.deepEqual(tracker.totals('today'), {aic: 9, tokens: null});
   });
 });
 
