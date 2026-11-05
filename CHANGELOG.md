@@ -2,6 +2,12 @@
 
 Notable changes to this ESP32 companion.
 
+## [v0.18.1]
+
+### Features and improvements
+
+- Count Copilot AI credits again: newer Copilot writes per-call usage records instead of running totals
+
 ## [v0.18.0]
 
 ### Features and improvements
