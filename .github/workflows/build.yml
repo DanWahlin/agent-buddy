@@ -51,6 +51,12 @@ jobs:
           cache-dependency-path: daemon/package-lock.json
       - name: Test development launcher
         run: npm run test:dev
+      - name: Test Stream Deck plugin
+        working-directory: streamdeck
+        run: |
+          npm ci
+          npm test
+          npm run validate
       - name: Restore lossless compression cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

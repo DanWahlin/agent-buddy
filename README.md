@@ -59,6 +59,7 @@ desktop, with or without the device.
 - [Command reference](#command-reference)
 - [Troubleshooting](#troubleshooting)
 - [Desktop Agent Buddy](#desktop-agent-buddy)
+- [Stream Deck](#stream-deck)
 - [Develop and customize](#develop-and-customize)
 
 **Contributors:** an optional [`aspire run` development loop](docs/development.md#optional-one-command-contributor-loop)
@@ -89,6 +90,8 @@ actions are explicit dashboard/CLI commands; normal installation is unchanged.
   on the same network.
 - **Optional sound:** short local sound cues through the board's speaker connector,
   and the same cues from the desktop app when you turn them on.
+- **Stream Deck plugin (source build):** an overview key or individual agent keys
+  show when your agents need you. No ESP32 device is required.
 
 ## How it works
 
@@ -97,6 +100,7 @@ flowchart LR
     A["AI agents<br/>Copilot, Claude, Codex,<br/>Grok, Hermes, OpenClaw"] -- lifecycle hooks --> D["Companion service<br/>(runs in the background)"]
     B["Settings<br/>127.0.0.1:4667"] <--> D
     D -- USB serial or local Wi-Fi --> E["ESP32 companion<br/>(firmware + character pack)"]
+    D -- authenticated local status --> S["Stream Deck<br/>(optional plugin)"]
 ```
 
 1. **Firmware** runs the animation on the device. Install it from the desktop
@@ -106,6 +110,24 @@ flowchart LR
 3. **The companion service** runs in the background on your computer. It
    combines those events into one state, sends it to the device, and serves
    Settings.
+
+## Stream Deck
+
+The [Stream Deck plugin](streamdeck/README.md) uses the same local companion
+service and approved agent hooks. Add an **Agent status** key for all agents,
+or repeat it with a different agent selected on each key. **Needs you** takes
+priority over work and completion; other agent keys still show their own work.
+Attention can pulse, and text and symbols make each state distinguishable
+without relying on color. Pressing a key opens Agent Buddy Settings; it does
+not approve requests or dismiss attention.
+
+Individual agent keys use the same built-in pixel-art logos and colors as Agent
+Buddy, with separate status badges so the agent stays recognizable in every state.
+
+The plugin currently requires a source build, Stream Deck 6.6+ on macOS or
+Windows, and an Agent Buddy service built from this checkout. See its
+[build and install instructions](streamdeck/README.md). The ESP32 device and
+desktop character are optional; the companion service must remain running.
 
 ## What you need
 

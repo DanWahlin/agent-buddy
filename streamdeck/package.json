@@ -1,0 +1,24 @@
+{
+  "name": "@agent-buddy/streamdeck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=20.11.0"},
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "validate": "npm run build && streamdeck validate com.agentbuddy.status.sdPlugin",
+    "pack": "npm run validate && streamdeck pack com.agentbuddy.status.sdPlugin --output ../build/streamdeck --force"
+  },
+  "dependencies": {
+    "@elgato/streamdeck": "3.0.3"
+  },
+  "devDependencies": {
+    "@elgato/cli": "1.10.3",
+    "@resvg/resvg-js": "2.6.2",
+    "@types/node": "20.19.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "ws": "8.22.0"
+  }
+}
