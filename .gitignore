@@ -1,6 +1,12 @@
 build/
 daemon/dist/
 daemon/node_modules/
+streamdeck/node_modules/
+streamdeck/dist/
+streamdeck/com.agentbuddy.status.sdPlugin/bin/
+streamdeck/com.agentbuddy.status.sdPlugin/logs/
+streamdeck/com.agentbuddy.status.sdPlugin/imgs/icon.png
+streamdeck/com.agentbuddy.status.sdPlugin/imgs/icon@2x.png
 characters/openclaw/model/node_modules/
 characters/openclaw/renders/
 .deps/

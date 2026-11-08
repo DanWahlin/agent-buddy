@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.agentbuddy.status",
+  "Name": "Agent Buddy",
+  "Version": "0.1.0.0",
+  "Author": "Agent Buddy contributors",
+  "Description": "See when your coding agents need you, using the local Agent Buddy companion service.",
+  "Category": "Agent Buddy",
+  "CategoryIcon": "imgs/status",
+  "Icon": "imgs/icon",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.6"
+  },
+  "Nodejs": {
+    "Version": "20"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Actions": [
+    {
+      "UUID": "com.agentbuddy.status.monitor",
+      "Name": "Agent status",
+      "Icon": "imgs/status",
+      "Tooltip": "Shows agent attention, work, and completion. Press to open Agent Buddy Settings.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "PropertyInspectorPath": "ui/settings.html",
+      "States": [
+        {
+          "Image": "imgs/key",
+          "ShowTitle": false
+        }
+      ]
+    }
+  ]
+}

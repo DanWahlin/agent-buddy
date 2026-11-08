@@ -186,6 +186,8 @@ export interface CompanionStatus extends DaemonStatus {
   badges: {
     enabled: boolean;
     active: Array<{id: AgentId; role: ReturnType<typeof roleName>}>;
+    // All concurrent roles, not just the agents driving the combined character state.
+    roles: {working: AgentId[]; attention: AgentId[]; complete: AgentId[]};
     icons: AgentBadgeStatusIcon[];
   };
   // What the desktop app should show; the device's own character wins when one is connected.
@@ -419,6 +421,7 @@ export class CompanionService extends EventEmitter {
 
   status(): CompanionStatus {
     this.#noteDevice();
+    const {working, attention, complete, active} = this.#coordinator.agentBadgeRoles();
     return {
       state: this.#transport.state,
       transport: this.#transport.transport,
@@ -434,7 +437,8 @@ export class CompanionService extends EventEmitter {
       drivingAgents: this.#coordinator.drivingAgents,
       badges: {
         enabled: this.#display.showAgentBadges,
-        active: this.#coordinator.agentBadgeRoles().active.map(item => ({id: item.id, role: roleName(item.role)})),
+        active: active.map(item => ({id: item.id, role: roleName(item.role)})),
+        roles: {working, attention, complete},
         icons: statusIcons(this.#badgeIcons),
       },
       desktop: {

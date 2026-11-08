@@ -3,6 +3,32 @@
 For a quick introduction and installation, start with the [README](../README.md).
 Commands in this document run from the repository root.
 
+## Stream Deck integration
+
+`streamdeck/` builds a standalone Elgato plugin. See its
+[build and install guide](../streamdeck/README.md). It polls the existing
+authenticated `GET /api/status` endpoint once per second, shared across visible
+keys using the same Settings file. There is no new listener, unauthenticated
+endpoint, hook format, or device requirement.
+
+`badges.roles` contains `working`, `attention`, and `complete` agent-ID arrays
+from `StateCoordinator.agentBadgeRoles()`. Unlike `badges.active`, these arrays
+include concurrent roles even when another agent's attention drives the combined
+character. They remain available when badge display is disabled. Agent-filtered
+keys prioritize attention, then work, then completion. The overview uses the
+combined state, with attention taking priority.
+
+Run `npm ci --prefix streamdeck`, then `npm --prefix streamdeck test` or
+`npm --prefix streamdeck run pack`. The package is written to `build/streamdeck/`.
+For Aspire development, set the key's **Settings file path** to the absolute path
+of `build/dev/companion/settings.json`. The plugin only reads service status;
+key presses open Settings rather than answering or approving agent requests.
+
+The companion and plugin share the built-in logo artwork in
+`daemon/src/agent-badge-art.ts`. The plugin bundles it locally, so logos are
+available even when the service is offline. Custom companion badge PNG overrides
+are not mirrored to Stream Deck.
+
 ## Optional one-command contributor loop
 
 On macOS or Linux, install [Aspire CLI 13.6.4 or newer](https://aspire.dev/get-started/install-cli/),
